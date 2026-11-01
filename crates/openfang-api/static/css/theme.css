@@ -1,67 +1,67 @@
-/* OpenFang Theme — Premium design system */
+/* OpenFang Theme — StaxCloud token layer (Slice 1: values from StaxCloud tokens.css; variable names unchanged) */
 
-/* Font imports in index_head.html: Inter (body) + Geist Mono (code) */
+/* Font imports in index_head.html: DM Sans (body) + Geist Mono (code) */
 
 [data-theme="light"], :root {
   /* Backgrounds — layered depth */
-  --bg: #F5F4F2;
-  --bg-primary: #EDECEB;
-  --bg-elevated: #F8F7F6;
-  --surface: #FFFFFF;
-  --surface2: #F0EEEC;
-  --surface3: #E8E6E3;
-  --border: #D5D2CF;
-  --border-light: #C8C4C0;
-  --border-subtle: #E0DEDA;
+  --bg: #f4f2ec;
+  --bg-primary: #f1eee7;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface2: #f1eee7;
+  --surface3: #e9e5db;
+  --border: #d9d4c8;
+  --border-light: #c9c3b4;
+  --border-subtle: #e3ded2;
 
   /* Text hierarchy */
-  --text: #1A1817;
-  --text-secondary: #3D3935;
-  --text-dim: #6B6560;
-  --text-muted: #9A958F;
+  --text: #1b1a17;
+  --text-secondary: #3f3c36;
+  --text-dim: #55524b;
+  --text-muted: #8a867c;
 
   /* Brand — Orange accent */
-  --accent: #FF5C00;
-  --accent-light: #FF7A2E;
-  --accent-dim: #E05200;
-  --accent-glow: rgba(255, 92, 0, 0.1);
-  --accent-subtle: rgba(255, 92, 0, 0.05);
+  --accent: #146e68;
+  --accent-light: #1d857e;
+  --accent-dim: #0f5a55;
+  --accent-glow: rgba(20, 110, 104, 0.12);
+  --accent-subtle: rgba(20, 110, 104, 0.06);
 
   /* Status colors */
-  --success: #22C55E;
-  --success-dim: #16A34A;
+  --success: #226d3c;
+  --success-dim: #226d3c;
   --success-subtle: rgba(34, 197, 94, 0.08);
-  --error: #EF4444;
-  --error-dim: #DC2626;
+  --error: #9f2520;
+  --error-dim: #9f2520;
   --error-subtle: rgba(239, 68, 68, 0.06);
-  --warning: #F59E0B;
-  --warning-dim: #D97706;
+  --warning: #8a5410;
+  --warning-dim: #8a5410;
   --warning-subtle: rgba(245, 158, 11, 0.08);
-  --info: #3B82F6;
-  --info-dim: #2563EB;
+  --info: #3f6486;
+  --info-dim: #3f6486;
   --info-subtle: rgba(59, 130, 246, 0.06);
   --success-muted: rgba(34, 197, 94, 0.15);
   --error-muted: rgba(239, 68, 68, 0.15);
   --warning-muted: rgba(245, 158, 11, 0.15);
   --info-muted: rgba(59, 130, 246, 0.15);
-  --border-strong: #B0ACA8;
+  --border-strong: #b3ac9c;
   --card-highlight: rgba(0, 0, 0, 0.02);
 
   /* Chat-specific */
-  --agent-bg: #F5F4F2;
-  --user-bg: #FFF3E6;
+  --agent-bg: #f4f2ec;
+  --user-bg: #e6f2f0;
   --text-on-accent: #FFFFFF;
 
   /* Layout */
   --sidebar-width: 240px;
   --sidebar-collapsed: 56px;
-  --header-height: 48px;
+  --header-height: 52px;
 
   /* Radius — slightly larger for premium feel */
   --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --radius-xl: 16px;
 
   /* Shadows — 6-level depth system */
@@ -71,12 +71,23 @@
   --shadow-lg: 0 12px 28px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.05);
   --shadow-xl: 0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.06);
   --shadow-glow: 0 0 40px rgba(0,0,0,0.05);
-  --shadow-accent: 0 4px 16px rgba(255, 92, 0, 0.12);
+  --shadow-accent: 0 4px 16px rgba(20, 110, 104, 0.18);
   --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.5);
 
   /* Typography — dual font system */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+
+  /* StaxCloud semantic aliases (Slice 1) */
+  --stax-canvas: var(--bg);
+  --stax-surface: var(--surface);
+  --stax-raised: var(--surface2);
+  --stax-accent: var(--accent);
+  --stax-channels: #3f6486;
+  --stax-studio: #885264;
+  --stax-system: #576373;
+  --dock-height: 56px;
+  --hit-min: 44px;
 
   /* Motion — spring curves for premium feel */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -89,52 +100,52 @@
 }
 
 [data-theme="dark"] {
-  --bg: #080706;
-  --bg-primary: #0F0E0E;
-  --bg-elevated: #161413;
-  --surface: #242221;
-  --surface2: #2F2D2C;
-  --surface3: #1A1817;
-  --border: #363230;
-  --border-light: #4A4644;
-  --border-subtle: #2D2A28;
-  --text: #FFFFFF;
-  --text-secondary: #D1D1D1;
-  --text-dim: #9FA0A0;
-  --text-muted: #6B6663;
+  --bg: #0c0c0e;
+  --bg-primary: #0c0c0e;
+  --bg-elevated: #18181b;
+  --surface: #121214;
+  --surface2: #18181b;
+  --surface3: #1e1e21;
+  --border: #2a2a2e;
+  --border-light: #3a3a3f;
+  --border-subtle: #222226;
+  --text: #e8e4dc;
+  --text-secondary: #cac5ba;
+  --text-dim: #9a9aa0;
+  --text-muted: #6f6f76;
   --text-on-accent: #FFFFFF;
-  --accent: #FF5C00;
-  --accent-light: #FF7A2E;
-  --accent-dim: #E05200;
-  --accent-glow: rgba(255, 92, 0, 0.15);
-  --accent-subtle: rgba(255, 92, 0, 0.08);
-  --success: #4ADE80;
+  --accent: #5cbcae;
+  --accent-light: #7fd1c5;
+  --accent-dim: #146e68;
+  --accent-glow: rgba(92, 188, 174, 0.15);
+  --accent-subtle: rgba(92, 188, 174, 0.08);
+  --success: #73d391;
   --success-dim: #22C55E;
   --success-subtle: rgba(74, 222, 128, 0.1);
-  --error: #EF4444;
+  --error: #ff8179;
   --error-dim: #B91C1C;
   --error-subtle: rgba(239, 68, 68, 0.1);
-  --warning: #F59E0B;
+  --warning: #e3a857;
   --warning-dim: #D97706;
   --warning-subtle: rgba(245, 158, 11, 0.1);
-  --info: #3B82F6;
+  --info: #86acd1;
   --info-dim: #2563EB;
   --info-subtle: rgba(59, 130, 246, 0.1);
   --success-muted: rgba(74, 222, 128, 0.25);
   --error-muted: rgba(239, 68, 68, 0.25);
   --warning-muted: rgba(245, 158, 11, 0.25);
   --info-muted: rgba(59, 130, 246, 0.25);
-  --border-strong: #4A4644;
+  --border-strong: #4a4a50;
   --card-highlight: rgba(255, 255, 255, 0.04);
-  --agent-bg: #1A1817;
-  --user-bg: #2A1A08;
+  --agent-bg: #121214;
+  --user-bg: #0f2a27;
   --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
   --shadow-lg: 0 12px 28px rgba(0,0,0,0.35), 0 4px 10px rgba(0,0,0,0.3);
   --shadow-xl: 0 20px 40px rgba(0,0,0,0.4), 0 8px 16px rgba(0,0,0,0.3);
   --shadow-glow: 0 0 80px rgba(0,0,0,0.6);
-  --shadow-accent: 0 4px 16px rgba(255, 92, 0, 0.2);
+  --shadow-accent: 0 4px 16px rgba(92, 188, 174, 0.2);
   --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.03);
 }
 

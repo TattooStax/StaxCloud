@@ -2,6 +2,7 @@
 
 /* Buttons */
 .btn {
+  min-height: 44px;
   padding: 8px 16px;
   border: none;
   border-radius: var(--radius-sm);
@@ -315,7 +316,7 @@ tr:hover td { background: var(--surface2); }
 /* Issue #1026: live indicator for agents currently calling the LLM */
 @keyframes agent-inferencing-pulse {
   0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 var(--accent); }
-  50% { transform: scale(1.25); opacity: 0.85; box-shadow: 0 0 0 4px rgba(255, 92, 0, 0); }
+  50% { transform: scale(1.25); opacity: 0.85; box-shadow: 0 0 0 4px rgba(20, 110, 104, 0); }
 }
 
 .message.user {
@@ -359,7 +360,7 @@ tr:hover td { background: var(--surface2); }
 
 .message.user .message-bubble {
   background: var(--user-bg);
-  border: 1px solid rgba(255,92,0,0.12);
+  border: 1px solid rgba(20,110,104,0.12);
   border-bottom-right-radius: var(--radius-sm);
 }
 .message.agent .message-bubble {
@@ -1035,7 +1036,7 @@ mark.search-highlight {
 }
 .model-switcher-item:hover { background: var(--surface2); }
 .model-switcher-item.active {
-  background: var(--accent-subtle, rgba(255,92,0,0.06));
+  background: var(--accent-subtle, rgba(20,110,104,0.06));
   cursor: default;
 }
 .model-switcher-item-name {
@@ -1458,7 +1459,7 @@ mark.search-highlight {
 }
 
 .shield-config {
-  background: rgba(255,92,0,0.1);
+  background: rgba(20,110,104,0.1);
   color: var(--accent);
 }
 
@@ -1545,7 +1546,7 @@ mark.search-highlight {
 }
 
 .sec-badge-config {
-  background: rgba(255,92,0,0.12);
+  background: rgba(20,110,104,0.12);
   color: var(--accent);
 }
 
@@ -2337,7 +2338,7 @@ mark.search-highlight {
 .wizard-provider-selected {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 1px var(--accent-glow);
-  background: rgba(255,92,0,0.04);
+  background: rgba(20,110,104,0.04);
 }
 
 /* Wizard template selection card */
@@ -2348,7 +2349,7 @@ mark.search-highlight {
 .wizard-template-selected {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 1px var(--accent-glow);
-  background: rgba(255,92,0,0.04);
+  background: rgba(20,110,104,0.04);
 }
 
 /* Responsive wizard */
