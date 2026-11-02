@@ -150,3 +150,126 @@ for pair in kv.get("kv_pairs", []):
     req("PUT", f"/api/memory/agents/{forms_id}/kv/{enc}", {"value": v})
     print(datetime.datetime.now().isoformat(), "draft carried to Needs you:", key, "approval:", v["approval_id"])
 PYEOF
+
+# ── Phase 3: crew-liveness tripwire (R13 follow-up, 2026-11-02). At 05:46 CST
+# the Forms and Texts agents were killed inside the daemon (stock-ecosystem
+# action on this shared playground box); their cron jobs were removed with
+# them and the 06:00 brief failed silently. This phase makes that failure
+# self-healing: verify the crew agents exist and their standing jobs are
+# armed; restore a dead hand via the proven daemon-restart route (hand_state
+# restore keeps the same agent ids); re-arm a missing sweep by waking the
+# agent; re-create the brief job if it is gone; record any repair at
+# crew/health in kv. Silent when everything is healthy. ──
+python3 - "$API" "$TOK" <<'PYEOF' >> pull-sync.log 2>&1
+import sys, json, urllib.request, urllib.parse, urllib.error, datetime, subprocess, time
+api, tok = sys.argv[1], sys.argv[2]
+CREW = {"forms": "d2ad79cf-0f4b-5680-9cac-010e47a62b5c", "sms": "aad03c1f-46b0-51f3-ae38-9872cc65881e",
+        "stax": "8cad1d3b-58f9-5563-ba0f-966d734c8a1f", "surface-builder": "743f3e25-5327-5848-bb81-6be35685baa4",
+        "deep-work": "b7953dc9-8210-5778-b012-50d2f4ee7618", "lead-hand": "f8bbf23d-820b-5f08-b291-313cd88d2ffc",
+        "researcher-hand": "52a6d4df-6eb0-5c55-a200-b984514886ab"}
+SHARED = "00000000-0000-4000-8000-000000000001"
+def now():
+    return datetime.datetime.now().isoformat()
+def req(method, path, body=None, timeout=20):
+    data = json.dumps(body).encode() if body is not None else None
+    r = urllib.request.Request(api + path, data=data, method=method)
+    r.add_header("Authorization", "Bearer " + tok)
+    if data: r.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except Exception:
+        return None
+def daemon_up():
+    try:
+        with urllib.request.urlopen(api + "/api/health", timeout=8) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+def restart_daemon():
+    subprocess.run(["bash", "-c",
+                    "./openfang stop; sleep 2; set -a; . ./env; set +a; "
+                    "setsid ./openfang start >> daemon.log 2>&1 &"], timeout=60)
+    for _ in range(15):
+        time.sleep(4)
+        if daemon_up():
+            return True
+    return daemon_up()
+
+actions = []
+missing_agents = []
+# Daemon itself down: one start attempt covers the box-reboot case too.
+if not daemon_up():
+    print(now(), "crew check: daemon DOWN — starting it")
+    actions.append("daemon was down; started it")
+    if not restart_daemon():
+        print(now(), "crew check: daemon still unreachable after start attempt")
+        sys.exit(0)
+agents = req("GET", "/api/agents") or []
+alive = {a.get("name"): a.get("id") for a in agents}
+missing_agents = [n for n in CREW if n not in alive]
+if missing_agents:
+    print(now(), "crew check: MISSING agents:", ", ".join(missing_agents), "— restarting daemon to restore from hand_state")
+    actions.append("missing agents: " + ", ".join(missing_agents))
+    if restart_daemon():
+        agents = req("GET", "/api/agents") or []
+        alive = {a.get("name"): a.get("id") for a in agents}
+        still = [n for n in CREW if n not in alive]
+        if still:
+            print(now(), "crew check: STILL missing after restart:", ", ".join(still))
+            actions.append("restart did not restore: " + ", ".join(still))
+        else:
+            actions.append("daemon restart restored the crew")
+    else:
+        print(now(), "crew check: daemon unreachable after restart")
+        actions.append("restart failed to bring the daemon back")
+# Standing jobs: a */15 sweep per intake hand + the daily brief workflow job.
+jobs_doc = req("GET", "/api/cron/jobs") or {}
+jobs = jobs_doc.get("jobs", []) if isinstance(jobs_doc, dict) else []
+def has_sweep(agent_name):
+    aid = alive.get(agent_name)
+    return any(j.get("agent_id") == aid and "*/15" in ((j.get("schedule") or {}).get("expr") or "")
+               and j.get("enabled", True) for j in jobs)
+missing_jobs = []
+if "forms" in alive and not has_sweep("forms"):
+    missing_jobs.append("forms sweep")
+if "sms" in alive and not has_sweep("sms"):
+    missing_jobs.append("texts sweep")
+brief_ok = any(j.get("name") == "Morning Brief daily" and j.get("enabled", True) for j in jobs)
+if not brief_ok:
+    missing_jobs.append("morning brief job")
+REARM = {
+    "forms": "Your standing sweep job was removed while you were down. Re-arm it now: use schedule_create to register your recurring sweep for new form submissions every 15 minutes, exactly as your playbook prescribes. Confirm the job exists afterwards.",
+    "sms": "Your standing sweep job was removed while you were down. Re-arm it now: use schedule_create to register your recurring Texts sweep every 15 minutes, exactly as your playbook prescribes (recall attention/sms and sweep). Confirm the job exists afterwards.",
+}
+for name in ("forms", "sms"):
+    label = "forms sweep" if name == "forms" else "texts sweep"
+    if label in missing_jobs and name in alive:
+        r = req("POST", f"/api/agents/{alive[name]}/message", {"message": REARM[name]}, timeout=220)
+        if r and r.get("response"):
+            actions.append(f"re-armed {label} via the agent")
+            print(now(), f"crew check: re-armed {label}")
+        else:
+            actions.append(f"re-arm of {label} got no response")
+            print(now(), f"crew check: re-arm of {label} FAILED (no response)")
+if "morning brief job" in missing_jobs and "stax" in alive:
+    body = {"name": "Morning Brief daily", "agent_id": alive["stax"],
+            "schedule": {"kind": "cron", "expr": "0 6 * * *", "tz": "America/Chicago"},
+            "action": {"kind": "workflow_run", "workflow_id": "Morning Brief", "timeout_secs": 900},
+            "enabled": True}
+    r = req("POST", "/api/cron/jobs", body)
+    if r and ("job_id" in json.dumps(r)):
+        actions.append("re-created the Morning Brief daily job")
+        print(now(), "crew check: re-created Morning Brief daily job")
+    else:
+        actions.append("re-creating the brief job failed")
+        print(now(), "crew check: brief job re-create FAILED:", json.dumps(r)[:160])
+if actions:
+    rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "missing_agents": missing_agents, "missing_jobs": missing_jobs,
+           "actions": actions, "status": "repaired" if not any("failed" in a or "did not" in a for a in actions) else "repair-incomplete"}
+    enc = urllib.parse.quote("crew/health", safe="")
+    req("PUT", f"/api/memory/agents/{SHARED}/kv/{enc}", {"value": rec})
+    print(now(), "crew check: repair recorded at crew/health —", "; ".join(actions))
+PYEOF
