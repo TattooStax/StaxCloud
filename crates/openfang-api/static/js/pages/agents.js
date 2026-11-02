@@ -236,6 +236,20 @@ function agentsPage() {
           self.activeChatAgent = agent;
         }
       });
+      // Landing on the chat page (dock Stax/Channels tabs, fresh load on
+      // #chat) opens the conversation instead of the helpers list. The chat
+      // view itself resolves which agent to show: the queued one, else the
+      // restored one, else the lead.
+      if (!this.activeChatAgent && window.location.hash === '#chat') {
+        this.openChat();
+      }
+    },
+
+    openChat() {
+      if (this.activeChatAgent) return;
+      var store = Alpine.store('app');
+      var lead = (store.agents || []).find(function(a) { return a.name === 'stax'; });
+      this.activeChatAgent = store.pendingAgent || lead || true;
     },
 
     async loadData() {

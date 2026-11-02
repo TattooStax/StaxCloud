@@ -224,6 +224,14 @@ document.addEventListener('alpine:init', function() {
       } catch(e) { /* silent */ }
     },
 
+    // Queue the lead agent so the chat page opens on Stax. Navigation itself
+    // happens in the caller (template scope), where navigate() lives.
+    staxAgent() {
+      var agents = this.agents || [];
+      var la = agents.find(function(a) { return a.name === 'stax'; });
+      if (la) this.pendingAgent = la;
+    },
+
     smsAgent() {
       var agents = this.agents || [];
       var sa = agents.find(function(a) { return a.name === 'sms'; });
@@ -370,9 +378,10 @@ document.addEventListener('alpine:init', function() {
 // Main app component
 function app() {
   return {
-    page: 'overview',
-    surfaceOf: { overview: 'home', setup: 'home', setup: 'home', agents: 'channels', sms: 'channels', comms: 'channels', approvals: 'work', contacts: 'work', contacts: 'work', sessions: 'work', analytics: 'work', boards: 'studio', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', logs: 'system', runtime: 'system', wizard: 'system' },
-    surfaceHome: { home: 'overview', channels: 'agents', work: 'approvals', studio: 'workflows', system: 'channels' },
+    page: 'chat',
+    surface: null,
+    surfaceOf: { overview: 'home', setup: 'home', chat: 'home', agents: 'channels', sms: 'channels', comms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', logs: 'system', runtime: 'system', wizard: 'system' },
+    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'channels' },
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -399,9 +408,8 @@ function app() {
       });
 
       // Hash routing
-      var validPages = ['overview','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard'];
+      var validPages = ['overview','chat','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard'];
       var pageRedirects = {
-        'chat': 'agents',
         'templates': 'agents',
         'triggers': 'workflows',
         'cron': 'scheduler',
@@ -415,7 +423,7 @@ function app() {
         'approval': 'approvals'
       };
       function handleHash() {
-        var hash = window.location.hash.replace('#', '') || 'agents';
+        var hash = window.location.hash.replace('#', '') || 'chat';
         if (pageRedirects[hash]) {
           hash = pageRedirects[hash];
           window.location.hash = hash;
@@ -464,14 +472,28 @@ function app() {
       }, 5000);
     },
 
+    // The surface the shell chrome (dock highlight, pill row) follows. It is
+    // the surface the user actually entered by, because two dock tabs (Stax
+    // and Channels) land on the same chat page and the page alone cannot
+    // say which one is active.
+    surf() {
+      return this.surface || this.surfaceOf[this.page] || 'home';
+    },
+
     navigate(p) {
       this.page = p;
       window.location.hash = p;
       this.mobileMenuOpen = false;
+      Alpine.store('app').sideOpen = false;
+      this.surface = this.surfaceOf[p] || this.surface;
+      // The agents template stays mounted when moving between the list and
+      // the chat page, so it cannot rely on init alone to open the chat.
+      if (p === 'chat') window.dispatchEvent(new CustomEvent('open-chat'));
     },
 
     goSurface(s) {
       this.navigate(this.surfaceHome[s]);
+      this.surface = s;
     },
 
     setTheme(mode) {
