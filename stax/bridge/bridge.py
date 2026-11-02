@@ -72,7 +72,15 @@ def digits(phone):
 def load_state():
     try:
         with open(STATE_PATH) as f: return json.load(f)
-    except Exception: return {"hashes": {}, "sent": {}}
+    except FileNotFoundError:
+        return {"hashes": {}, "sent": {}}
+    except Exception as e:
+        # Fail loud: a corrupt state file must never silently reset tracking.
+        bad = STATE_PATH + ".corrupt-" + time.strftime("%Y%m%d%H%M%S")
+        try: os.replace(STATE_PATH, bad)
+        except Exception: pass
+        log(f"STATE CORRUPT ({e}) — moved to {os.path.basename(bad)}, starting fresh")
+        return {"hashes": {}, "sent": {}}
 
 def save_state(s):
     tmp = STATE_PATH + ".tmp"
@@ -101,13 +109,35 @@ def mirror(state):
         if name.replace("(", "").replace(")", "").replace("-", "").replace(" ", "").replace("+", "").isdigit():
             name = ""
         rec = {"number": num, "name": name, "thread_id": tid, "messages": msgs}
+        if msgs and msgs[-1].get("dir") == "in":
+            state.setdefault("attention", {})[num] = True
+        else:
+            state.setdefault("attention", {}).pop(num, None)
         h = hashlib.sha256(json.dumps(rec, sort_keys=True).encode()).hexdigest()
         if state["hashes"].get(num) != h:
             fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(f"sms/{num}", safe=""), {"value": rec})
             state["hashes"][num] = h
             changed += 1
             log(f"mirrored sms/{num} ({len(msgs)} messages)")
+    # Maintain the fixed attention index the Texts agent enumerates from:
+    # threads whose latest message is an unanswered inbound text.
+    att = sorted("sms/" + n for n, on in state.get("attention", {}).items() if on)
+    att_h = hashlib.sha256(json.dumps(att).encode()).hexdigest()
+    if state.get("attention_hash") != att_h:
+        fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote("attention/sms", safe=""),
+             {"value": {"threads": att, "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}})
+        state["attention_hash"] = att_h
+        log(f"attention/sms updated: {att}")
     return changed
+
+def find_msg(detail, mid=None, body=None):
+    msgs = detail.get("messages", [])
+    if mid:
+        for m in msgs:
+            if m.get("id") == mid: return m
+        return None
+    outs = [m for m in msgs if m.get("direction") == "out" and m.get("body") == body]
+    return outs[-1] if outs else None
 
 def outbox(state):
     data = fang("GET", "/api/memory/agents/x/kv")
@@ -125,57 +155,84 @@ def outbox(state):
             except Exception: continue
         if not isinstance(v, dict): continue
         status = v.get("status")
-        if status == "queued":
+        enc = "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe="")
+        if status in ("queued", "sending"):
             num = digits(v.get("to", ""))
             tid = by_num.get(num)
             if not tid:
                 v["status"] = "failed"; v["error"] = "no existing StaxCloud thread for this number"
-                fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe=""), {"value": v})
+                fang("PUT", enc, {"value": v})
                 log(f"outbox {key}: failed (no thread)")
                 acted += 1; continue
-            try:
-                created = stax("POST", f"/api/sms/threads/{tid}/messages", {"body": v.get("body", "")})
-            except Exception as e:
-                v["status"] = "failed"; v["error"] = str(e)[:160]
-                fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe=""), {"value": v})
-                log(f"outbox {key}: send failed {e}")
-                acted += 1; continue
-            # StaxCloud composes as a draft (approval_state 'draft'); the human
-            # approval already happened on the Fang side, so the bridge — acting
-            # in the owner's own session — approves the draft to dispatch it.
-            msg = created.get("message") if isinstance(created, dict) else None
-            if not isinstance(msg, dict): msg = created if isinstance(created, dict) else {}
-            mid = msg.get("id"); rev = msg.get("revision")
-            if not mid:
-                detail = stax("GET", f"/api/sms/threads/{tid}")
-                outs = [m for m in detail.get("messages", []) if m.get("direction") == "out"]
-                if outs: mid = outs[-1].get("id"); rev = outs[-1].get("revision")
-            try:
-                if not mid: raise RuntimeError("created message id not found")
-                stax("POST", f"/api/sms/threads/{tid}/messages/{mid}/approve", {"revision": rev if rev is not None else 1})
-            except Exception as e:
-                v["status"] = "failed"; v["error"] = "approve step: " + str(e)[:140]
-                fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe=""), {"value": v})
-                log(f"outbox {key}: approve failed {e}")
-                acted += 1; continue
+            if status == "queued":
+                # WRITE-AHEAD: record the attempt BEFORE any send. A crash from
+                # here on leaves status 'sending', and the reconcile step below
+                # adopts the already-created StaxCloud message instead of
+                # sending a duplicate.
+                v["status"] = "sending"
+                v["attempted_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                fang("PUT", enc, {"value": v})
+                log(f"outbox {key}: write-ahead sending")
+            detail = stax("GET", f"/api/sms/threads/{tid}")
+            msg = find_msg(detail, mid=v.get("provider_mid"), body=v.get("body", ""))
+            if msg is None:
+                try:
+                    created = stax("POST", f"/api/sms/threads/{tid}/messages", {"body": v.get("body", "")})
+                except Exception as e:
+                    v["status"] = "failed"; v["error"] = str(e)[:160]
+                    fang("PUT", enc, {"value": v})
+                    log(f"outbox {key}: send failed {e}")
+                    acted += 1; continue
+                cm = created.get("message") if isinstance(created, dict) else None
+                if not isinstance(cm, dict): cm = created if isinstance(created, dict) else {}
+                if cm.get("id"):
+                    msg = cm
+                else:
+                    detail = stax("GET", f"/api/sms/threads/{tid}")
+                    msg = find_msg(detail, body=v.get("body", ""))
+                if msg is None:
+                    v["status"] = "failed"; v["error"] = "created message not found on read-back"
+                    fang("PUT", enc, {"value": v})
+                    log(f"outbox {key}: read-back failed")
+                    acted += 1; continue
+                log(f"outbox {key}: created staxcloud message")
+            else:
+                log(f"outbox {key}: reconciled existing staxcloud message (no duplicate sent)")
+            v["provider_mid"] = msg.get("id")
+            fang("PUT", enc, {"value": v})
+            # StaxCloud composes as a draft; the human approval already happened
+            # on the Fang side, so the bridge approves in the owner's session.
+            if msg.get("approval_state") == "draft" or status == "sending":
+                try:
+                    stax("POST", f"/api/sms/threads/{tid}/messages/{msg.get('id')}/approve",
+                         {"revision": msg.get("revision") if msg.get("revision") is not None else 1})
+                except Exception as e:
+                    v["status"] = "failed"; v["error"] = "approve step: " + str(e)[:140]
+                    fang("PUT", enc, {"value": v})
+                    log(f"outbox {key}: approve failed {e}")
+                    acted += 1; continue
             v["status"] = "sent"; v["sent_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            state["sent"][key] = {"thread": tid, "number": num}
-            fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe=""), {"value": v})
+            state["sent"][key] = {"thread": tid, "number": num, "mid": v["provider_mid"]}
+            fang("PUT", enc, {"value": v})
             log(f"outbox {key}: sent via staxcloud thread")
             acted += 1
-        elif status == "sent" and key in state.get("sent", {}):
-            tid = state["sent"][key]["thread"]
+        elif status == "sent":
+            track = state.get("sent", {}).get(key, {})
+            tid = track.get("thread") or by_num.get(digits(v.get("to", "")))
+            if not tid: continue
             try:
                 detail = stax("GET", f"/api/sms/threads/{tid}")
             except Exception: continue
-            outs = [m for m in detail.get("messages", []) if m.get("direction") == "out"]
-            if outs:
-                ds = outs[-1].get("delivery_state") or ""
-                if ds in ("delivered", "failed"):
-                    v["status"] = ds; v["provider_state"] = ds
-                    fang("PUT", "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe=""), {"value": v})
-                    log(f"outbox {key}: delivery read-back -> {ds}")
-                    acted += 1
+            m = find_msg(detail, mid=v.get("provider_mid") or track.get("mid"))
+            if m is None:
+                log(f"outbox {key}: WARNING sent message not found on read-back")
+                continue
+            ds = m.get("delivery_state") or ""
+            if ds in ("delivered", "failed"):
+                v["status"] = ds; v["provider_state"] = ds
+                fang("PUT", enc, {"value": v})
+                log(f"outbox {key}: delivery read-back -> {ds}")
+                acted += 1
     return acted
 
 def main():

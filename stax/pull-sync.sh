@@ -30,14 +30,37 @@ for s in json.load(sys.stdin).get('submissions', []):
   [ -z "$REC" ] && continue
   FORM="$(echo "$REC" | python3 -c "import sys,json; print(json.load(sys.stdin)['form'])")"
   KEY="formsub/$FORM/$UUID"
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$API/api/memory/agents/$AGENT/kv/$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$KEY")" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "{\"value\": $REC}")"
+  ENCKEY="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$KEY")"
+  # Skip-if-exists: a re-delivered record must never overwrite the stored one
+  # (which may already carry processed/contact/draft fields). Still ack it.
+  EXIST="$(curl -s "$API/api/memory/agents/$AGENT/kv/$ENCKEY" -H "Authorization: Bearer $TOK" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if d.get('value') is not None else 'no')" 2>/dev/null)"
+  if [ "$EXIST" = "yes" ]; then
+    curl -s -X POST "$PULL_URL/api/ack" -H "X-Pull-Secret: $SECRET" -H "Content-Type: application/json" -d "{\"uuid\": \"$UUID\"}" > /dev/null
+    echo "$(date -Is) already stored $KEY — skipped overwrite, acked" >> pull-sync.log
+    continue
+  fi
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$API/api/memory/agents/$AGENT/kv/$ENCKEY" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "{\"value\": $REC}")"
   if [ "$CODE" = "200" ]; then
     curl -s -X POST "$PULL_URL/api/ack" -H "X-Pull-Secret: $SECRET" -H "Content-Type: application/json" -d "{\"uuid\": \"$UUID\"}" > /dev/null
     echo "$(date -Is) pulled $KEY" >> pull-sync.log
+    echo "$KEY" >> /tmp/pull-sync-new.$$
   else
     echo "$(date -Is) FAILED kv put $KEY (http $CODE) — will retry next cycle" >> pull-sync.log
   fi
 done
+
+# Wake the Forms agent when (and only when) this cycle stored NEW submissions,
+# so intake is unattended end to end: pull -> agent processes -> drafts phase
+# below carries the held draft on the next cycle.
+if [ -s /tmp/pull-sync-new.$$ ]; then
+  NEWKEYS="$(paste -sd', ' /tmp/pull-sync-new.$$)"
+  FORMS_ID="$(curl -s "$API/api/agents" -H "Authorization: Bearer $TOK" | python3 -c "import sys,json; print(next((a['id'] for a in json.load(sys.stdin) if a.get('name')=='forms'), ''))" 2>/dev/null)"
+  if [ -n "$FORMS_ID" ]; then
+    curl -s -X POST "$API/api/agents/$FORMS_ID/message" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "{\"message\": \"New form submission(s) just landed in shared memory at these exact keys: $NEWKEYS. Recall each key exactly and process it per your playbook (resolve the contact, hold the reply draft, mark it processed).\"}" > /dev/null
+    echo "$(date -Is) woke forms agent for: $NEWKEYS" >> pull-sync.log
+  fi
+fi
+rm -f /tmp/pull-sync-new.$$
 
 # ── Drafts phase: carry held reply drafts (draft/<uuid> in kv, written by the
 # Forms agent) into Needs you as real approval requests. ──
@@ -77,15 +100,28 @@ for pair in kv.get("kv_pairs", []):
     body_text = v.get("text") or v.get("body")
     if not body_text:
         continue
+    # TERMINAL: a decided draft is final, whatever the approvals API says.
+    # Approvals are in-memory; if a decision is ever lost from the API
+    # (restart / recent-list eviction) before this sync sees it, the durable
+    # kv record is the ledger of record — never re-carry, never re-apply.
+    if v.get("status") == "decided":
+        continue
     linked = ap_status.get(v.get("approval_id", ""))
     if linked in ("approved", "rejected"):
         if v.get("status") != "decided":
             if linked == "approved" and v.get("kind") == "sms_reply":
-                out = {"to": v.get("to", ""), "body": v.get("body", ""), "thread": v.get("thread", ""),
-                       "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "status": "queued"}
                 enc_o = urllib.parse.quote("smsout/" + key.split("/", 1)[1], safe="")
-                req("PUT", f"/api/memory/agents/{forms_id}/kv/{enc_o}", {"value": out})
-                print(datetime.datetime.now().isoformat(), "sms reply approved -> outbox:", key)
+                try:
+                    existing_out = req("GET", f"/api/memory/agents/{forms_id}/kv/{enc_o}")
+                except Exception:
+                    existing_out = {}
+                if isinstance(existing_out, dict) and existing_out.get("value") is not None:
+                    print(datetime.datetime.now().isoformat(), "sms outbox already exists, not rewritten:", key)
+                else:
+                    out = {"to": v.get("to", ""), "body": v.get("body", ""), "thread": v.get("thread", ""),
+                           "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "status": "queued"}
+                    req("PUT", f"/api/memory/agents/{forms_id}/kv/{enc_o}", {"value": out})
+                    print(datetime.datetime.now().isoformat(), "sms reply approved -> outbox:", key)
             v["status"] = "decided"
             enc = urllib.parse.quote(key, safe="")
             req("PUT", f"/api/memory/agents/{forms_id}/kv/{enc}", {"value": v})

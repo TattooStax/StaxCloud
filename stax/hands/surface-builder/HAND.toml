@@ -3,7 +3,7 @@ name = "Surface Builder"
 description = "Builds and maintains boards (surfaces) in Studio from plain-language requests — the owner asks in chat, the board appears"
 category = "productivity"
 icon = "\U0001F4CB"
-tools = ["memory_store", "memory_recall", "memory_update"]
+tools = ["memory_store", "memory_recall"]
 
 [agent]
 name = "surface-builder"
