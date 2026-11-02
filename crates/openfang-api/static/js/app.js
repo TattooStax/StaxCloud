@@ -140,6 +140,8 @@ document.addEventListener('alpine:init', function() {
     formsTab: 'forms',
     smsTab: 'inbox',
     setupDone: false,
+    setupLoaded: false,
+    ownerName: 'Shawn',
     morningBrief: null,
     smsThreadCount: 0,
     showAllHelpers: false,
@@ -175,6 +177,7 @@ document.addEventListener('alpine:init', function() {
         if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
         this.setupDone = !!(v && v.business);
       } catch(e) { this.setupDone = false; }
+      this.setupLoaded = true;
     },
 
     async loadMorningBrief() {
@@ -196,6 +199,8 @@ document.addEventListener('alpine:init', function() {
       if (a.name === 'stax') return 'Stax';
       if (a.name === 'surface-builder') return 'Surface Builder';
       if (a.name === 'deep-work') return 'Deep Work';
+      if (a.name === 'sms') return 'Texts';
+      if (a.name === 'forms') return 'Forms';
       return a.name;
     },
     displayRole(a) {
@@ -232,19 +237,19 @@ document.addEventListener('alpine:init', function() {
       if (la) this.pendingAgent = la;
     },
 
-    smsAgent() {
+    // A module's "Agent" button opens that helper as a side chat in the
+    // side card (its own WebSocket), not the Advanced helpers console.
+    openSideChat(name) {
       var agents = this.agents || [];
-      var sa = agents.find(function(a) { return a.name === 'sms'; });
-      if (sa) this.pendingAgent = sa;
-      this.navigate('agents');
+      var a = agents.find(function(x) { return x.name === name; });
+      if (!a) return;
+      this.sideOpen = true;
+      window.dispatchEvent(new CustomEvent('side-chat', { detail: { agentId: a.id } }));
     },
 
-    formsAgent() {
-      var agents = this.agents || [];
-      var fa = agents.find(function(a) { return a.name === 'forms'; });
-      if (fa) this.pendingAgent = fa;
-      this.navigate('agents');
-    },
+    smsAgent() { this.openSideChat('sms'); },
+
+    formsAgent() { this.openSideChat('forms'); },
 
     async approveApproval(id) {
       try {
@@ -342,6 +347,7 @@ document.addEventListener('alpine:init', function() {
       OpenFangAPI.setAuthToken(key.trim());
       localStorage.setItem('openfang-api-key', key.trim());
       this.showAuthPrompt = false;
+      window.location.hash = 'chat';
       this.refreshAgents();
     },
 
@@ -351,6 +357,8 @@ document.addEventListener('alpine:init', function() {
         if (result.status === 'ok') {
           this.sessionUser = result.username;
           this.showAuthPrompt = false;
+          // Fresh login always lands on home.
+          window.location.hash = 'chat';
           this.refreshAgents();
         } else {
           OpenFangToast.error(result.error || 'Login failed');
@@ -380,8 +388,12 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { overview: 'home', setup: 'home', chat: 'home', agents: 'channels', sms: 'channels', comms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', logs: 'system', runtime: 'system', wizard: 'system' },
-    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'channels' },
+    surfaceOf: { chat: 'home', sms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', overview: 'advanced', agents: 'advanced', setup: 'advanced', comms: 'advanced', logs: 'advanced', runtime: 'advanced', wizard: 'advanced' },
+    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'channels', advanced: 'agents' },
+    // Pages demoted to System > Advanced. Their page keys are unchanged;
+    // only their URL hash carries an advanced/ prefix, so a stale #agents or
+    // #overview bookmark lands on home instead of the old consoles.
+    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard'],
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -426,9 +438,22 @@ function app() {
         var hash = window.location.hash.replace('#', '') || 'chat';
         if (pageRedirects[hash]) {
           hash = pageRedirects[hash];
-          window.location.hash = hash;
         }
-        if (validPages.indexOf(hash) >= 0) self.page = hash;
+        // advanced/<key> opens a demoted page; a bare demoted key is a
+        // stale landing and goes home.
+        if (hash.indexOf('advanced/') === 0) {
+          var key = hash.slice(9);
+          if (self.advancedPages.indexOf(key) >= 0) { self.page = key; self.surface = 'advanced'; }
+          return;
+        }
+        if (self.advancedPages.indexOf(hash) >= 0) hash = 'chat';
+        if (('#' + hash) !== window.location.hash) {
+          history.replaceState(null, '', '#' + hash);
+        }
+        if (validPages.indexOf(hash) >= 0) {
+          self.page = hash;
+          if (hash === 'chat' && self.surface !== 'channels') self.surface = 'home';
+        }
       }
       window.addEventListener('hashchange', handleHash);
       handleHash();
@@ -482,7 +507,7 @@ function app() {
 
     navigate(p) {
       this.page = p;
-      window.location.hash = p;
+      window.location.hash = (this.advancedPages.indexOf(p) >= 0 ? 'advanced/' : '') + p;
       this.mobileMenuOpen = false;
       Alpine.store('app').sideOpen = false;
       this.surface = this.surfaceOf[p] || this.surface;
@@ -552,6 +577,12 @@ function sidePanel() {
       var self = this;
       this.$watch('$store.app.sideOpen', function(open) {
         if (open) { self.onOpen(); } else { self.disconnectWs(); }
+      });
+      // Module "Agent" buttons open their helper here as a side chat.
+      window.addEventListener('side-chat', function(e) {
+        if (!e.detail || !e.detail.agentId) return;
+        self.tab = 'chats';
+        self.openChat(e.detail.agentId);
       });
     },
 
@@ -717,7 +748,9 @@ function sidePanel() {
       if (!this.chatAgent) return;
       Alpine.store('app').pendingAgent = this.chatAgent;
       Alpine.store('app').sideOpen = false;
-      navigate('agents');
+      // Stax's conversation is home; other helpers open in the Advanced
+      // helpers view.
+      navigate(this.chatAgent.name === 'stax' ? 'chat' : 'agents');
     },
 
     scrollDown() {

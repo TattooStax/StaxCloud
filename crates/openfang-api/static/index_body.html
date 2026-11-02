@@ -166,22 +166,15 @@
     <!-- Shell bar: the menu button plus the current surface's pill row.
          The one title on each screen lives in the page's own header, so
          this bar carries no title of its own. -->
-    <div class="stax-chips" x-cloak>
+    <div class="stax-chips" x-cloak x-show="page !== 'chat' || surf() === 'channels'">
       <div class="stax-chips-row">
         <button class="stax-menu-btn" @click="$store.app.sideOpen = true" aria-label="Open menu" title="Menu">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
         <div class="stax-pills" x-show="page !== 'chat' || surf() === 'channels'">
-      <template x-if="surf() === 'home'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" :class="{ active: page === 'overview' }" @click="navigate('overview')">Brief</button>
-            <button class="stax-chip" :class="{ active: page === 'setup' }" @click="navigate('setup')">Set up</button>
-        </div>
-      </template>
       <template x-if="surf() === 'channels'">
         <div class="stax-pills-group">
             <button class="stax-chip" :class="{ active: page === 'chat' }" @click="$store.app.staxAgent(); navigate('chat')">Chat</button>
-            <button class="stax-chip" :class="{ active: page === 'comms' }" @click="navigate('comms')">Team traffic</button>
             <button class="stax-chip" :class="{ active: page === 'sms' }" @click="navigate('sms')">Texts</button>
         </div>
       </template>
@@ -189,7 +182,6 @@
         <div class="stax-pills-group">
             <button class="stax-chip" :class="{ active: page === 'approvals' }" @click="navigate('approvals')">Needs you <span class="badge badge-warn" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span></button>
             <button class="stax-chip" :class="{ active: page === 'contacts' }" @click="navigate('contacts')">Contacts</button>
-            <button class="stax-chip" :class="{ active: page === 'agents' }" @click="navigate('agents')">Team</button>
             <button class="stax-chip" :class="{ active: page === 'sessions' }" @click="navigate('sessions')">History</button>
             <button class="stax-chip" :class="{ active: page === 'analytics' }" @click="navigate('analytics')">Reports</button>
         </div>
@@ -208,8 +200,20 @@
         <div class="stax-pills-group">
             <button class="stax-chip" :class="{ active: page === 'channels' }" @click="navigate('channels')">Connections</button>
             <button class="stax-chip" :class="{ active: page === 'settings' }" @click="navigate('settings')">Settings</button>
+            <button class="stax-chip" @click="navigate('agents')">Advanced</button>
+        </div>
+      </template>
+      <!-- System > Advanced: the demoted consoles, fully working, off every
+           owner surface. -->
+      <template x-if="surf() === 'advanced'">
+        <div class="stax-pills-group">
+            <button class="stax-chip" @click="navigate('channels')">System</button>
+            <button class="stax-chip" :class="{ active: page === 'agents' }" @click="navigate('agents')">Helpers</button>
+            <button class="stax-chip" :class="{ active: page === 'overview' }" @click="navigate('overview')">Overview</button>
+            <button class="stax-chip" :class="{ active: page === 'comms' }" @click="navigate('comms')">Team traffic</button>
             <button class="stax-chip" :class="{ active: page === 'logs' }" @click="navigate('logs')">Diagnostics</button>
             <button class="stax-chip" :class="{ active: page === 'runtime' }" @click="navigate('runtime')">System status</button>
+            <button class="stax-chip" :class="{ active: page === 'setup' }" @click="navigate('setup')">Step-by-step setup</button>
         </div>
       </template>
         </div>
@@ -267,13 +271,6 @@
               <button class="btn btn-primary" style="min-height:44px" @click="navigate('setup')">Start setup</button>
             </div>
           </div>
-
-            <div x-show="$store.app.morningBrief" style="margin-bottom:20px">
-              <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Morning brief</div>
-              <div class="card" style="border-color:var(--accent)">
-                <p style="margin:0;font-size:15px;line-height:1.55" x-text="$store.app.morningBrief && $store.app.morningBrief.text"></p>
-              </div>
-            </div>
 
             <div x-show="$store.app.pendingApprovals.length > 0" style="margin-bottom:20px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -643,8 +640,208 @@
       </div>
     </template>
 
-    <!-- Page: Agents -->
-    <template x-if="page === 'agents' || page === 'chat'">
+    <!-- Page: Home — the conversation with Stax is the landing.
+         Order: identity header, status, morning brief (+ Needs you),
+         the thread with Stax, the Ask Stax composer. The thread runs on
+         chatPage (same WS + HTTP fallback, same sessions); the brief card
+         is the brief/<date> kv record; Needs you is the approvals queue. -->
+    <template x-if="page === 'chat'">
+      <div class="home" x-data="homePage" :class="{ 'home--first': homeFirstOpen && !homeEngaged }">
+        <div class="home-inner" x-data="chatPage" x-init="homePinStax($data)">
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+            <defs>
+              <symbol id="stax-mark" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15.5" fill="none" stroke="currentColor" stroke-width="4"/><path d="M20 27 V13 M12.5 19.5 L20 11 L27.5 19.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            </defs>
+          </svg>
+
+          <header class="home-head">
+            <button class="stax-menu-btn" x-show="surf() !== 'channels'" @click="$store.app.sideOpen = true" aria-label="Open menu" title="Menu">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <button class="home-id" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
+              <span class="home-avatar"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+              <span class="home-id-name">Stax</span>
+            </button>
+            <span class="home-status" x-show="!(homeFirstOpen && !homeEngaged)" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
+          </header>
+
+          <div class="home-scroll" id="messages">
+            <!-- First open (no setup/profile yet): one next action -->
+            <section class="home-hero" x-show="homeFirstOpen && !homeEngaged" aria-label="Welcome">
+              <button class="home-mascot" @click="homeCard = true" aria-label="About Stax">
+                <svg class="home-mascot-svg" viewBox="0 0 160 160" aria-hidden="true">
+                  <circle class="m-halo" cx="80" cy="80" r="74"/>
+                  <circle class="m-disc" cx="80" cy="80" r="60"/>
+                  <circle class="m-ring" cx="80" cy="80" r="40" pathLength="100"/>
+                  <path class="m-arrow" d="M80 98 V62 M60.6 78.7 L80 56.8 L99.4 78.7"/>
+                  <g class="m-orbit"><circle cx="80" cy="6" r="5"/></g>
+                </svg>
+              </button>
+              <span class="home-status home-status--hero" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
+              <h1 class="home-greet">What&rsquo;s next, <span x-text="$store.app.ownerName"></span>?</h1>
+              <button class="home-cta" @click="homeStartSetup(messages.length)">Set up my studio</button>
+              <button class="home-quiet-link" x-show="messages.length > 0" @click="homeEngaged = true; $nextTick(() => scrollToBottom())">Show our earlier conversation</button>
+            </section>
+
+            <div class="home-column" x-show="!(homeFirstOpen && !homeEngaged)">
+              <!-- Morning brief: the real brief/<date> record, first card -->
+              <article class="home-brief" x-show="!homeFirstOpen || $store.app.morningBrief" aria-labelledby="home-brief-title">
+                <header class="home-brief-head">
+                  <h2 id="home-brief-title">Morning brief</h2>
+                  <span x-text="homeToday"></span>
+                </header>
+                <p class="home-brief-text" x-show="$store.app.morningBrief" x-text="$store.app.morningBrief && $store.app.morningBrief.text"></p>
+                <p class="home-brief-empty" x-show="!$store.app.morningBrief">Today&rsquo;s brief isn&rsquo;t in yet. It lands here each morning.</p>
+                <button class="home-needs" x-show="$store.app.pendingApprovalCount > 0" @click="navigate('approvals')">
+                  <span class="home-needs-count" x-text="$store.app.pendingApprovalCount"></span>
+                  <span class="home-needs-words" x-text="homeNeedsWords"></span>
+                  <span class="home-needs-go">Review</span>
+                </button>
+                <p class="home-needs home-needs--clear" x-show="$store.app.pendingApprovalCount === 0">Nothing needs you right now</p>
+              </article>
+
+              <!-- The conversation with Stax -->
+              <div class="home-thread" aria-live="polite">
+                <template x-for="(msg, $index) in messages" :key="msg.id">
+                  <div class="home-msg" :class="'home-msg--' + msg.role" :style="{ order: $index * 2 }">
+                    <template x-if="msg.role === 'agent'">
+                      <div class="home-msg-row">
+                        <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+                        <div class="home-msg-card">
+                          <div class="typing-dots" x-show="msg.thinking" aria-label="Stax is thinking"><span></span><span></span><span></span></div>
+                          <div class="markdown-body home-msg-text" x-show="!msg.thinking && msg.text && msg.text.trim()" x-html="renderMarkdown(msg.text)"></div>
+                          <div class="home-msg-working" x-show="!msg.thinking && !(msg.text && msg.text.trim())">Working on it</div>
+                          <template x-for="tool in (msg.tools || [])" :key="tool.id">
+                            <div class="home-msg-images" x-show="tool._imageUrls && tool._imageUrls.length">
+                              <template x-for="iurl in (tool._imageUrls || [])" :key="iurl">
+                                <a :href="iurl" target="_blank" rel="noopener"><img :src="iurl" alt="Image from Stax" loading="lazy"></a>
+                              </template>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="msg.role === 'user'">
+                      <div class="home-msg-bubble">
+                        <span x-text="msg.text"></span>
+                        <template x-if="msg.images && msg.images.length">
+                          <div class="home-msg-images">
+                            <template x-for="img in msg.images" :key="img.file_id">
+                              <img :src="'/api/uploads/' + img.file_id" :alt="img.filename || 'Your image'" loading="lazy">
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    <template x-if="msg.role === 'system'">
+                      <div class="home-msg-note" :class="{ 'is-failure': homeIsFailure(msg.text) }" x-html="homeIsFailure(msg.text) ? escapeHtml(homeSystemText(msg.text)) : renderMarkdown(msg.text)"></div>
+                    </template>
+                  </div>
+                </template>
+
+                <!-- Set up my studio: the first-run setup as turns with Stax.
+                     Same setupPage flow and records (setup/profile, the
+                     matching playbooks, the "Your crew" board). -->
+                <template x-if="homeSetup">
+                  <div class="home-setup" x-data="setupPage" x-init="loadData()" :style="{ order: homeSetupAt * 2 - 1 }">
+                    <div class="home-msg home-msg--user"><div class="home-msg-bubble">Set up my studio</div></div>
+                    <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                      <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+                      <div class="home-msg-card"><p>Hey, I&rsquo;m Stax. Before anything else: what kind of business are we running?</p></div>
+                    </div></div>
+                    <div class="home-replies" x-show="!business && !done" role="group" aria-label="Your business">
+                      <template x-for="b in bizOptions" :key="b.id">
+                        <button class="home-reply" @click="business = b.id; step = Math.max(step, 1); $nextTick(() => scrollToBottom())" x-text="b.label"></button>
+                      </template>
+                    </div>
+                    <div class="home-msg home-msg--user" x-show="business"><div class="home-msg-bubble" x-text="bizLabel(business)"></div></div>
+
+                    <template x-if="step >= 1">
+                      <div>
+                        <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                          <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+                          <div class="home-msg-card"><p>What eats your time? Pick everything that sounds familiar. I&rsquo;ll only bring in help for what you pick.</p></div>
+                        </div></div>
+                        <div class="home-replies" x-show="step < 2" role="group" aria-label="What eats your time">
+                          <template x-for="n in needOptions" :key="n.id">
+                            <button class="home-reply" :class="{ 'is-on': needs.indexOf(n.id) >= 0 }" :aria-pressed="needs.indexOf(n.id) >= 0" @click="toggleNeed(n.id)" x-text="n.label"></button>
+                          </template>
+                          <button class="home-reply home-reply--go" @click="step = 2; $nextTick(() => scrollToBottom())" x-text="needs.length ? 'That\u2019s everything' : 'None of these'"></button>
+                        </div>
+                        <div class="home-msg home-msg--user" x-show="step >= 2"><div class="home-msg-bubble" x-text="needs.length ? needOptions.filter(n => needs.indexOf(n.id) >= 0).map(n => n.label).join(', ') : 'None of these for now'"></div></div>
+                      </div>
+                    </template>
+
+                    <template x-if="step >= 2">
+                      <div>
+                        <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                          <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+                          <div class="home-msg-card"><p>Last one. How do you want to hear from me?</p></div>
+                        </div></div>
+                        <div class="home-replies" x-show="!done" role="group" aria-label="How to hear from Stax">
+                          <button class="home-reply" :class="{ 'is-on': brief === 'morning' }" :aria-pressed="brief === 'morning'" @click="brief = 'morning'">A morning brief</button>
+                          <button class="home-reply" :class="{ 'is-on': brief === 'live' }" :aria-pressed="brief === 'live'" @click="brief = 'live'">As things happen</button>
+                          <button class="home-reply" :class="{ 'is-on': brief === 'both' }" :aria-pressed="brief === 'both'" @click="brief = 'both'">Both</button>
+                          <button class="home-reply home-reply--go" @click="finish().then(() => $store.app.loadSetup()).then(() => setTimeout(() => scrollToBottom(), 60))" :disabled="saving || !business" x-text="saving ? 'Setting up\u2026' : 'Set up my crew'"></button>
+                        </div>
+                        <template x-if="done">
+                          <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                            <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+                            <div class="home-msg-card"><p>Your crew is set. The &ldquo;Your crew&rdquo; board in Boards has the full picture. Want anything different? Just tell me here.</p></div>
+                          </div></div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ask Stax -->
+          <div class="home-compose">
+            <div class="home-compose-box">
+              <textarea id="msg-input" rows="1" placeholder="Ask Stax" aria-label="Ask Stax" x-model="inputText"
+                        @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); if (inputText.trim()) { homeEngaged = true; sendMessage(); }}"
+                        @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>
+              <button class="home-send" x-show="!sending" @click="homeEngaged = true; sendMessage()" :disabled="!inputText.trim() || !currentAgent" aria-label="Send to Stax">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+              </button>
+              <button class="home-send home-send--stop" x-show="sending" @click="stopAgent()" aria-label="Stop Stax">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- The Stax card (opened from the identity header or the mascot) -->
+          <div class="home-card-scrim" x-show="homeCard" x-cloak x-transition.opacity @click="homeCard = false"></div>
+          <section class="home-card" x-show="homeCard" x-cloak role="dialog" aria-modal="true" aria-labelledby="home-card-title" @keydown.escape.window="homeCard = false"
+                   x-transition:enter="home-card-enter" x-transition:enter-start="home-card-from" x-transition:enter-end="home-card-to"
+                   x-transition:leave="home-card-leave" x-transition:leave-start="home-card-to" x-transition:leave-end="home-card-from">
+            <div class="home-card-top">
+              <span class="home-avatar home-avatar--lg"><svg aria-hidden="true"><use href="#stax-mark"/></svg></span>
+              <div>
+                <h2 id="home-card-title">Stax</h2>
+                <p>Your lead</p>
+              </div>
+            </div>
+            <p class="home-card-about">Takes every ask, answers from the studio&rsquo;s own records, and hands the rest to the right helper behind the scenes.</p>
+            <dl class="home-card-facts">
+              <div><dt>Right now</dt><dd x-text="homeStatus.words"></dd></div>
+              <div><dt>Needs you</dt><dd x-text="homeNeedsWords"></dd></div>
+              <div><dt>Morning brief</dt><dd x-text="$store.app.morningBrief ? 'In for today' : 'Not in yet today'"></dd></div>
+            </dl>
+            <div class="home-card-actions">
+              <button class="home-card-btn" @click="homeFreshConversation($data); homeCard = false" :disabled="!currentAgent">Start a fresh conversation</button>
+              <button class="home-card-btn home-card-btn--quiet" @click="homeCard = false">Done</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Agents (System > Advanced > Helpers) -->
+    <template x-if="page === 'agents'">
       <div x-data="agentsPage" @close-chat.window="closeChat()" @open-chat.window="openChat()">
 
         <!-- MODE 1: Inline Chat (agent selected) -->
@@ -950,7 +1147,7 @@
         <!-- MODE 2: Agent picker + Templates (no agent chatting) -->
         <div x-show="!activeChatAgent" class="chat-wrapper">
         <div class="page-header">
-          <h2>Channels</h2>
+          <h2>Helpers</h2>
           <div class="flex gap-2">
             <button class="btn btn-ghost btn-sm" x-show="agents.length" @click="openSpawnWizard()">+ New Helper</button>
             <button class="btn btn-danger btn-sm" x-show="agents.length > 1" @click="killAllAgents()">Stop All</button>
@@ -6031,7 +6228,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     <div x-data="{ secOpen: true }">
       <button class="stax-drawer-sec" @click="secOpen = !secOpen"><span>Channels</span><span class="stax-drawer-chev" :style="secOpen ? 'transform:rotate(90deg)' : ''">&rsaquo;</span></button>
       <div x-show="secOpen" x-cloak>
-        <button class="stax-drawer-item" @click="navigate('comms')">Inbox</button>
+        <button class="stax-drawer-item" @click="navigate('sms')">Inbox</button>
       </div>
     </div>
     <div x-data="{ secOpen: true }">
@@ -6047,7 +6244,17 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div x-show="secOpen" x-cloak>
         <button class="stax-drawer-item" @click="navigate('settings')">Settings</button>
         <button class="stax-drawer-item" @click="navigate('channels')">Connections</button>
-        <button class="stax-drawer-item" @click="navigate('agents')">Helpers</button>
+        <div x-data="{ advOpen: false }">
+          <button class="stax-drawer-item stax-drawer-adv" @click="advOpen = !advOpen" :aria-expanded="advOpen"><span>Advanced</span><span class="stax-drawer-chev" :style="advOpen ? 'transform:rotate(90deg)' : ''">&rsaquo;</span></button>
+          <div x-show="advOpen" x-cloak>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('agents')">Helpers</button>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('overview')">Overview</button>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('comms')">Team traffic</button>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('logs')">Diagnostics</button>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('runtime')">System status</button>
+            <button class="stax-drawer-item stax-drawer-sub" @click="navigate('setup')">Step-by-step setup</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -6057,7 +6264,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/></svg>
         <span>Home</span>
       </button>
-      <button class="stax-tile" @click="navigate('comms')">
+      <button class="stax-tile" @click="navigate('sms')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
         <span>Inbox</span>
       </button>
@@ -6080,19 +6287,25 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
   <!-- Chats: session list -->
   <div x-show="tab === 'chats' && view === 'list'" style="flex:1;overflow-y:auto;padding:14px">
+    <!-- The any-helper picker is an Advanced tool: it shows only when the
+         side card is opened from an Advanced view. -->
+    <div x-show="surf() === 'advanced'">
     <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Start a side chat</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px">
       <template x-for="a in $store.app.agents" :key="a.id">
         <button class="stax-chip" @click="openChat(a.id)" x-text="a.name"></button>
       </template>
     </div>
+    </div>
     <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Recent conversations</div>
     <div x-show="loadingList" class="text-sm text-dim">Loading...</div>
-    <div x-show="!loadingList && sessions.length === 0" class="text-sm text-dim">No conversations yet. Start one above and it will live here.</div>
+    <div x-show="!loadingList && sessions.filter(x => surf() === 'advanced' || x.agent_name === 'stax').length === 0" class="text-sm text-dim">No side chats yet. Conversations you start here will live here.</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <template x-for="s in sessions" :key="s.session_id">
+      <!-- Owner surfaces list only conversations with Stax; the full
+           per-helper list is an Advanced view. -->
+      <template x-for="s in sessions.filter(x => surf() === 'advanced' || x.agent_name === 'stax')" :key="s.session_id">
         <button class="side-session" @click="openChat(s.agent_id, s.session_id)">
-          <span style="font-weight:600;font-size:14px" x-text="s.agent_name"></span>
+          <span style="font-weight:600;font-size:14px" x-text="s.agent_name === 'stax' ? 'Stax' : s.agent_name"></span>
           <span class="text-xs text-dim" x-text="(s.label || 'Conversation') + ' - ' + (s.message_count || 0) + ' messages - ' + fmtWhen(s.created_at)"></span>
         </button>
       </template>
@@ -6103,7 +6316,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
   <div x-show="tab === 'chats' && view === 'chat'" style="flex:1;display:flex;flex-direction:column;min-height:0">
     <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
       <button class="stax-chip" @click="view = 'list'; disconnectWs()">&larr; All chats</button>
-      <span style="font-weight:700;font-size:14px" x-text="chatAgent ? chatAgent.name : ''"></span>
+      <span style="font-weight:700;font-size:14px" x-text="chatAgent ? $store.app.displayName(chatAgent) : ''"></span>
       <span class="badge" :class="wsState === 'live' ? 'badge-success' : 'badge-muted'" x-text="wsState === 'live' ? 'Live' : (wsState === 'connecting' ? 'Joining' : 'Relay')"></span>
       <button class="stax-chip" style="margin-left:auto" @click="openInChannels()">Open in Channels</button>
     </div>
