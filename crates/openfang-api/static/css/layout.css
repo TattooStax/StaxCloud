@@ -391,9 +391,12 @@ button.stax-drawer-row:hover { background: var(--surface); }
 .side-msg-agent { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 .side-msg-system { align-self: center; background: transparent; color: var(--text-dim); font-size: 12px; }
 
-/* R10 desktop/tablet pass (stax-wide-measure): on wide screens the app keeps a
-   phone-calm measure — content and dock center instead of stretching. */
+/* On wide screens the app keeps a phone-calm measure — content and dock
+   center instead of stretching. Both are in-flow flex children, so both
+   center with auto margins; the dock must not use left/transform centering,
+   which only works on positioned elements and shifts an in-flow box left by
+   half its own width, cutting off its left end. */
 @media (min-width: 1024px) {
   .main-content { max-width: 920px; margin-left: auto; margin-right: auto; width: 100%; }
-  .stax-dock { max-width: 920px; left: 50%; transform: translateX(-50%); width: 100%; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .stax-dock { max-width: 920px; margin-left: auto; margin-right: auto; width: 100%; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 }
