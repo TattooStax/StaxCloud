@@ -40,6 +40,13 @@ brushset.plist manifest). Savage publishes no spec, so the export
 is research-conformant and its importability is UNPROVEN — every
 record carries that status; the iPad test-import against a real
 Procreate export remains the integration gate.
+Slice R1 adds durable recovery (REVIEW-GBT2 §A.5): a monotonic
+revision counter on every document, bumped by each mutation and
+checked against the base_revision async results carry (stale
+results are refused, never landed); the snapshot store persisted
+to disk so named approved versions survive restarts and restore
+byte-identical; and atomic writes (temp + rename) as the
+package's only file sink (storage.py).
 """
 
 from .brush import (
@@ -86,8 +93,10 @@ from .document import (
     Layer,
     LockedError,
     SnapshotStore,
+    StaleRevisionError,
     mm_to_px,
 )
+from .storage import atomic_write_bytes, atomic_write_text
 from .dragdrop import (
     ViewerState,
     drag_element,
@@ -145,6 +154,9 @@ __all__ = [
     "Layer",
     "LockedError",
     "SnapshotStore",
+    "StaleRevisionError",
+    "atomic_write_bytes",
+    "atomic_write_text",
     "HISTORY_MAX",
     "SNAPSHOT_MAX",
     "mm_to_px",

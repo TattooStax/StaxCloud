@@ -287,6 +287,7 @@ def set_lighting(doc, spec) -> dict:
     doc._push_history()
     doc.lighting = normalized
     doc.ops_log.append({"op": "doc.set_lighting", "lighting": normalized})
+    doc._note_mutation()
     return doc.lighting
 
 
@@ -315,4 +316,5 @@ def set_element_lighting(doc, layer_id: str, receive_light: bool | None = None,
     doc.lighting = normalized
     doc.ops_log.append({"op": "doc.set_element_lighting", "id": layer.id,
                         "flags": normalized["element_flags"][layer.id]})
+    doc._note_mutation()
     return normalized["element_flags"][layer.id]

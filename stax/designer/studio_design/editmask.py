@@ -70,6 +70,18 @@ round-trips through JSON (`to_dict` / `from_dict`) so a host can
 store or transmit it; `mask_ref` names a mask a host holds, and is
 resolved only when a masks mapping is handed to build_mask /
 apply_edit.
+
+R1 adds the STALE-RESULT gate, which runs FIRST in apply_edit —
+before validation and before either pixel gate: a request may
+carry `base_revision`, the document revision its proposal was
+computed against. When it is set and no longer equals the
+document's current revision, the document has been edited since
+the model saw it, and the result is REFUSED — the document is
+untouched and the refusal (both revisions named) is appended to
+the ops log as `edit.stale_refused` and returned in the result
+record. A request with base_revision None is a legacy,
+unguarded request and skips the check (the artist is driving it
+synchronously); a guarded async pipeline always sets it.
 """
 
 from __future__ import annotations
@@ -149,6 +161,10 @@ class EditRequest:
     created_by: str = ""
     geometry_authorized: bool = False
     kind: str | None = None
+    # R1: the document revision this request's proposal is computed
+    # against. None = unguarded (legacy/synchronous); an int arms
+    # the stale-result gate in apply_edit.
+    base_revision: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -160,6 +176,7 @@ class EditRequest:
             "created_by": self.created_by,
             "geometry_authorized": bool(self.geometry_authorized),
             "kind": self.kind,
+            "base_revision": self.base_revision,
         }
 
     @classmethod
@@ -173,6 +190,7 @@ class EditRequest:
             created_by=data.get("created_by", ""),
             geometry_authorized=bool(data.get("geometry_authorized", False)),
             kind=data.get("kind"),
+            base_revision=data.get("base_revision"),
         )
 
     def to_json(self) -> str:
@@ -504,7 +522,25 @@ def apply_edit(doc: DesignDoc, request: EditRequest,
     Returns an applied record {refused: False, ok: True, op,
     verification, discarded_px, mask_editable_px} or a refusal
     {refused: True, ok: False, verification, preview} — and on
-    refusal the document is exactly as it was before the call."""
+    refusal the document is exactly as it was before the call.
+
+    R1 STALE GATE (runs before everything else): when the request
+    carries a base_revision that no longer equals the document's
+    revision, the result is refused with reason "stale_revision"
+    — the document's content and history are untouched (the
+    refusal itself is appended to the ops log, naming both
+    revisions: an audit entry, not a mutation, so it does not
+    advance the revision)."""
+    if (request.base_revision is not None
+            and int(request.base_revision) != doc.revision):
+        doc.ops_log.append({
+            "op": "edit.stale_refused", "request_id": request.request_id,
+            "base_revision": int(request.base_revision),
+            "current_revision": doc.revision})
+        return {"refused": True, "ok": False, "reason": "stale_revision",
+                "request_id": request.request_id,
+                "base_revision": int(request.base_revision),
+                "current_revision": doc.revision}
     governing = validate_edit_request(doc, request)
     target = governing["target"]
     if target["type"] != "layer":
@@ -615,6 +651,7 @@ def apply_edit(doc: DesignDoc, request: EditRequest,
                 "discarded_px": discarded_px,
                 "preview": preview}
 
+    doc._note_mutation()  # the edit landed: one mutation, one bump
     return {"refused": False, "ok": True,
             "request_id": request.request_id,
             "op": op,
