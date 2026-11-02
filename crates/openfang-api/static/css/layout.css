@@ -380,6 +380,10 @@
 .stax-side {
   --sec-channels: #3f6486; --sec-studio: #885264; --sec-system: #576373;
   --sec-studio-2: #a0566b; --sec-studio-3: #6f4357;
+  /* App-row tile faces. On light they are the section accents themselves;
+     Canvas and Connections take one more step in their section's family. */
+  --tile-channels: var(--sec-channels); --tile-studio: var(--sec-studio); --tile-studio-2: var(--sec-studio-2); --tile-studio-3: var(--sec-studio-3); --tile-studio-4: #7d4f78;
+  --tile-system: var(--sec-system); --tile-system-2: #4f6670;
   --sd-hover: color-mix(in srgb, var(--text) 5%, transparent);
   --sd-press: color-mix(in srgb, var(--text) 9%, transparent);
   font-family: var(--font-sans);
@@ -387,8 +391,9 @@
 [data-theme="dark"] .stax-side {
   --sec-channels: #7fa3c4; --sec-studio: #c98ea1; --sec-system: #9aa6b6;
   --sec-studio-2: #d79aac; --sec-studio-3: #b9849a;
-  /* Tile faces sit on a dark tray: mid-tones of the same accents */
-  --tile-channels: #4d7599; --tile-studio: #9a5f73; --tile-studio-2: #b06d83; --tile-studio-3: #80506a; --tile-system: #67768a;
+  /* Tile faces on the dark card: mid-tones of the same accents */
+  --tile-channels: #4d7599; --tile-studio: #9a5f73; --tile-studio-2: #b06d83; --tile-studio-3: #80506a; --tile-studio-4: #885c84;
+  --tile-system: #67768a; --tile-system-2: #5b7480;
 }
 .stax-side ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .sd-ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -405,7 +410,7 @@
 .sd-close { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: none; border-radius: 10px; color: var(--text-dim); cursor: pointer; }
 .sd-close:hover { background: var(--sd-hover); color: var(--text); }
 
-.sd-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 12px 20px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.sd-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 12px calc(20px + env(safe-area-inset-bottom)); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .sd-body::-webkit-scrollbar { width: 6px; }
 .sd-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 
@@ -467,41 +472,34 @@ button.sd-person:active { background: var(--sd-press); }
 .sd-more:hover { text-decoration: underline; text-underline-offset: 3px; }
 .sd-empty { margin: 2px 0 0; padding: 6px 10px 6px 36px; font-size: 13.5px; color: var(--text-dim); line-height: 1.45; }
 
-/* Tiles: app-icon faces on a canvas tray */
-.sd-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 14px 8px 12px; background: var(--bg); border: 1px solid var(--border-subtle, var(--border)); border-radius: 14px; }
-.sd-tile { display: flex; flex-direction: column; align-items: center; gap: 7px; min-height: 76px; padding: 0; border: none; background: none; cursor: pointer; border-radius: 10px; }
-.sd-tile-face { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 14px; background: var(--tile); color: #fff; box-shadow: 0 4px 10px -2px color-mix(in srgb, var(--tile) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.12); transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease; }
-[data-theme="dark"] .sd-tile-face { box-shadow: 0 4px 12px -2px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.2); }
-.sd-tile[data-tile="channels"] { --tile: var(--sec-channels); }
-.sd-tile[data-tile="studio"] { --tile: var(--sec-studio); }
-.sd-tile[data-tile="studio-2"] { --tile: var(--sec-studio-2); }
-.sd-tile[data-tile="studio-3"] { --tile: var(--sec-studio-3); }
-.sd-tile[data-tile="system"] { --tile: var(--sec-system); }
-[data-theme="dark"] .sd-tile[data-tile="channels"] { --tile: var(--tile-channels); }
-[data-theme="dark"] .sd-tile[data-tile="studio"] { --tile: var(--tile-studio); }
-[data-theme="dark"] .sd-tile[data-tile="studio-2"] { --tile: var(--tile-studio-2); }
-[data-theme="dark"] .sd-tile[data-tile="studio-3"] { --tile: var(--tile-studio-3); }
-[data-theme="dark"] .sd-tile[data-tile="system"] { --tile: var(--tile-system); }
-.sd-tile-face .sd-ico { width: 22px; height: 22px; stroke-width: 1.9; }
-.sd-tile-name { font-size: 12px; font-weight: 600; color: var(--text-secondary, var(--text)); letter-spacing: -0.005em; }
-.sd-tile:hover .sd-tile-face { transform: translateY(-2px); box-shadow: 0 8px 16px -4px color-mix(in srgb, var(--tile) 55%, transparent), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.12); }
-.sd-tile:active .sd-tile-face { transform: scale(0.94); }
-.sd-tile:focus-visible { outline-offset: 2px; }
-/* The one authored moment: the tiles rise in as the drawer opens. */
-.stax-side.open .sd-tile-face { animation: sd-tile-in 0.46s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-.stax-side.open .sd-tile:nth-child(2) .sd-tile-face { animation-delay: 0.04s; }
-.stax-side.open .sd-tile:nth-child(3) .sd-tile-face { animation-delay: 0.08s; }
-.stax-side.open .sd-tile:nth-child(4) .sd-tile-face { animation-delay: 0.12s; }
-.stax-side.open .sd-tile:nth-child(5) .sd-tile-face { animation-delay: 0.16s; }
-@keyframes sd-tile-in { from { transform: translateY(8px) scale(0.92); opacity: 0.35; } }
+/* App rows carry their icon on a tile face: the removed Shortcuts strip's
+   colors and corner treatment (radius ~30% of the face), at row scale. */
+.sd-sec-rows .sd-row { min-height: 46px; }
+.sd-chip { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; background: var(--tile); color: #fff; box-shadow: 0 2px 6px -1px color-mix(in srgb, var(--tile) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.12); }
+[data-theme="dark"] .sd-chip { box-shadow: 0 2px 7px -1px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.2); }
+.sd-row .sd-chip .sd-ico { width: 17px; height: 17px; stroke-width: 1.9; color: #fff; }
+.sd-chip[data-tile="channels"] { --tile: var(--tile-channels); }
+.sd-chip[data-tile="studio"] { --tile: var(--tile-studio); }
+.sd-chip[data-tile="studio-2"] { --tile: var(--tile-studio-2); }
+.sd-chip[data-tile="studio-3"] { --tile: var(--tile-studio-3); }
+.sd-chip[data-tile="studio-4"] { --tile: var(--tile-studio-4); }
+.sd-chip[data-tile="system"] { --tile: var(--tile-system); }
+.sd-chip[data-tile="system-2"] { --tile: var(--tile-system-2); }
+.sd-row:active .sd-chip { transform: scale(0.94); }
+/* The one authored moment: a section's tiles rise in as it is opened. */
+.sd-sec-rows .sd-chip { animation: sd-chip-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) backwards; transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.sd-sec-rows .sd-row:nth-child(2) .sd-chip { animation-delay: 0.03s; }
+.sd-sec-rows .sd-row:nth-child(3) .sd-chip { animation-delay: 0.06s; }
+.sd-sec-rows .sd-row:nth-child(4) .sd-chip { animation-delay: 0.09s; }
+@keyframes sd-chip-in { from { transform: translateY(5px) scale(0.9); opacity: 0.35; } }
 
-/* Owner footer, pinned */
-.sd-foot { flex: none; padding: 6px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
+/* Owner: the last block of the one scroll, closing at Sign out */
+.sd-owner { margin-top: 10px; border-top: 1px solid var(--border-subtle, var(--border)); }
 .sd-row--foot { padding-left: 10px; font-size: 14.5px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .stax-side, .stax-r4, .sd-chev, .sd-tile-face { transition: none; }
-  .stax-side.open .sd-tile-face { animation: none; }
+  .stax-side, .stax-r4, .sd-chev, .sd-chip { transition: none; }
+  .sd-sec-rows .sd-chip { animation: none; }
 }
 
 .side-session { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--text); min-height: 44px; }

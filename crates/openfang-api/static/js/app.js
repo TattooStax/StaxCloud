@@ -789,7 +789,9 @@ function sidePanel() {
 // session. Status comes from staxStatus() (home.js), the pill's own source.
 function staxDrawer() {
   return {
-    open: { channels: true, studio: true, system: true },
+    // Channels / Studio / System open collapsed every time the drawer opens.
+    // Expanding one lasts only for that visit; nothing is persisted.
+    open: { channels: false, studio: false, system: false },
     chats: [],
     loaded: false,
     showAll: false,
@@ -799,18 +801,27 @@ function staxDrawer() {
 
     initDrawer() {
       var self = this;
-      try {
-        var saved = JSON.parse(localStorage.getItem('stax-drawer-open') || 'null');
-        if (saved && typeof saved === 'object') {
-          ['channels', 'studio', 'system'].forEach(function(k) { if (typeof saved[k] === 'boolean') self.open[k] = saved[k]; });
-        }
-      } catch(e) { /* ignore */ }
-      this.$watch('$store.app.sideOpen', function(isOpen) { if (isOpen) self.loadChats(); });
+      // The Step 2 build remembered expanded sections; drop that key so no
+      // stale value lingers on owners' phones.
+      try { localStorage.removeItem('stax-drawer-open'); } catch(e) { /* ignore */ }
+      this.$watch('$store.app.sideOpen', function(isOpen) {
+        if (!isOpen) return;
+        self.collapseAll();
+        self.loadChats();
+      });
+    },
+
+    collapseAll() {
+      this.open.channels = false;
+      this.open.studio = false;
+      this.open.system = false;
+      var body = this.$el.querySelector('.sd-body');
+      if (body) body.scrollTop = 0;
+      this.scrolled = false;
     },
 
     toggle(k) {
       this.open[k] = !this.open[k];
-      try { localStorage.setItem('stax-drawer-open', JSON.stringify(this.open)); } catch(e) { /* ignore */ }
     },
 
     staxId() {

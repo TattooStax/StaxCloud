@@ -6206,7 +6206,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 <!-- Toast notification container -->
 <!-- Side card — opened from the shell bar's menu button. One composition:
      wordmark, the team as people, the app's places, Stax conversations,
-     tiles, owner footer. Every row is a projection of real state and opens an
+     owner block — one scroll. Every row is a projection of real state and opens an
      existing page key; navigating anywhere closes the drawer (navigate()). -->
 <div class="stax-side-backdrop" x-show="$store.app.sideOpen" x-cloak @click="$store.app.sideOpen = false"></div>
 <aside class="stax-side" :class="{ open: $store.app.sideOpen }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
@@ -6272,7 +6272,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.channels }" aria-hidden="true"><use href="#sd-chev"/></svg>
         </button>
         <div class="sd-sec-rows" id="sd-sec-channels" x-show="open.channels">
-          <button class="sd-row" :class="{ 'is-here': page === 'sms' }" :aria-current="page === 'sms' ? 'page' : false" @click="$store.app.smsTab = 'inbox'; navigate('sms')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-inbox"/></svg><span>Inbox</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'sms' }" :aria-current="page === 'sms' ? 'page' : false" @click="$store.app.smsTab = 'inbox'; navigate('sms')"><span class="sd-chip" data-tile="channels" aria-hidden="true"><svg class="sd-ico"><use href="#sd-inbox"/></svg></span><span>Inbox</span></button>
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-studio)">
@@ -6282,13 +6282,13 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.studio }" aria-hidden="true"><use href="#sd-chev"/></svg>
         </button>
         <div class="sd-sec-rows" id="sd-sec-studio" x-show="open.studio">
-          <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-forms"/></svg><span>Forms</span></button>
-          <button class="sd-row" :class="{ 'is-here': page === 'boards' }" :aria-current="page === 'boards' ? 'page' : false" @click="goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-library"/></svg><span>Library</span></button>
-          <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-contacts"/></svg><span>Contacts</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><span class="sd-chip" data-tile="studio" aria-hidden="true"><svg class="sd-ico"><use href="#sd-forms"/></svg></span><span>Forms</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'boards' }" :aria-current="page === 'boards' ? 'page' : false" @click="goSurface('boards')"><span class="sd-chip" data-tile="studio-2" aria-hidden="true"><svg class="sd-ico"><use href="#sd-library"/></svg></span><span>Library</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><span class="sd-chip" data-tile="studio-3" aria-hidden="true"><svg class="sd-ico"><use href="#sd-contacts"/></svg></span><span>Contacts</span></button>
           <!-- Canvas: the artists' design studio. Its board lives under Boards,
                which picks a board with its own local state only, so this row
                opens the Boards page exactly as the dock does. -->
-          <button class="sd-row" @click="goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-canvas"/></svg><span>Canvas</span></button>
+          <button class="sd-row" @click="goSurface('boards')"><span class="sd-chip" data-tile="studio-4" aria-hidden="true"><svg class="sd-ico"><use href="#sd-canvas"/></svg></span><span>Canvas</span></button>
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-system)">
@@ -6298,8 +6298,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.system }" aria-hidden="true"><use href="#sd-chev"/></svg>
         </button>
         <div class="sd-sec-rows" id="sd-sec-system" x-show="open.system">
-          <button class="sd-row" :class="{ 'is-here': page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-settings"/></svg><span>Settings</span></button>
-          <button class="sd-row" :class="{ 'is-here': page === 'channels' }" :aria-current="page === 'channels' ? 'page' : false" @click="navigate('channels')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-connections"/></svg><span>Connections</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')"><span class="sd-chip" data-tile="system" aria-hidden="true"><svg class="sd-ico"><use href="#sd-settings"/></svg></span><span>Settings</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'channels' }" :aria-current="page === 'channels' ? 'page' : false" @click="navigate('channels')"><span class="sd-chip" data-tile="system-2" aria-hidden="true"><svg class="sd-ico"><use href="#sd-connections"/></svg></span><span>Connections</span></button>
         </div>
       </div>
     </nav>
@@ -6321,22 +6321,14 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <p class="sd-empty" x-show="loaded && chats.length === 0">Your conversations with Stax will collect here.</p>
     </section>
 
-    <!-- 5. Tiles: a second, visual path to the drawer's own places -->
-    <div class="sd-tiles" role="group" aria-label="Shortcuts">
-      <button class="sd-tile" data-tile="channels" @click="$store.app.smsTab = 'inbox'; navigate('sms')"><span class="sd-tile-face" aria-hidden="true"><svg class="sd-ico"><use href="#sd-inbox"/></svg></span><span class="sd-tile-name">Inbox</span></button>
-      <button class="sd-tile" data-tile="studio" @click="navigate('forms')"><span class="sd-tile-face" aria-hidden="true"><svg class="sd-ico"><use href="#sd-forms"/></svg></span><span class="sd-tile-name">Forms</span></button>
-      <button class="sd-tile" data-tile="studio-2" @click="goSurface('boards')"><span class="sd-tile-face" aria-hidden="true"><svg class="sd-ico"><use href="#sd-library"/></svg></span><span class="sd-tile-name">Library</span></button>
-      <button class="sd-tile" data-tile="studio-3" @click="navigate('contacts')"><span class="sd-tile-face" aria-hidden="true"><svg class="sd-ico"><use href="#sd-contacts"/></svg></span><span class="sd-tile-name">Contacts</span></button>
-      <button class="sd-tile" data-tile="system" @click="navigate('settings')"><span class="sd-tile-face" aria-hidden="true"><svg class="sd-ico"><use href="#sd-settings"/></svg></span><span class="sd-tile-name">Settings</span></button>
-    </div>
+    <!-- 5. Owner: the two Slice A behaviors, unchanged — the last block of
+         the drawer's one scroll, not a pinned strip. -->
+    <section class="sd-group sd-owner" aria-labelledby="sd-owner">
+      <h2 class="sd-label" id="sd-owner">Owner</h2>
+      <button class="sd-row sd-row--foot" @click="$store.app.staxAgent(); navigate('chat')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-bug"/></svg><span>Report a bug</span></button>
+      <button class="sd-row sd-row--foot" x-show="$store.app.sessionUser" @click="$store.app.sessionLogout()"><svg class="sd-ico" aria-hidden="true"><use href="#sd-signout"/></svg><span>Sign out</span></button>
+    </section>
   </div>
-
-  <!-- 6. Owner footer: the two Slice A behaviors, unchanged -->
-  <footer class="sd-foot" aria-labelledby="sd-owner">
-    <h2 class="sd-label" id="sd-owner">Owner</h2>
-    <button class="sd-row sd-row--foot" @click="$store.app.staxAgent(); navigate('chat')"><svg class="sd-ico" aria-hidden="true"><use href="#sd-bug"/></svg><span>Report a bug</span></button>
-    <button class="sd-row sd-row--foot" x-show="$store.app.sessionUser" @click="$store.app.sessionLogout()"><svg class="sd-ico" aria-hidden="true"><use href="#sd-signout"/></svg><span>Sign out</span></button>
-  </footer>
 </aside>
 
 <!-- System > Advanced: the R4 side panel (side chats with any helper over
