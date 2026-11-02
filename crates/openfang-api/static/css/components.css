@@ -3458,3 +3458,7 @@ mark.search-highlight {
 }
 .trade-buy { background: rgba(34, 197, 94, 0.15); color: var(--success); }
 .trade-sell { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+
+/* ── R2: Needs-you ask/confirm cards ──────────────────── */
+.approval-card.pending { border-left: 3px solid var(--accent); }
+.approval-actions .btn { min-height: 44px; padding: 10px 22px; font-size: 14px; border-radius: 10px; }

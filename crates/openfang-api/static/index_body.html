@@ -1,16 +1,20 @@
 <body x-data="app" :data-theme="theme">
 
 <!-- Auth Prompt (API Key or Username/Password) -->
-<div x-show="$store.app.showAuthPrompt" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)" x-data="{ apiKeyInput: '', loginUser: '', loginPass: '' }">
-  <div style="background:var(--bg-card,#1e1e2e);border:1px solid var(--border,#333);border-radius:12px;padding:2rem;max-width:400px;width:90%">
+<div x-show="$store.app.showAuthPrompt" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)" x-data="{ apiKeyInput: '', loginPass: '' }">
+  <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--bg-card,#1e1e2e);border:1px solid var(--border,#333);border-radius:14px;padding:2.25rem 2rem;max-width:400px;width:92%;box-shadow:0 24px 60px rgba(0,0,0,0.45)">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <svg width="56" height="56" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="15.5" stroke="var(--accent,#146e68)" stroke-width="4"/><path d="M20 27 V13 M12.5 19.5 L20 11 L27.5 19.5" stroke="var(--accent,#146e68)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div style="font-size:1.45rem;font-weight:700;letter-spacing:-0.01em;margin-top:0.6rem">StaxCloud</div>
+      <div style="color:var(--text-dim,#888);font-size:0.82rem;margin-top:0.25rem">Run your business. Grow your business.<br>One intelligent system.</div>
+    </div>
     <!-- Session login mode -->
     <template x-if="$store.app.authMode === 'session'">
       <div>
-        <h3 style="margin:0 0 0.5rem;font-size:1.1rem">Sign In</h3>
-        <p style="color:var(--text-dim,#888);font-size:0.85rem;margin:0 0 1rem">Enter your dashboard credentials.</p>
-        <input type="text" x-model="loginUser" placeholder="Username" autocomplete="username" style="width:100%;padding:0.6rem;border-radius:6px;border:1px solid var(--border,#333);background:var(--bg-input,#151520);color:var(--text,#e0e0e0);font-size:0.9rem;box-sizing:border-box;margin-bottom:0.5rem">
-        <input type="password" x-model="loginPass" placeholder="Password" autocomplete="current-password" @keydown.enter="$store.app.sessionLogin(loginUser, loginPass)" style="width:100%;padding:0.6rem;border-radius:6px;border:1px solid var(--border,#333);background:var(--bg-input,#151520);color:var(--text,#e0e0e0);font-size:0.9rem;box-sizing:border-box;margin-bottom:0.75rem">
-        <button @click="$store.app.sessionLogin(loginUser, loginPass)" style="width:100%;padding:0.6rem;border-radius:6px;border:none;background:var(--accent,#146e68);color:#fff;font-weight:600;cursor:pointer;font-size:0.9rem">Sign In</button>
+        <h3 style="margin:0 0 0.5rem;font-size:1rem">Sign in</h3>
+        <p style="color:var(--text-dim,#888);font-size:0.85rem;margin:0 0 1rem">Enter the dashboard password.</p>
+<input type="password" x-model="loginPass" placeholder="Password" autocomplete="current-password" @keydown.enter="$store.app.sessionLogin('admin', loginPass)" style="width:100%;padding:0.75rem;border-radius:10px;border:1px solid var(--border,#333);background:var(--bg-input,#151520);color:var(--text,#e0e0e0);font-size:0.95rem;box-sizing:border-box;margin-bottom:0.75rem;min-height:48px">
+        <button @click="$store.app.sessionLogin('admin', loginPass)" style="width:100%;padding:0.8rem;border-radius:10px;border:none;background:var(--accent,#146e68);color:#fff;font-weight:600;cursor:pointer;font-size:0.95rem;min-height:48px">Sign in</button>
       </div>
     </template>
     <!-- API key mode -->
@@ -32,9 +36,9 @@
     <div class="sidebar-header">
       <div class="sidebar-header-text">
         <div class="sidebar-logo">
-          <img src="/logo.png" alt="OpenFang" width="28" height="28">
+          <svg width="28" height="28" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="15.5" stroke="var(--accent,#146e68)" stroke-width="4"/><path d="M20 27 V13 M12.5 19.5 L20 11 L27.5 19.5" stroke="var(--accent,#146e68)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div>
-            <h1>OpenFang</h1>
+            <h1>StaxCloud</h1>
             <div class="version" x-text="'v' + version"></div>
           </div>
         </div>
@@ -159,6 +163,50 @@
 
   <!-- Main Content -->
   <main class="main-content">
+    <!-- R1: surface chips -->
+    <div class="stax-chips" x-cloak>
+      <template x-if="surfaceOf[page] === 'home'">
+        <div class="stax-chips-row"><span class="stax-chips-title">Home</span>
+            <button class="stax-chip" :class="{ active: page === 'overview' }" @click="navigate('overview')">Brief</button>
+            <button class="stax-chip" :class="{ active: page === 'setup' }" @click="navigate('setup')">Set up</button>
+        </div>
+      </template>
+      <template x-if="surfaceOf[page] === 'channels'">
+        <div class="stax-chips-row"><span class="stax-chips-title">Channels</span>
+            <button class="stax-chip" :class="{ active: page === 'agents' }" @click="navigate('agents')">Chat</button>
+            <button class="stax-chip" :class="{ active: page === 'comms' }" @click="navigate('comms')">Team traffic</button>
+            <button class="stax-chip" :class="{ active: page === 'sms' }" @click="navigate('sms')">Texts</button>
+        </div>
+      </template>
+      <template x-if="surfaceOf[page] === 'work'">
+        <div class="stax-chips-row"><span class="stax-chips-title">Work</span>
+            <button class="stax-chip" :class="{ active: page === 'approvals' }" @click="navigate('approvals')">Needs you <span class="badge badge-warn" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span></button>
+            <button class="stax-chip" :class="{ active: page === 'contacts' }" @click="navigate('contacts')">Contacts</button>
+            <button class="stax-chip" :class="{ active: page === 'agents' }" @click="navigate('agents')">Team</button>
+            <button class="stax-chip" :class="{ active: page === 'sessions' }" @click="navigate('sessions')">History</button>
+            <button class="stax-chip" :class="{ active: page === 'analytics' }" @click="navigate('analytics')">Reports</button>
+        </div>
+      </template>
+      <template x-if="surfaceOf[page] === 'studio'">
+        <div class="stax-chips-row"><span class="stax-chips-title">Studio</span>
+            <button class="stax-chip" :class="{ active: page === 'boards' }" @click="navigate('boards')">Boards</button>
+            <button class="stax-chip" :class="{ active: page === 'forms' }" @click="navigate('forms')">Forms</button>
+            <button class="stax-chip" :class="{ active: page === 'workflows' }" @click="navigate('workflows')">Automations</button>
+            <button class="stax-chip" :class="{ active: page === 'scheduler' }" @click="navigate('scheduler')">Scheduled</button>
+            <button class="stax-chip" :class="{ active: page === 'hands' }" @click="navigate('hands')">Playbooks</button>
+            <button class="stax-chip" :class="{ active: page === 'skills' }" @click="navigate('skills')">Capabilities</button>
+        </div>
+      </template>
+      <template x-if="surfaceOf[page] === 'system'">
+        <div class="stax-chips-row"><span class="stax-chips-title">System</span>
+            <button class="stax-chip" :class="{ active: page === 'channels' }" @click="navigate('channels')">Connections</button>
+            <button class="stax-chip" :class="{ active: page === 'settings' }" @click="navigate('settings')">Settings</button>
+            <button class="stax-chip" :class="{ active: page === 'logs' }" @click="navigate('logs')">Diagnostics</button>
+            <button class="stax-chip" :class="{ active: page === 'runtime' }" @click="navigate('runtime')">System status</button>
+        </div>
+      </template>
+    </div>
+
     <!-- Mobile menu button -->
     <button class="mobile-menu-btn btn btn-ghost" @click="mobileMenuOpen = !mobileMenuOpen">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -197,6 +245,85 @@
             <p class="text-xs text-dim" x-text="loadError"></p>
             <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
           </div>
+          <!-- R3: Home brief — every item a projection of real records -->
+          <div class="stax-brief" x-show="!loading && !loadError" style="margin-bottom:20px">
+            <h3 style="font-size:22px;font-weight:700;margin:4px 0 2px" x-text="greeting"></h3>
+            <p class="text-sm text-dim" style="margin:0 0 16px">Here is where things stand.</p>
+
+          <!-- Set up your studio (first-run, until a profile exists) -->
+          <div class="stax-brief-section stax-setup-card" x-show="!$store.app.setupDone">
+            <div class="card" style="border-color:var(--accent)">
+              <div style="font-weight:700;font-size:15px;margin-bottom:4px">Set up your studio</div>
+              <p class="text-sm text-dim" style="margin:0 0 10px">Three quick questions and Stax fits a small crew to what your shop actually needs. No settings maze — you can change any of it later just by asking.</p>
+              <button class="btn btn-primary" style="min-height:44px" @click="navigate('setup')">Start setup</button>
+            </div>
+          </div>
+
+            <div x-show="$store.app.pendingApprovals.length > 0" style="margin-bottom:20px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                <span class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase">Needs you</span>
+                <span class="badge badge-warn" x-text="$store.app.pendingApprovalCount"></span>
+                <button class="stax-chip" style="margin-left:auto" @click="navigate('approvals')">See all in Work</button>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
+                  <div class="card approval-card pending">
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                    <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+                    <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
+                      <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
+                      <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+              <div class="card" style="flex:1;min-width:240px">
+                <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Your helpers</div>
+                <template x-if="helperNames.length > 0">
+                  <div>
+                    <div style="font-size:15px;font-weight:600" x-text="helperNames.length + (helperNames.length === 1 ? ' helper' : ' helpers') + ' on the job'"></div>
+                    <div class="text-sm text-dim" style="margin-top:2px" x-text="helperNames.join(', ')"></div>
+                  </div>
+                </template>
+                <div x-show="helperNames.length === 0" class="text-sm text-dim">No helpers yet — your first one is a message away.</div>
+                <button class="btn btn-ghost btn-sm" style="margin-top:10px" @click="navigate('agents')">Open Channels</button>
+              </div>
+              <div class="card" style="flex:1;min-width:240px">
+                <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Coming up</div>
+                <template x-if="comingUp.length > 0">
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <template x-for="j in comingUp" :key="j.id">
+                      <div style="display:flex;justify-content:space-between;gap:10px">
+                        <span class="text-sm" style="font-weight:600" x-text="j.name"></span>
+                        <span class="text-sm text-dim" x-text="formatRunTime(j.next_run)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <div x-show="comingUp.length === 0" class="text-sm text-dim">Nothing scheduled. Ask a helper to set something up and it will land here.</div>
+                <button class="btn btn-ghost btn-sm" style="margin-top:10px" @click="navigate('scheduler')">Open Scheduled</button>
+              </div>
+            </div>
+
+            <div class="card" style="margin-bottom:4px">
+              <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Latest activity</div>
+              <template x-if="recentAudit.length > 0">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <template x-for="e in recentAudit.slice(0, 4)" :key="e.id || e.timestamp">
+                    <div style="display:flex;justify-content:space-between;gap:10px">
+                      <span class="text-sm"><span x-text="friendlyAction(e.action)"></span> <span class="text-dim" x-text="agentName(e.agent_id) !== '-' ? '\u00b7 ' + agentName(e.agent_id) : ''"></span></span>
+                      <span class="text-sm text-dim" x-text="timeAgo(e.timestamp)"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div x-show="recentAudit.length === 0" class="text-sm text-dim">Nothing yet — activity shows up here as your helpers work.</div>
+            </div>
+          </div>
+
           <!-- Setup Checklist -->
           <div class="setup-checklist" x-show="!loading && !loadError && setupProgress < 100 && !checklistDismissed" style="animation:slideUp 0.3s var(--ease-spring)">
             <div class="card" style="border-left:4px solid var(--accent)">
@@ -403,7 +530,7 @@
             <div style="display:flex;flex-wrap:wrap;gap:8px">
               <button class="btn btn-ghost btn-sm" @click="location.hash='agents'" style="display:flex;align-items:center;gap:4px">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
-                New Agent
+                New Helper
               </button>
               <button class="btn btn-ghost btn-sm" @click="location.hash='skills'" style="display:flex;align-items:center;gap:4px">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
@@ -515,8 +642,8 @@
                 </button>
                 <span x-show="currentAgent && currentAgent.identity && currentAgent.identity.emoji" x-text="currentAgent && currentAgent.identity && currentAgent.identity.emoji" style="font-size:20px;line-height:1"></span>
                 <div style="min-width:0">
-                  <div class="font-bold" x-text="currentAgent ? currentAgent.name : ''"></div>
-                  <div class="text-xs text-dim truncate" style="font-family:var(--font-mono);font-size:11px" x-text="currentAgent ? currentAgent.model_provider + ':' + currentAgent.model_name : ''"></div>
+                  <div class="font-bold" x-text="currentAgent ? $store.app.displayName(currentAgent) : ''"></div>
+                  <div class="text-xs text-dim truncate" style="font-size:11px" x-text="currentAgent ? $store.app.displayRole(currentAgent) : ''"></div>
                 </div>
               </div>
               <div class="flex gap-2 items-center">
@@ -809,30 +936,53 @@
         <div class="page-header">
           <h2>Channels</h2>
           <div class="flex gap-2">
-            <button class="btn btn-ghost btn-sm" x-show="agents.length" @click="openSpawnWizard()">+ New Agent</button>
+            <button class="btn btn-ghost btn-sm" x-show="agents.length" @click="openSpawnWizard()">+ New Helper</button>
             <button class="btn btn-danger btn-sm" x-show="agents.length > 1" @click="killAllAgents()">Stop All</button>
           </div>
         </div>
         <div class="page-body" style="overflow-y:auto;padding:24px">
 
+          <!-- R2: Needs-you strip — real pending approvals, answered in place -->
+          <div x-show="$store.app.pendingApprovals.length > 0" style="margin-bottom:28px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase">Needs you</span>
+              <span class="badge badge-warn" x-text="$store.app.pendingApprovalCount"></span>
+              <button class="stax-chip" style="margin-left:auto" @click="navigate('approvals')">See all in Work</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
+                <div class="card approval-card pending">
+                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                  <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+                  <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
+                    <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
+                    <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div x-show="$store.app.pendingApprovalCount > 3" class="text-xs text-dim" style="margin-top:8px" x-text="'+' + ($store.app.pendingApprovalCount - 3) + ' more waiting in Work'"></div>
+          </div>
+
           <!-- Running agents — click to chat -->
           <div x-show="agents.length" style="margin-bottom:28px">
-            <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase">Your Agents</div>
+            <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase">Your crew</div>
+            <button class="btn btn-ghost btn-sm" style="margin-bottom:10px" @click="$store.app.showAllHelpers = !$store.app.showAllHelpers" x-text="$store.app.showAllHelpers ? 'Show just my crew' : 'Show all helpers'"></button>
             <div style="display:flex;flex-wrap:wrap;gap:10px">
               <template x-for="agent in agents" :key="agent.id">
-                <div class="agent-chip" @click="chatWithAgent(agent)" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);transition:all 0.2s var(--ease-spring, ease);min-width:200px;box-shadow:var(--shadow-xs)" @mouseenter="$el.style.borderColor='var(--accent)';$el.style.transform='translateY(-2px)';$el.style.boxShadow='var(--shadow-md)'" @mouseleave="$el.style.borderColor='var(--border)';$el.style.transform='';$el.style.boxShadow='var(--shadow-xs)'">
+                <div class="agent-chip" x-show="$store.app.isCrew(agent) || $store.app.showAllHelpers" @click="chatWithAgent(agent)" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);transition:all 0.2s var(--ease-spring, ease);min-width:200px;box-shadow:var(--shadow-xs)" @mouseenter="$el.style.borderColor='var(--accent)';$el.style.transform='translateY(-2px)';$el.style.boxShadow='var(--shadow-md)'" @mouseleave="$el.style.borderColor='var(--border)';$el.style.transform='';$el.style.boxShadow='var(--shadow-xs)'">
                   <div style="width:36px;height:36px;border-radius:50%;background:var(--accent-subtle);display:flex;align-items:center;justify-content:center;flex-shrink:0">
                     <span x-show="agent.identity && agent.identity.emoji" x-text="agent.identity && agent.identity.emoji" style="font-size:18px"></span>
                     <svg x-show="!agent.identity || !agent.identity.emoji" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   </div>
                   <div style="min-width:0;flex:1">
                     <div class="font-bold" style="font-size:13px">
-                      <span x-text="agent.name"></span>
+                      <span x-text="$store.app.displayName(agent)"></span>
                       <!-- Issue #1026: live inferencing indicator -->
                       <span x-show="agent.is_inferencing" class="agent-inferencing-dot" title="Agent is calling the LLM right now" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle;animation:agent-inferencing-pulse 1.2s ease-in-out infinite"></span>
                     </div>
                     <div class="text-xs text-dim font-mono" style="font-size:11px">
-                      <span x-show="!agent.is_inferencing" x-text="agent.model_name"></span>
+                      <span x-show="!agent.is_inferencing" x-text="$store.app.displayRole(agent)"></span>
                       <span x-show="agent.is_inferencing" style="color:var(--accent);font-weight:600">Inferencing…</span>
                     </div>
                   </div>
@@ -845,9 +995,30 @@
             </div>
           </div>
 
+          <!-- R5: Team traffic preview — helpers talking to each other, same surface -->
+          <div x-show="teamEvents.length > 0" style="margin-bottom:28px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase">Team traffic</span>
+              <button class="stax-chip" style="margin-left:auto" @click="navigate('comms')">See all</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <template x-for="ev in teamEvents" :key="ev.id">
+                <div class="card" style="padding:10px 12px">
+                  <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+                    <span style="font-weight:600;font-size:13px" x-text="ev.source_name"></span>
+                    <span class="text-dim text-xs" x-show="ev.target_name" x-text="'\u2192 ' + ev.target_name"></span>
+                    <span class="badge badge-dim" style="font-size:10px" x-text="teamLabel(ev.kind)"></span>
+                    <span class="text-xs text-dim" style="margin-left:auto" x-text="teamTimeAgo(ev.timestamp)"></span>
+                  </div>
+                  <div class="text-sm" style="margin-top:3px;line-height:1.5" x-text="ev.detail"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- Quick-start templates — spawn + chat in one click -->
           <div>
-            <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase" x-text="agents.length ? 'Or Start a New Agent' : 'Start Chatting'"></div>
+            <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase" x-text="agents.length ? 'Or start a new helper' : 'Start Chatting'"></div>
             <div class="card-grid">
               <template x-for="t in builtinTemplates" :key="t.name">
                 <div class="card" style="cursor:pointer" @click="t.manifest_toml ? spawnFromTemplate(t) : spawnBuiltin(t)">
@@ -1274,22 +1445,22 @@
                 <button class="filter-pill" :class="{ active: filterStatus === 'expired' }" @click="filterStatus = 'expired'">Expired</button>
               </div>
               <div x-show="filtered.length === 0" class="empty-state">
-                <h4>No approvals</h4>
-                <p class="hint">When agents request permission for sensitive actions, they'll appear here.</p>
+                <h4 x-text="filterStatus === 'pending' ? 'Nothing needs you' : 'Nothing here'"></h4>
+                <p class="hint" x-text="filterStatus === 'pending' ? 'When a helper wants to do something sensitive, it will ask here first — and in Channels, where you already are.' : 'No approvals with this status yet.'"></p>
               </div>
               <div class="card-grid">
                 <template x-for="a in filtered" :key="a.id">
-                  <div class="card approval-card" :class="{ approved: a.status === 'approved', rejected: a.status === 'rejected', expired: a.status === 'expired' }">
+                  <div class="card approval-card" :class="{ pending: a.status === 'pending', approved: a.status === 'approved', rejected: a.status === 'rejected', expired: a.status === 'expired' }">
                     <div class="flex justify-between items-center mb-2">
-                      <span class="card-header" style="margin:0" x-text="a.action"></span>
-                      <span class="badge" :class="{ 'badge-warn': a.status === 'pending', 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status"></span>
+                      <span class="badge" :class="{ 'badge-warn': a.status === 'pending', 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status === 'pending' ? 'Waiting for you' : a.status"></span>
+                      <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                     </div>
-                    <div class="text-sm text-dim mb-2" x-text="a.description"></div>
-                    <div class="text-xs text-dim">Agent: <span x-text="a.agent_name"></span> &middot; <span x-text="timeAgo(a.created_at)"></span></div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                    <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first &middot; <span x-text="a.action"></span></div>
                     <template x-if="a.status === 'pending'">
                       <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
-                        <button class="btn btn-success btn-sm" @click="approve(a.id)">Approve</button>
-                        <button class="btn btn-danger btn-sm" @click="reject(a.id)">Reject</button>
+                        <button class="btn btn-success" @click="approve(a.id)">Approve</button>
+                        <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="reject(a.id)">Reject</button>
                       </div>
                     </template>
                   </div>
@@ -4495,6 +4666,157 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
+    <!-- Page: Contacts (R8) -->
+    <template x-if="page === 'contacts'">
+      <div x-data="contactsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Contacts</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            <button class="btn btn-primary btn-sm" @click="showNew = !showNew">+ Add contact</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading contacts...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load contacts</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError">
+            <div class="card" x-show="showNew" style="margin-bottom:14px">
+              <div style="font-weight:600;margin-bottom:10px">New contact</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <input class="input" style="width:100%" placeholder="Name" x-model="newName">
+                <input class="input" style="width:100%" placeholder="Email" type="email" x-model="newEmail">
+                <input class="input" style="width:100%" placeholder="Phone" type="tel" x-model="newPhone">
+              </div>
+              <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>
+            </div>
+
+            <input class="input" style="width:100%;margin-bottom:14px" placeholder="Search name, email, or phone" x-model="query">
+            <div x-show="filtered.length === 0" class="empty-state">
+              <h4>No contacts yet</h4>
+              <p class="hint">People who send a form land here automatically. You can also add someone yourself.</p>
+            </div>
+
+            <div class="stax-brief-list" x-show="!selected">
+              <template x-for="c in filtered" :key="c.key">
+                <button class="stax-brief-row" @click="selectedKey = c.key">
+                  <span class="stax-side-avatar" x-text="initials(c.name)"></span>
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-weight:600;font-size:14px" x-text="c.name"></span>
+                    <span style="display:block" class="text-xs text-dim" x-text="c.email || c.phone"></span>
+                  </span>
+                  <span class="text-xs text-dim" x-show="subsOf(c).length" x-text="subsOf(c).length + ' form(s)'"></span>
+                </button>
+              </template>
+            </div>
+
+            <div x-show="selected">
+              <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px">&larr; All contacts</button>
+              <div class="card" x-show="selected">
+                <div style="display:flex;gap:12px;align-items:center">
+                  <span class="stax-side-avatar" style="width:44px;height:44px;font-size:15px" x-text="selected ? initials(selected.name) : ''"></span>
+                  <div style="min-width:0">
+                    <div style="font-weight:700;font-size:16px" x-text="selected ? selected.name : ''"></div>
+                    <div class="text-xs text-dim" x-text="selected ? ('First seen ' + fmtDate(selected.first_seen)) : ''"></div>
+                  </div>
+                </div>
+                <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">
+                  <div class="text-sm" x-show="selected && selected.email">Email: <span x-text="selected ? selected.email : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.phone">Phone: <span x-text="selected ? selected.phone : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.source_form">Came in via: <span x-text="selected ? selected.source_form : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.last_seen">Last seen: <span x-text="selected ? fmtDate(selected.last_seen) : ''"></span></div>
+                </div>
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">What they've sent</div>
+                  <div x-show="selected && subsOf(selected).length === 0" class="text-sm text-dim">Nothing yet.</div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="s in (selected ? subsOf(selected) : [])" :key="s.key">
+                      <div style="border:1px solid var(--border);border-radius:10px;padding:9px 11px">
+                        <div class="text-xs text-dim" x-text="fmtDate(s.ts) + ' - ' + s.form"></div>
+                        <template x-for="(val, k) in s.data" :key="k">
+                          <div class="text-sm" style="margin-top:3px"><span class="text-dim" x-text="k + ': '"></span><span x-text="val"></span></div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Notes</div>
+                  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+                    <template x-for="(n, i) in (selected ? selected.notes : [])" :key="i">
+                      <div style="border-left:3px solid var(--accent);padding:2px 0 2px 10px">
+                        <div class="text-sm" style="white-space:pre-wrap" x-text="n.text"></div>
+                        <div class="text-xs text-dim" x-text="fmtDate(n.ts)"></div>
+                      </div>
+                    </template>
+                    <div x-show="selected && selected.notes.length === 0" class="text-sm text-dim">No notes yet.</div>
+                  </div>
+                  <textarea class="input" style="width:100%" rows="3" placeholder="Add a note - healed well, prefers Leni, allergic to latex..." x-model="noteText"></textarea>
+                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="addNote()" :disabled="savingNote">Save note</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Set up (R10 first-run conversation) -->
+    <template x-if="page === 'setup'">
+      <div x-data="setupPage" x-init="loadData()">
+        <div class="page-header"><h2>Set up your studio</h2></div>
+        <div class="page-body" style="max-width:640px">
+          <div x-show="done && profile" class="card">
+            <div style="font-weight:700;font-size:15px;margin-bottom:6px">Your crew is set</div>
+            <p class="text-sm text-dim" style="margin:0 0 6px">Business: <span x-text="profile ? bizLabel(profile.business) : ''"></span></p>
+            <p class="text-sm text-dim" style="margin:0 0 12px">See the "Your crew" board in the Studio tab for the full picture. Want it different? Just tell Stax in Chat — or run setup again.</p>
+            <button class="btn btn-ghost btn-sm" @click="done = false; step = 0">Run setup again</button>
+          </div>
+
+          <div x-show="!done">
+            <div class="card" style="margin-bottom:12px">
+              <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+              <p class="text-sm" style="margin:0">Hey — I'm Stax. Before anything else: what kind of business are we running?</p>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+              <template x-for="b in bizOptions" :key="b.id">
+                <button class="stax-chip" style="min-height:44px" :class="{ active: business === b.id }" @click="business = b.id; step = Math.max(step, 1)" x-text="b.label"></button>
+              </template>
+            </div>
+
+            <div x-show="step >= 1">
+              <div class="card" style="margin-bottom:12px">
+                <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+                <p class="text-sm" style="margin:0">What eats your time? Pick everything that sounds familiar — I'll only spin up help for what you pick.</p>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+                <template x-for="n in needOptions" :key="n.id">
+                  <button class="stax-chip" style="min-height:44px" :class="{ active: needs.indexOf(n.id) >= 0 }" @click="toggleNeed(n.id); step = Math.max(step, 2)" x-text="n.label"></button>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="step >= 2">
+              <div class="card" style="margin-bottom:12px">
+                <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+                <p class="text-sm" style="margin:0">Last one — how do you want to hear from me?</p>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'morning' }" @click="brief = 'morning'">A morning brief</button>
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'live' }" @click="brief = 'live'">As things happen</button>
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'both' }" @click="brief = 'both'">Both</button>
+              </div>
+              <button class="btn btn-primary" style="min-height:48px;padding:0 22px" @click="finish()" :disabled="saving || !business">Set up my crew</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- Page: Sessions -->
     <template x-if="page === 'sessions'">
       <div x-data="sessionsPage">
@@ -4753,11 +5075,268 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
+    <!-- Page: Boards (R6 surfaces engine) -->
+    <template x-if="page === 'boards'">
+      <div x-data="boardsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Boards</h2>
+          <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading boards...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load boards</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <!-- Board list -->
+          <div x-show="!loading && !loadError && !current">
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Boards live here. Ask a helper in Channels — "make me a board for walk-ins" — and it shows up, kept current by your team.</p>
+            <div x-show="surfaces.length === 0" class="empty-state">
+              <h4>No boards yet</h4>
+              <p class="hint">Your first board is one sentence away. Try: "Make me an SEO board for the shop."</p>
+            </div>
+            <div class="card-grid">
+              <template x-for="s in surfaces" :key="s.slug">
+                <div class="card" style="cursor:pointer" @click="current = s.slug">
+                  <div class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="s.title"></div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-text="s.blocks.length + (s.blocks.length === 1 ? ' block' : ' blocks')"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Board detail -->
+          <div x-show="!loading && !loadError && current && currentSurface">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <button class="stax-chip" @click="current = null">&larr; All boards</button>
+              <span style="font-size:17px;font-weight:700" x-text="currentSurface ? currentSurface.title : ''"></span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger,#e5534b)" @click="deleteSurface(current)">Delete board</button>
+            </div>
+            <template x-for="(b, bi) in (currentSurface ? currentSurface.blocks : [])" :key="bi">
+              <div style="margin-bottom:14px">
+                <h3 x-show="b.type === 'heading'" style="font-size:18px;font-weight:700;margin:6px 0" x-text="b.text"></h3>
+                <p x-show="b.type === 'text'" class="text-sm" style="line-height:1.6;margin:4px 0" x-text="b.text"></p>
+                <div x-show="b.type === 'stats'" style="display:flex;flex-wrap:wrap;gap:10px">
+                  <template x-for="(it, ii) in (b.items || [])" :key="ii">
+                    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px 10px">
+                      <div style="font-size:20px;font-weight:700" x-text="it.value"></div>
+                      <div class="text-xs text-dim" style="margin-top:2px" x-text="it.label"></div>
+                    </div>
+                  </template>
+                </div>
+                <div x-show="b.type === 'list'" class="card">
+                  <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="(it, ii) in (b.items || [])" :key="ii">
+                      <div style="display:flex;gap:8px;align-items:baseline">
+                        <div style="flex:1;min-width:0">
+                          <div class="text-sm" style="font-weight:600" x-text="it.title"></div>
+                          <div x-show="it.sub" class="text-xs text-dim" x-text="it.sub"></div>
+                        </div>
+                        <span x-show="it.badge" class="badge badge-dim" style="font-size:10px" x-text="it.badge"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div x-show="!(b.items || []).length" class="text-sm text-dim">Nothing here yet.</div>
+                </div>
+                <div x-show="b.type === 'kvlist'" class="card">
+                  <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="row in kvRows(b.prefix)" :key="row.key">
+                      <div style="display:flex;gap:8px;align-items:baseline">
+                        <span class="text-sm" style="font-weight:600" x-text="row.key"></span>
+                        <span class="text-xs text-dim" style="flex:1;min-width:0" x-text="row.sub"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div x-show="kvRows(b.prefix).length === 0" class="text-sm text-dim">Nothing stored under this yet.</div>
+                </div>
+                <div x-show="['heading','text','stats','list','kvlist'].indexOf(b.type) === -1" class="text-xs text-dim">A newer kind of block — update StaxCloud to view it.</div>
+              </div>
+            </template>
+            <p class="text-xs text-dim" style="margin-top:6px">Want changes? Ask a helper in Channels — boards are kept by your team, not by hand.</p>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Forms (R7 graft) -->
+    <template x-if="page === 'forms'">
+      <div x-data="formsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Forms</h2>
+          <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading forms...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load forms</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <!-- My Forms -->
+          <div x-show="!loading && !loadError && tab === 'forms'">
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Your forms and what each one has collected. Want a new form, or changes? Ask the Forms agent — the Agent tab in this panel.</p>
+            <div x-show="defs.length === 0" class="empty-state">
+              <h4>No forms yet</h4>
+              <p class="hint">Ask the Forms agent: "Make me a contact form for the website."</p>
+            </div>
+            <div class="card-grid">
+              <template x-for="d in defs" :key="d.slug">
+                <div class="card">
+                  <div class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="d.title"></div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-text="d.fields.length + ' fields - ' + subsOf(d.slug).length + ' submission(s)'"></div>
+                  <div x-show="d.public_url" class="text-xs" style="margin-top:6px"><a :href="d.public_url" target="_blank" rel="noopener" style="color:var(--accent)">Public form</a></div>
+                  <div style="display:flex;gap:8px;margin-top:10px">
+                    <button class="btn btn-ghost btn-sm" @click="previewSlug = d.slug; $store.app.formsTab = 'preview'">Preview</button>
+                    <button class="btn btn-ghost btn-sm" @click="$store.app.formsTab = 'subs'">Submissions</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Submissions -->
+          <div x-show="!loading && !loadError && tab === 'subs'">
+            <div x-show="subs.length === 0" class="empty-state">
+              <h4>No submissions yet</h4>
+              <p class="hint">When someone sends a form — from the web or a Preview test — it lands here and your team picks it up.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <template x-for="s in subs" :key="s.key">
+                <div class="card">
+                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                    <span style="font-weight:600;font-size:14px" x-text="(defOf(s.form) ? defOf(s.form).title : s.form)"></span>
+                    <span x-show="s.test" class="badge badge-dim" style="font-size:10px">test</span>
+                    <span class="badge" :class="s.processed ? 'badge-success' : 'badge-warn'" style="font-size:10px" x-text="s.processed ? 'Picked up' : 'New'"></span>
+                    <span class="text-xs text-dim" style="margin-left:auto" x-text="fmtTs(s.ts)"></span>
+                  </div>
+                  <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+                    <template x-for="(val, key) in s.data" :key="key">
+                      <div style="display:flex;gap:8px">
+                        <span class="text-xs text-dim" style="min-width:110px" x-text="fieldLabel(s.form, key)"></span>
+                        <span class="text-sm" style="flex:1;min-width:0;white-space:pre-wrap;word-break:break-word" x-text="val"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div x-show="s.contact" class="text-xs text-dim" style="margin-top:6px">Contact: <span x-text="s.contact"></span></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Preview -->
+          <div x-show="!loading && !loadError && tab === 'preview'">
+            <div x-show="defs.length === 0" class="empty-state">
+              <h4>Nothing to preview</h4>
+              <p class="hint">Once a form exists, you can see it and test it here.</p>
+            </div>
+            <div x-show="defs.length > 0">
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+                <template x-for="d in defs" :key="d.slug">
+                  <button class="stax-chip" :class="{ active: previewSlug === d.slug }" @click="previewSlug = d.slug; submitted = false" x-text="d.title"></button>
+                </template>
+              </div>
+              <div class="card" x-show="previewDef">
+                <div class="card-header" style="margin:0 0 4px;font-size:16px;font-weight:700" x-text="previewDef ? previewDef.title : ''"></div>
+                <p class="text-xs text-dim" style="margin:0 0 12px">This is a test — submitting saves a test submission your team can see.</p>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  <template x-for="f in (previewDef ? previewDef.fields : [])" :key="f.key">
+                    <div>
+                      <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="f.label + (f.required ? ' *' : '')"></label>
+                      <input x-show="f.type === 'text' || f.type === 'email' || f.type === 'phone'" :type="f.type === 'text' ? 'text' : (f.type === 'email' ? 'email' : 'tel')" class="input" style="width:100%" x-model="previewData[f.key]">
+                      <textarea x-show="f.type === 'textarea'" class="input" style="width:100%" rows="4" x-model="previewData[f.key]"></textarea>
+                      <select x-show="f.type === 'select'" class="input" style="width:100%" x-model="previewData[f.key]">
+                        <option value="">Choose...</option>
+                        <template x-for="o in (f.options || [])" :key="o">
+                          <option :value="o" x-text="o"></option>
+                        </template>
+                      </select>
+                    </div>
+                  </template>
+                </div>
+                <button class="btn btn-primary" style="margin-top:14px;min-height:44px" @click="submitPreview()" :disabled="submitting">Send test submission</button>
+                <span x-show="submitted" class="text-sm" style="color:var(--accent);margin-left:10px">Saved — check Submissions.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Texts (R9 graft) -->
+    <template x-if="page === 'sms'">
+      <div x-data="smsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Texts</h2>
+          <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading texts...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load texts</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError && tab === 'inbox'">
+            <div x-show="threads.length === 0" class="empty-state">
+              <h4>No texts yet</h4>
+              <p class="hint">When the modem bridge is connected, conversations from the studio line land here — and replies you approve go out from here.</p>
+            </div>
+
+            <div class="stax-brief-list" x-show="!selected">
+              <template x-for="th in threads" :key="th.key">
+                <button class="stax-brief-row" @click="selectedKey = th.key">
+                  <span class="stax-side-avatar" x-text="(th.name || th.number || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
+                  <span style="flex:1;min-width:0;text-align:left">
+                    <span style="display:block;font-weight:600;font-size:14px" x-text="th.name || prettyNumber(th.number)"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="text-xs text-dim" x-text="lastMsg(th) ? lastMsg(th).body : ''"></span>
+                  </span>
+                  <span x-show="th.test" class="badge badge-dim" style="font-size:10px">test</span>
+                  <span class="text-xs text-dim" x-text="lastMsg(th) ? fmtTs(lastMsg(th).ts) : ''"></span>
+                </button>
+              </template>
+            </div>
+
+            <div x-show="selected">
+              <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px">&larr; All conversations</button>
+              <div class="card" x-show="selected">
+                <div style="font-weight:700;font-size:15px" x-text="selected ? (selected.name || prettyNumber(selected.number)) : ''"></div>
+                <div class="text-xs text-dim" x-text="selected ? prettyNumber(selected.number) : ''"></div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+                  <template x-for="(m, i) in (selected ? selected.messages : [])" :key="i">
+                    <div :style="m.dir === 'out' ? 'align-self:flex-end;background:var(--accent);color:#fff' : 'align-self:flex-start;background:var(--surface-2)'" style="max-width:82%;border-radius:14px;padding:8px 12px">
+                      <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
+                      <div style="font-size:10px;opacity:.75;margin-top:3px" x-text="fmtTs(m.ts) + (m.dir === 'out' && m.status ? ' - ' + m.status : '')"></div>
+                    </div>
+                  </template>
+                </div>
+                <div style="margin-top:14px">
+                  <textarea class="input" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
+                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="holdReply()" :disabled="holding">Hold reply for approval</button>
+                </div>
+                <div style="margin-top:14px" x-show="outbox.length">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Outbox</div>
+                  <template x-for="o in outbox" :key="o.key">
+                    <div class="text-sm" style="display:flex;gap:8px"><span class="badge" :class="o.status === 'delivered' ? 'badge-success' : (o.status === 'failed' ? 'badge-dim' : 'badge-warn')" style="font-size:10px" x-text="o.status"></span><span style="flex:1;min-width:0" x-text="o.body"></span></div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- Page: Comms -->
     <template x-if="page === 'comms'">
       <div x-data="commsPage" x-init="loadData()" @page-leave.window="stopSSE()">
         <div class="page-header">
-          <h2>Messages</h2>
+          <h2>Team traffic</h2>
           <div class="flex items-center gap-2">
             <button class="btn btn-primary btn-sm" @click="openSendModal()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
@@ -4785,12 +5364,12 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
           </div>
           <!-- Content -->
-          <div x-show="!loading && !loadError" style="animation:fadeIn 0.3s">
+          <div x-show="!loading && !loadError" style="animation:fadeIn 0.3s;display:flex;flex-direction:column">
             <!-- Topology -->
             <div class="card mb-4">
               <div class="card-header">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px;vertical-align:-2px"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-                Agent Topology
+                Who's who
                 <span class="badge badge-dim" style="margin-left:8px;font-weight:400" x-text="topology.nodes.length + ' agents'"></span>
               </div>
               <div style="padding:8px 0;font-family:var(--font-mono);font-size:12px;line-height:1.8">
@@ -4820,8 +5399,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               </div>
             </div>
 
-            <!-- Live Event Feed -->
-            <div class="card">
+            <!-- Team traffic — live -->
+            <div class="card" style="order:-1;margin-bottom:16px">
               <div class="card-header flex justify-between items-center">
                 <div>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px;vertical-align:-2px"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -4842,7 +5421,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                     <span :class="eventBadgeClass(ev.kind)" style="font-size:10px;padding:1px 6px;min-width:70px;text-align:center" x-text="eventLabel(ev.kind)"></span>
                     <span style="font-weight:600;font-size:12px" x-text="ev.source_name"></span>
                     <span class="text-dim" x-show="ev.target_name" x-text="'\u2192 ' + ev.target_name"></span>
-                    <span class="comms-event-detail text-dim text-xs" x-text="ev.detail" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                    <span class="comms-event-detail text-dim text-xs" x-text="ev.detail" style="flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.5"></span>
                   </div>
                 </template>
               </div>
@@ -5381,9 +5960,187 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </template>
 
   </main>
+
+  <!-- R1: StaxCloud dock -->
+  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms'" aria-label="Primary">
+      <button class="stax-dock-btn" :class="{ active: surfaceOf[page] === 'home' }" @click="goSurface('home')" aria-label="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surfaceOf[page] === 'channels' }" @click="goSurface('channels')" aria-label="Channels">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9.5L4 20z"/></svg>
+        <span>Channels</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surfaceOf[page] === 'work' }" @click="goSurface('work')" aria-label="Work">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+        <span class="stax-dock-badge" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span>
+        <span>Work</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surfaceOf[page] === 'studio' }" @click="goSurface('studio')" aria-label="Studio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+        <span>Studio</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surfaceOf[page] === 'system' }" @click="goSurface('system')" aria-label="System">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="var(--bg-primary)"/><circle cx="15" cy="12" r="2" fill="var(--bg-primary)"/><circle cx="8" cy="17" r="2" fill="var(--bg-primary)"/></svg>
+        <span>System</span>
+      </button>
+  </nav>
 </div>
 
 <!-- Toast notification container -->
+<!-- R4: Side panel — floating trigger, backdrop, slide-over -->
+<button class="stax-fab" x-show="!$store.app.sideOpen" @click="$store.app.sideOpen = true" title="Side panel: chats and cards">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 12h5"/></svg>
+  <span>Panel</span>
+</button>
+<div class="stax-side-backdrop" x-show="$store.app.sideOpen" @click="$store.app.sideOpen = false"></div>
+<aside class="stax-side" :class="{ open: $store.app.sideOpen }" x-data="sidePanel()" x-init="initPanel()" aria-label="Side panel">
+  <div class="stax-side-head">
+    <span style="font-size:16px;font-weight:700">Side panel</span>
+    <div style="display:flex;gap:6px;margin-left:auto">
+      <button class="stax-chip" :class="{ active: tab === 'chats' }" @click="tab = 'chats'">Chats</button>
+      <button class="stax-chip" :class="{ active: tab === 'cards' }" @click="tab = 'cards'">Cards</button>
+      <button class="stax-chip" @click="$store.app.sideOpen = false" aria-label="Close panel">&times;</button>
+    </div>
+  </div>
+
+  <!-- Chats: session list -->
+  <div x-show="tab === 'chats' && view === 'list'" style="flex:1;overflow-y:auto;padding:14px">
+    <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Start a side chat</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px">
+      <template x-for="a in $store.app.agents" :key="a.id">
+        <button class="stax-chip" @click="openChat(a.id)" x-text="a.name"></button>
+      </template>
+    </div>
+    <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Recent conversations</div>
+    <div x-show="loadingList" class="text-sm text-dim">Loading...</div>
+    <div x-show="!loadingList && sessions.length === 0" class="text-sm text-dim">No conversations yet. Start one above and it will live here.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <template x-for="s in sessions" :key="s.session_id">
+        <button class="side-session" @click="openChat(s.agent_id, s.session_id)">
+          <span style="font-weight:600;font-size:14px" x-text="s.agent_name"></span>
+          <span class="text-xs text-dim" x-text="(s.label || 'Conversation') + ' - ' + (s.message_count || 0) + ' messages - ' + fmtWhen(s.created_at)"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- Chats: live side conversation -->
+  <div x-show="tab === 'chats' && view === 'chat'" style="flex:1;display:flex;flex-direction:column;min-height:0">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <button class="stax-chip" @click="view = 'list'; disconnectWs()">&larr; All chats</button>
+      <span style="font-weight:700;font-size:14px" x-text="chatAgent ? chatAgent.name : ''"></span>
+      <span class="badge" :class="wsState === 'live' ? 'badge-success' : 'badge-muted'" x-text="wsState === 'live' ? 'Live' : (wsState === 'connecting' ? 'Joining' : 'Relay')"></span>
+      <button class="stax-chip" style="margin-left:auto" @click="openInChannels()">Open in Channels</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border)">
+      <template x-for="s in chatSessions" :key="s.session_id">
+        <button class="stax-chip" :class="{ active: s.active }" @click="openChat(chatAgent.id, s.session_id)" x-text="s.label || ('Chat ' + s.session_id.substring(0, 6))"></button>
+      </template>
+      <button class="stax-chip" @click="newSession()">+ New</button>
+    </div>
+    <div x-ref="sideScroll" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px">
+      <template x-for="m in messages" :key="m.id">
+        <div :class="m.role === 'user' ? 'side-msg side-msg-user' : (m.role === 'system' ? 'side-msg side-msg-system' : 'side-msg side-msg-agent')">
+          <span x-text="m.text"></span>
+          <span x-show="m.meta" class="text-xs" style="opacity:0.7;display:block;margin-top:2px" x-text="m.meta"></span>
+        </div>
+      </template>
+      <div x-show="messages.length === 0" class="text-sm text-dim" style="text-align:center;margin-top:20px">Say hello — this conversation runs alongside your main chat.</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border)">
+      <input type="text" x-model="input" @keydown.enter.prevent="sendSide()" placeholder="Message..." style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)">
+      <button class="btn btn-primary" style="min-height:44px" @click="sendSide()" :disabled="sending">Send</button>
+    </div>
+  </div>
+
+  <!-- Cards: inspector -->
+  <div x-show="tab === 'cards'" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+    <div class="card approval-card pending" x-show="$store.app.pendingApprovals.length > 0">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Needs you</div>
+      <template x-for="a in $store.app.pendingApprovals.slice(0, 5)" :key="a.id">
+        <div style="border-top:1px solid var(--border);padding:10px 0">
+          <div style="font-size:14px;font-weight:600;line-height:1.4" x-text="a.description"></div>
+          <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+          <div class="approval-actions" style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
+            <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div class="card" x-show="$store.app.pendingApprovals.length === 0">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">Needs you</div>
+      <div class="text-sm text-dim">Nothing needs you right now.</div>
+    </div>
+    <div class="card" x-show="view === 'chat' && chatAgent">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">This chat</div>
+      <div class="text-sm"><span style="font-weight:600" x-text="chatAgent ? chatAgent.name : ''"></span></div>
+      <div class="text-sm text-dim" x-text="chatSessions.length + ' conversation(s) - ' + messages.length + ' messages showing'"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="openInChannels()">Open in Channels</button>
+    </div>
+    <div class="card">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">Coming up</div>
+      <template x-if="jobs.length > 0">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <template x-for="j in jobs" :key="j.id">
+            <div style="display:flex;justify-content:space-between;gap:10px">
+              <span class="text-sm" style="font-weight:600" x-text="j.name"></span>
+              <span class="text-sm text-dim" x-text="fmtWhen(j.next_run)"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+      <div x-show="jobs.length === 0" class="text-sm text-dim">Nothing scheduled.</div>
+    </div>
+  </div>
+</aside>
+
+<!-- R7: Forms module dock — inside Forms, the dock belongs to the module -->
+<nav class="stax-dock" x-cloak x-show="page === 'forms'" aria-label="Forms module">
+  <button class="stax-dock-btn" @click="$store.app.formsAgent()" aria-label="Forms agent">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Agent</span>
+  </button>
+  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+    <span>My Forms</span>
+  </button>
+  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'subs' }" @click="$store.app.formsTab = 'subs'" aria-label="Submissions">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+    <span>Submissions</span>
+    <span class="stax-dock-badge" x-show="$store.app.formsNewCount > 0" x-text="$store.app.formsNewCount"></span>
+  </button>
+  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span>Preview</span>
+  </button>
+  <button class="stax-dock-btn" @click="navigate('boards')" aria-label="Back to Studio">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    <span>Done</span>
+  </button>
+</nav>
+
+<!-- R9: Texts module dock -->
+<nav class="stax-dock" x-cloak x-show="page === 'sms'" aria-label="Texts module">
+  <button class="stax-dock-btn" @click="$store.app.smsAgent()" aria-label="Texts agent">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Agent</span>
+  </button>
+  <button class="stax-dock-btn" :class="{ active: $store.app.smsTab === 'inbox' }" @click="$store.app.smsTab = 'inbox'" aria-label="Inbox">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+    <span>Inbox</span>
+  </button>
+  <button class="stax-dock-btn" @click="navigate('contacts')" aria-label="Contacts">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span>Contacts</span>
+  </button>
+  <button class="stax-dock-btn" @click="navigate('agents')" aria-label="Back to Channels">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    <span>Done</span>
+  </button>
+</nav>
+
 <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){});}</script>

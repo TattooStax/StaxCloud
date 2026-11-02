@@ -4,7 +4,7 @@
 function approvalsPage() {
   return {
     approvals: [],
-    filterStatus: 'all',
+    filterStatus: 'pending',
     loading: true,
     loadError: '',
     refreshTimer: null,

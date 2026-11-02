@@ -11,6 +11,7 @@ function overviewPage() {
     providers: [],
     mcpServers: [],
     skillCount: 0,
+    briefJobs: [],
     loading: true,
     loadError: '',
     refreshTimer: null,
@@ -28,7 +29,8 @@ function overviewPage() {
           this.loadChannels(),
           this.loadProviders(),
           this.loadMcpServers(),
-          this.loadSkills()
+          this.loadSkills(),
+          this.loadBriefJobs()
         ]);
         this.lastRefresh = Date.now();
       } catch(e) {
@@ -50,7 +52,8 @@ function overviewPage() {
           this.loadChannels(),
           this.loadProviders(),
           this.loadMcpServers(),
-          this.loadSkills()
+          this.loadSkills(),
+          this.loadBriefJobs()
         ]);
         this.lastRefresh = Date.now();
       } catch(e) { /* silent */ }
@@ -136,6 +139,43 @@ function overviewPage() {
         var data = await OpenFangAPI.get('/api/skills');
         this.skillCount = (data.skills || []).length;
       } catch(e) { this.skillCount = 0; }
+    },
+
+    async loadBriefJobs() {
+      try {
+        var data = await OpenFangAPI.get('/api/cron/jobs');
+        var jobs = (data.jobs || []).filter(function(j) { return j.enabled && j.next_run; });
+        jobs.sort(function(a, b) { return new Date(a.next_run) - new Date(b.next_run); });
+        this.briefJobs = jobs;
+      } catch(e) { this.briefJobs = []; }
+    },
+
+    get greeting() {
+      var h = new Date().getHours();
+      var g = h < 12 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening');
+      var d = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      return g + ' \u2014 ' + d;
+    },
+
+    get comingUp() {
+      return this.briefJobs.slice(0, 3);
+    },
+
+    get helperNames() {
+      var agents = (Alpine.store('app').agents || []);
+      return agents.map(function(a) { return a.name; });
+    },
+
+    formatRunTime(ts) {
+      if (!ts) return '';
+      var d = new Date(ts);
+      var now = new Date();
+      var sameDay = d.toDateString() === now.toDateString();
+      var tomorrow = new Date(now.getTime() + 86400000).toDateString() === d.toDateString();
+      var time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      if (sameDay) return 'today at ' + time;
+      if (tomorrow) return 'tomorrow at ' + time;
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' at ' + time;
     },
 
     get configuredProviders() {

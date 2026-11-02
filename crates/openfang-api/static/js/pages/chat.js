@@ -604,7 +604,14 @@ function chatPage() {
     _restoreActiveAgent: function() {
       var storedId = null;
       try { storedId = localStorage.getItem('of-active-agent'); } catch(e) { /* ignore */ }
-      if (!storedId) return;
+      if (!storedId) {
+        // One Face default: land on Stax, the lead.
+        var all = (Alpine.store('app') && Alpine.store('app').agents) || [];
+        for (var j = 0; j < all.length; j++) {
+          if (all[j] && all[j].name === 'stax') { this.selectAgent(all[j]); return; }
+        }
+        return;
+      }
       var agents = (Alpine.store('app') && Alpine.store('app').agents) || [];
       var match = null;
       for (var i = 0; i < agents.length; i++) {

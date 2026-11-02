@@ -335,3 +335,39 @@
 .app-layout.focus-mode .sidebar-overlay { display: none; }
 .app-layout.focus-mode .main-content { max-width: 100%; margin-left: 0; }
 .app-layout.focus-mode .mobile-menu-btn { display: none !important; }
+
+/* ── R1: StaxCloud dock shell ─────────────────────────── */
+.app-layout { flex-direction: column; }
+.sidebar, .sidebar-overlay { display: none !important; }
+.mobile-menu-btn { display: none !important; }
+.stax-dock { flex: none; display: flex; background: var(--bg-primary); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 60; }
+.stax-dock-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 6px 2px; background: none; border: none; color: var(--text-dim); font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; cursor: pointer; position: relative; }
+.stax-dock-btn svg { width: 22px; height: 22px; }
+.stax-dock-btn.active { color: var(--accent); }
+.stax-dock-badge { position: absolute; top: 5px; right: calc(50% - 21px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.stax-chips { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding: 8px 16px; overflow-x: auto; scrollbar-width: none; }
+.stax-chips::-webkit-scrollbar { display: none; }
+.stax-chips-row { display: flex; align-items: center; gap: 8px; }
+.stax-chips-title { font-size: 15px; font-weight: 700; margin-right: 6px; white-space: nowrap; }
+.stax-chip { flex: none; padding: 6px 13px; min-height: 34px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.stax-chip.active { background: rgba(20,110,104,.14); color: var(--accent); border-color: var(--accent); }
+
+/* ── R4: Side panel ───────────────────────────────────── */
+.stax-fab { position: fixed; right: 14px; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 55; display: flex; align-items: center; gap: 7px; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 12px 16px; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 13px; min-height: 44px; box-shadow: 0 6px 20px rgba(0,0,0,0.28); cursor: pointer; }
+.stax-side-backdrop { position: fixed; inset: 0; background: rgba(10,10,12,0.45); z-index: 58; }
+.stax-side { position: fixed; top: 0; right: 0; height: 100dvh; width: min(400px, 94vw); background: var(--bg); border-left: 1px solid var(--border); z-index: 59; transform: translateX(105%); transition: transform 0.28s ease; display: flex; flex-direction: column; box-shadow: -12px 0 32px rgba(0,0,0,0.18); }
+.stax-side.open { transform: translateX(0); }
+.stax-side-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.side-session { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--text); min-height: 44px; }
+.side-session:hover { border-color: var(--accent); }
+.side-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.side-msg-user { align-self: flex-end; background: var(--accent); color: #fff; }
+.side-msg-agent { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.side-msg-system { align-self: center; background: transparent; color: var(--text-dim); font-size: 12px; }
+
+/* R10 desktop/tablet pass (stax-wide-measure): on wide screens the app keeps a
+   phone-calm measure — content and dock center instead of stretching. */
+@media (min-width: 1024px) {
+  .main-content { max-width: 920px; margin-left: auto; margin-right: auto; width: 100%; }
+  .stax-dock { max-width: 920px; left: 50%; transform: translateX(-50%); width: 100%; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+}

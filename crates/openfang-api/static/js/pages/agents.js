@@ -20,6 +20,7 @@ function agentsPage() {
   return {
     tab: 'agents',
     activeChatAgent: null,
+    teamEvents: [],
     // -- Agents state --
     showSpawnModal: false,
     showDetailModal: false,
@@ -215,6 +216,7 @@ function agentsPage() {
       this.loadError = '';
       try {
         await Alpine.store('app').refreshAgents();
+        this.loadTeamEvents();
         await this.loadTemplates();
         this.loadPersonalityPresets();
         this.loadProfileDescriptions();
@@ -245,6 +247,34 @@ function agentsPage() {
         this.loadError = e.message || 'Could not load agents.';
       }
       this.loading = false;
+    },
+
+    async loadTeamEvents() {
+      try {
+        var data = await OpenFangAPI.get('/api/comms/events?limit=5');
+        this.teamEvents = Array.isArray(data) ? data : (data.events || []);
+      } catch(e) { this.teamEvents = []; }
+    },
+
+    teamLabel(kind) {
+      switch(kind) {
+        case 'agent_message': return 'Message';
+        case 'agent_spawned': return 'Spawned';
+        case 'agent_terminated': return 'Terminated';
+        case 'task_posted': return 'Task Posted';
+        case 'task_claimed': return 'Task Claimed';
+        case 'task_completed': return 'Task Done';
+        default: return kind;
+      }
+    },
+
+    teamTimeAgo(dateStr) {
+      if (!dateStr) return '';
+      var secs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+      if (secs < 60) return 'just now';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+      if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+      return Math.floor(secs / 86400) + 'd ago';
     },
 
     async loadTemplates() {
