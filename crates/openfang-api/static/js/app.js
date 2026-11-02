@@ -137,6 +137,14 @@ document.addEventListener('alpine:init', function() {
     pendingApprovalCount: 0,
     pendingApprovals: [],
     sideOpen: false,
+    // System > Advanced side panel (side chats + cards), out of the drawer.
+    r4Open: false,
+    // The Stax card on Home; the drawer's Stax row opens the same card.
+    staxCard: false,
+    // Bumped after the drawer switches or starts a Stax conversation, so a
+    // mounted Home thread reloads the now-active session.
+    homeReload: 0,
+    homeEngage: false,
     formsTab: 'forms',
     smsTab: 'inbox',
     setupDone: false,
@@ -238,12 +246,13 @@ document.addEventListener('alpine:init', function() {
     },
 
     // A module's "Agent" button opens that helper as a side chat in the
-    // side card (its own WebSocket), not the Advanced helpers console.
+    // Advanced side panel (its own WebSocket), not the helpers console and
+    // not the drawer.
     openSideChat(name) {
       var agents = this.agents || [];
       var a = agents.find(function(x) { return x.name === name; });
       if (!a) return;
-      this.sideOpen = true;
+      this.r4Open = true;
       window.dispatchEvent(new CustomEvent('side-chat', { detail: { agentId: a.id } }));
     },
 
@@ -510,6 +519,8 @@ function app() {
       window.location.hash = (this.advancedPages.indexOf(p) >= 0 ? 'advanced/' : '') + p;
       this.mobileMenuOpen = false;
       Alpine.store('app').sideOpen = false;
+      Alpine.store('app').r4Open = false;
+      Alpine.store('app').staxCard = false;
       this.surface = this.surfaceOf[p] || this.surface;
       // The agents template stays mounted when moving between the list and
       // the chat page, so it cannot rely on init alone to open the chat.
@@ -575,7 +586,7 @@ function sidePanel() {
 
     initPanel() {
       var self = this;
-      this.$watch('$store.app.sideOpen', function(open) {
+      this.$watch('$store.app.r4Open', function(open) {
         if (open) { self.onOpen(); } else { self.disconnectWs(); }
       });
       // Module "Agent" buttons open their helper here as a side chat.
@@ -747,7 +758,7 @@ function sidePanel() {
     openInChannels() {
       if (!this.chatAgent) return;
       Alpine.store('app').pendingAgent = this.chatAgent;
-      Alpine.store('app').sideOpen = false;
+      Alpine.store('app').r4Open = false;
       // Stax's conversation is home; other helpers open in the Advanced
       // helpers view.
       navigate(this.chatAgent.name === 'stax' ? 'chat' : 'agents');
@@ -765,6 +776,109 @@ function sidePanel() {
       if (!ts) return '';
       var d = new Date(ts);
       return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
+  };
+}
+
+
+// ── Step 2: the drawer (side card) ─────────────────────────────────────────
+// Presentation over existing machinery only. Chats are the lead agent's own
+// session records (GET /api/agents/{id}/sessions), titled by their label;
+// opening one is the existing session switch, New chat is the existing
+// session create. Both then hand off to Home, which reloads the now-active
+// session. Status comes from staxStatus() (home.js), the pill's own source.
+function staxDrawer() {
+  return {
+    open: { channels: true, studio: true, system: true },
+    chats: [],
+    loaded: false,
+    showAll: false,
+    chatLimit: 5,
+    busy: false,
+    scrolled: false,
+
+    initDrawer() {
+      var self = this;
+      try {
+        var saved = JSON.parse(localStorage.getItem('stax-drawer-open') || 'null');
+        if (saved && typeof saved === 'object') {
+          ['channels', 'studio', 'system'].forEach(function(k) { if (typeof saved[k] === 'boolean') self.open[k] = saved[k]; });
+        }
+      } catch(e) { /* ignore */ }
+      this.$watch('$store.app.sideOpen', function(isOpen) { if (isOpen) self.loadChats(); });
+    },
+
+    toggle(k) {
+      this.open[k] = !this.open[k];
+      try { localStorage.setItem('stax-drawer-open', JSON.stringify(this.open)); } catch(e) { /* ignore */ }
+    },
+
+    staxId() {
+      var s = typeof findStaxAgent === 'function' ? findStaxAgent() : null;
+      return s ? s.id : null;
+    },
+
+    async loadChats() {
+      var id = this.staxId();
+      if (!id) { this.chats = []; this.loaded = true; return; }
+      try {
+        var data = await OpenFangAPI.get('/api/agents/' + id + '/sessions');
+        var list = (data && data.sessions) || [];
+        // A blank session nobody named or used is not a conversation yet;
+        // the active one always shows (it is what Home is on).
+        list = list.filter(function(s) { return s && (s.active || s.label || (s.message_count || 0) > 0); });
+        list.sort(function(a, b) { return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
+        this.chats = list;
+      } catch(e) { this.chats = []; }
+      this.loaded = true;
+    },
+
+    get visibleChats() {
+      return this.showAll ? this.chats : this.chats.slice(0, this.chatLimit);
+    },
+
+    // The session record's own title. Unnamed sessions have none, so they
+    // read as what they are, never as an id or a timestamp.
+    chatTitle(s) {
+      var label = s && typeof s.label === 'string' ? s.label.trim() : '';
+      if (label) return label;
+      return s && s.active ? 'Current conversation' : 'Earlier conversation';
+    },
+
+    openStaxCard() {
+      // Same card Home's avatar opens: go home, then raise it.
+      this.goSurface('home');
+      Alpine.store('app').staxCard = true;
+    },
+
+    async openConversation(s, goHome) {
+      var id = this.staxId();
+      if (!id || !s || this.busy) return;
+      this.busy = true;
+      try {
+        if (!s.active) await OpenFangAPI.post('/api/agents/' + id + '/sessions/' + s.session_id + '/switch', {});
+        goHome();
+        Alpine.store('app').homeEngage = true;
+        Alpine.store('app').homeReload++;
+      } catch(e) {
+        OpenFangToast.error('That conversation did not open. Try again in a moment.');
+      }
+      this.busy = false;
+    },
+
+    async newChat(goHome) {
+      var id = this.staxId();
+      if (!id || this.busy) return;
+      this.busy = true;
+      try {
+        await OpenFangAPI.post('/api/agents/' + id + '/sessions', {});
+        goHome();
+        Alpine.store('app').homeEngage = true;
+        Alpine.store('app').homeReload++;
+      } catch(e) {
+        OpenFangToast.error('A new chat did not start. Try again in a moment.');
+      }
+      this.busy = false;
     }
   };
 }

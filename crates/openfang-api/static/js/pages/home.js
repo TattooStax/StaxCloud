@@ -35,6 +35,18 @@ function homePinStax(chat) {
   }
   pick();
   chat.$watch('$store.app.agents', pick);
+  // The drawer switched or started a Stax conversation: reload the thread
+  // onto the now-active session (same calls as the chat's session switch).
+  chat.$watch('$store.app.homeReload', function() {
+    var s = findStaxAgent();
+    if (!s) return;
+    if (!chat.currentAgent || chat.currentAgent.id !== s.id) { chat.selectAgent(s); return; }
+    chat.messages = [];
+    chat._wsAgent = null;
+    chat.connectWs(s.id);
+    chat.loadSession(s.id);
+    chat.loadSessions(s.id);
+  });
 }
 
 // "Start a fresh conversation" on the Stax card: the same sessions API the
@@ -53,11 +65,28 @@ async function homeFreshConversation(chat) {
   }
 }
 
+// Status in plain words, from real state: the daemon connection and the
+// texts helper. Its replies are held drafts that wait for the owner's
+// approval (see the sms hand), so "you approve" is the true mode.
+// Shared by the Home pill and the drawer's Stax row (one source, one wording).
+function staxStatus() {
+  var s = Alpine.store('app');
+  if (!s.connected && !s.booting) return { tone: 'warn', words: 'Reconnecting' };
+  if (s.booting) return { tone: 'quiet', words: 'Waking up' };
+  var agents = s.agents || [];
+  var sms = agents.find(function(a) { return a.name === 'sms'; });
+  if (sms) {
+    var on = (sms.state || '').toLowerCase() === 'running';
+    return { tone: on ? 'ok' : 'quiet', words: on ? 'Text replies: You approve' : 'Text replies: Paused' };
+  }
+  var ready = !!findStaxAgent();
+  return { tone: ready ? 'ok' : 'quiet', words: ready ? 'Stax is on' : 'Stax is getting ready' };
+}
+
 function homePage() {
   return {
     homeEngaged: false,   // the owner started talking or started setup this visit
     homeSetup: false,     // the setup conversation is running in the thread
-    homeCard: false,      // the Stax card is open
     homeSetupAt: 0,       // thread position where the setup conversation began
 
     init() {
@@ -67,9 +96,19 @@ function homePage() {
       var store = Alpine.store('app');
       store.loadSetup();
       store.loadMorningBrief();
+      // A conversation opened from the drawer lands in the thread view.
+      var self = this;
+      var engage = function() { if (store.homeEngage) { self.homeEngaged = true; store.homeEngage = false; } };
+      engage();
+      this.$watch('$store.app.homeEngage', engage);
     },
 
     get staxReady() { return !!findStaxAgent(); },
+
+    // The Stax card is open. Held in the store so the drawer's Stax row
+    // opens this same card.
+    get homeCard() { return Alpine.store('app').staxCard; },
+    set homeCard(v) { Alpine.store('app').staxCard = !!v; },
 
     // First open (Figma screen 1) until a setup/profile record exists.
     get homeFirstOpen() {
@@ -77,21 +116,9 @@ function homePage() {
       return s.setupLoaded && !s.setupDone;
     },
 
-    // Status in plain words, from real state: the daemon connection and the
-    // texts helper. Its replies are held drafts that wait for the owner's
-    // approval (see the sms hand), so "you approve" is the true mode.
-    get homeStatus() {
-      var s = Alpine.store('app');
-      if (!s.connected && !s.booting) return { tone: 'warn', words: 'Reconnecting' };
-      if (s.booting) return { tone: 'quiet', words: 'Waking up' };
-      var agents = s.agents || [];
-      var sms = agents.find(function(a) { return a.name === 'sms'; });
-      if (sms) {
-        var on = (sms.state || '').toLowerCase() === 'running';
-        return { tone: on ? 'ok' : 'quiet', words: on ? 'Text replies: You approve' : 'Text replies: Paused' };
-      }
-      return { tone: this.staxReady ? 'ok' : 'quiet', words: this.staxReady ? 'Stax is on' : 'Stax is getting ready' };
-    },
+    // The status pill. One source for every place status appears: the
+    // drawer's Stax row renders this same staxStatus() expression.
+    get homeStatus() { return staxStatus(); },
 
     get homeNeedsWords() {
       var n = Alpine.store('app').pendingApprovalCount || 0;
