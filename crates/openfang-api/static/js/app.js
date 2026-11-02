@@ -140,6 +140,7 @@ document.addEventListener('alpine:init', function() {
     formsTab: 'forms',
     smsTab: 'inbox',
     setupDone: false,
+    morningBrief: null,
     smsThreadCount: 0,
     showAllHelpers: false,
     crewNames: ['stax', 'forms', 'sms', 'surface-builder', 'deep-work'],
@@ -176,6 +177,19 @@ document.addEventListener('alpine:init', function() {
       } catch(e) { this.setupDone = false; }
     },
 
+    async loadMorningBrief() {
+      try {
+        var first = (this.agents && this.agents[0]) || null;
+        var aid = first ? first.id : 'shared';
+        var now = new Date();
+        var key = 'brief/' + now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv/' + encodeURIComponent(key));
+        var v = d && d.value;
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+        this.morningBrief = (v && v.text) ? v : null;
+      } catch(e) { this.morningBrief = null; }
+    },
+
     isCrew(a) { return !!a && this.crewNames.indexOf(a.name) >= 0; },
     displayName(a) {
       if (!a) return '';
@@ -205,6 +219,7 @@ document.addEventListener('alpine:init', function() {
         this.pendingApprovalCount = pending.length;
         this.pendingApprovals = pending;
         this.loadSetup();
+        this.loadMorningBrief();
         this.lastPendingApprovalSignature = signature;
       } catch(e) { /* silent */ }
     },
