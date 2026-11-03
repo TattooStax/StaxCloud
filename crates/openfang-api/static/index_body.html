@@ -568,7 +568,7 @@
                       </div>
                     </template>
                     <template x-if="msg.role === 'user'">
-                      <div class="home-msg-bubble">
+                      <div class="home-msg-bubble" :class="{ 'is-pending': msg.pending }">
                         <span x-text="msg.text"></span>
                         <template x-if="msg.images && msg.images.length">
                           <div class="home-msg-images">
@@ -579,8 +579,9 @@
                         </template>
                       </div>
                     </template>
+                    <p class="home-msg-note home-msg-aside" x-show="msg.role === 'user' && homeAside(msg)" x-text="homeAside(msg)"></p>
                     <template x-if="msg.role === 'system'">
-                      <div class="home-msg-note" :class="{ 'is-failure': homeIsFailure(msg.text) }" x-html="homeIsFailure(msg.text) ? escapeHtml(homeSystemText(msg.text)) : renderMarkdown(msg.text)"></div>
+                      <div class="home-msg-note" :class="{ 'is-failure': msg.interrupted || homeIsFailure(msg.text) }" x-html="homeIsFailure(msg.text) ? escapeHtml(homeSystemText(msg.text)) : renderMarkdown(msg.text)"></div>
                     </template>
                   </div>
                 </template>
@@ -645,13 +646,29 @@
             </div>
           </div>
 
-          <!-- Ask Stax -->
-          <div class="home-compose">
+          <!-- Ask Stax. Photos ride the turn-scoped uploads route: they go with
+               one message and are not kept with the chat, and the note says so. -->
+          <div class="home-compose" @dragover.prevent @drop.prevent="addFiles(Array.from($event.dataTransfer.files).filter(f => /^image\//.test(f.type)))">
+            <div class="home-attach" x-show="attachments.length" x-cloak>
+              <div class="home-attach-row">
+                <template x-for="(att, aidx) in attachments" :key="aidx">
+                  <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading }">
+                    <img :src="att.preview" :alt="att.file.name">
+                    <button @click="removeAttachment(aidx)" :aria-label="'Remove ' + att.file.name">&times;</button>
+                  </span>
+                </template>
+              </div>
+              <p class="home-attach-note">Photos go with this message only. They aren&rsquo;t kept in the chat.</p>
+            </div>
             <div class="home-compose-box">
+              <button class="home-attach-btn" @click="$refs.homeFile.click()" aria-label="Add a photo" title="Add a photo">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="9" cy="10.5" r="1.8"/><path d="m21 16-5-5-9 9"/></svg>
+              </button>
+              <input type="file" x-ref="homeFile" accept="image/*" multiple hidden @change="addFiles(Array.from($event.target.files).filter(f => /^image\//.test(f.type))); $event.target.value = ''">
               <textarea id="msg-input" rows="1" placeholder="Ask Stax" aria-label="Ask Stax" x-model="inputText"
-                        @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); if (inputText.trim()) { homeEngaged = true; sendMessage(); }}"
+                        @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); if (inputText.trim() || attachments.length) { homeEngaged = true; sendMessage(); }}"
                         @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>
-              <button class="home-send" x-show="!sending" @click="homeEngaged = true; sendMessage()" :disabled="!inputText.trim() || !currentAgent" aria-label="Send to Stax">
+              <button class="home-send" x-show="!sending" @click="homeEngaged = true; sendMessage()" :disabled="!(inputText.trim() || attachments.length) || !currentAgent" aria-label="Send to Stax">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
               </button>
               <button class="home-send home-send--stop" x-show="sending" @click="stopAgent()" aria-label="Stop Stax">

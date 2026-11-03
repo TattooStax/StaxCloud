@@ -380,7 +380,8 @@ button.home-needs:hover { background: var(--accent-subtle); }
 .home-setup { display: flex; flex-direction: column; gap: 14px; }
 .home-setup > div:not(.home-msg):not(.home-replies) { display: flex; flex-direction: column; gap: 14px; }
 .home-msg { display: flex; animation: none; }
-.home-msg--user { justify-content: flex-end; }
+.home-msg--user { justify-content: flex-end; flex-wrap: wrap; }
+.home-msg-note.home-msg-aside { flex-basis: 100%; max-width: none; margin-top: 4px; text-align: right; }
 .home-msg--system { justify-content: center; }
 .home-msg-row { display: flex; align-items: flex-start; gap: 10px; max-width: 92%; min-width: 0; }
 .home-msg-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 6px var(--radius-lg) var(--radius-lg) var(--radius-lg); padding: 11px 15px; font-size: 15px; line-height: 1.55; color: var(--text); }
@@ -394,6 +395,7 @@ button.home-needs:hover { background: var(--accent-subtle); }
 .home-msg-working { color: var(--text-dim); font-size: 14px; }
 .home-msg-bubble { max-width: 82%; background: var(--user-bg); color: var(--text); border-radius: var(--radius-lg) var(--radius-lg) 6px var(--radius-lg); padding: 10px 15px; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .home-msg-bubble > span { white-space: pre-wrap; }
+.home-msg-bubble.is-pending { opacity: 0.6; }
 .home-msg-note { max-width: 88%; font-size: 13.5px; line-height: 1.5; color: var(--text-dim); text-align: center; }
 .home-msg-note.is-failure { color: var(--warning); }
 .home-msg-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -410,7 +412,7 @@ button.home-needs:hover { background: var(--accent-subtle); }
 
 /* Ask Stax */
 .home-compose { flex: none; padding: 10px 16px 12px; background: var(--bg); }
-.home-compose-box { max-width: 680px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px; padding: 5px 5px 5px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 26px; box-shadow: var(--shadow-sm); transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out); }
+.home-compose-box { max-width: 680px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px; padding: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 26px; box-shadow: var(--shadow-sm); transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out); }
 .home-compose-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 .home-compose-box textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 150px; padding: 11px 0; border: none; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 16px; line-height: 22px; resize: none; caret-color: var(--accent); }
 .home-compose-box textarea:focus-visible { outline: none; box-shadow: none; }
@@ -418,6 +420,15 @@ button.home-needs:hover { background: var(--accent-subtle); }
 .home-send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--accent); color: var(--bg); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.15s var(--ease-out); }
 .home-send:disabled { opacity: 0.35; cursor: default; }
 .home-send--stop { background: var(--text); }
+.home-attach-btn { flex: none; width: 44px; height: 44px; border-radius: 50%; border: none; background: transparent; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.home-attach-btn:hover { color: var(--accent); }
+.home-attach { max-width: 680px; margin: 0 auto 8px; }
+.home-attach-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-attach-chip { position: relative; }
+.home-attach-chip img { width: 56px; height: 56px; object-fit: cover; border-radius: var(--radius-md); border: 1px solid var(--border); display: block; }
+.home-attach-chip.is-uploading img { opacity: 0.5; }
+.home-attach-chip button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--text); color: var(--bg); font-size: 14px; line-height: 1; cursor: pointer; }
+.home-attach-note { margin: 6px 0 0; font-size: 12.5px; color: var(--text-dim); }
 
 /* The Stax card: a bottom sheet on phones, a centered card on wide screens */
 .home-card-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(10,10,12,0.45); }

@@ -2374,55 +2374,6 @@ mark.search-highlight {
   border-radius: var(--radius-sm);
 }
 
-/* ── File Attachment Drop Zone ── */
-.drop-zone {
-  border: 2px dashed var(--border);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  text-align: center;
-  transition: all 0.2s;
-}
-.drop-zone.active {
-  border-color: var(--accent);
-  background: var(--accent-glow);
-}
-.drop-zone-text { font-size: 12px; color: var(--text-dim); }
-.file-preview { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
-.file-thumb {
-  position: relative;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-.file-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.file-thumb .remove {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--error);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  font-size: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.file-name {
-  font-size: 11px;
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60px;
-  text-align: center;
-}
-
 /* ── Approval Badge & Page Styles ── */
 .approval-card { border-left: 3px solid var(--warning); }
 .approval-card.approved { border-left-color: var(--success); }
@@ -2454,33 +2405,6 @@ mark.search-highlight {
 .message.grouped .message-avatar { visibility: hidden; }
 .message.grouped .message-meta { display: none; }
 .message.grouped .message-time { display: none; }
-
-/* ── Inline Image Preview in Messages ── */
-.message-image {
-  max-width: 300px;
-  max-height: 200px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: transform 0.15s;
-  margin: 8px 0;
-}
-.message-image:hover { transform: scale(1.02); }
-.message-file-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  color: var(--text-dim);
-  text-decoration: none;
-  transition: border-color 0.15s;
-  margin: 4px 0;
-}
-.message-file-link:hover { border-color: var(--accent); color: var(--text); }
 
 /* ── Setup Checklist Progress Bar ── */
 .progress-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
