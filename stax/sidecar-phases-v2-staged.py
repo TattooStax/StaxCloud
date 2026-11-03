@@ -4,7 +4,7 @@
 #
 # This file carries the Phase-2 / scorecard additions to sidecar-phases.py
 # (Memory Sweep brief Parts 1–3 + 7.3; Decider Shadow brief Part 6), built
-# ahead of activation so the Round A restart window only installs and arms.
+# ahead of activation so the activation window only installs and arms.
 # The LIVE sidecar-phases.py (digest phase only) is untouched by this file.
 #
 # HOW THE MERGE WORKS (activation step, ACTIVATION-RUNBOOK.md step 2):

@@ -80,3 +80,22 @@ The TWA wrapper source lives at `stax/twa/` with its own README.
   digest-phase invocation added; supersedes the `4de0359c…` copy named
   above) and `stax/hands/stax/HAND.toml` (sha256 `990ecfa4…` — conduct
   rule 12, reply brevity, live since the Round A restart).
+
+## Also synced in this push (2026-11-03 hygiene sync)
+
+- `stax/STATUS-2026-11-03.md` — NEW: the dated state page (done / held /
+  in flight / queued / keys). Start there for current state; this
+  README remains the evidence index.
+- The 2026-11-03 record set joins `docs/`: DIRECTOR-REVIEW-FABLE-2026-11-03.md
+  (Verdict #5), DIRECTOR-CONSULT-ACTIVATION-FLAG-2026-11-03.md,
+  KIMI-AUDIT-2026-11-03.md, KIMI-AUDIT-DISPOSITION.md,
+  FARGOTATTOO-WEBSITE-AUDIT-2026-11-03.md, PORTING-INVENTORY.md,
+  CHAT-BLOCKS-SPEC.md, ROUND-A-BRIEF.md, ROUND-B-BRIEF.md,
+  BUILD-H-BRIEF.md, activation-verification-2026-11-03.md,
+  activation-completion-2026-11-03.md, brief-digest-check-2026-11-03.md.
+- Refreshed masters: `stax/hands/stax/HAND.toml` (sha256 `0e7d2d7f…` —
+  conduct rules 13 + 14 added 2026-11-03; supersedes the `990ecfa4…`
+  copy named in the Round A close-out note above),
+  `stax/hands/forms/HAND.toml`, `docs/UX-RESKIN-PLAN.md`, and
+  `stax/sidecar-phases-v2-staged.py` (one comment provenance label
+  removed per the comment convention; otherwise identical).
