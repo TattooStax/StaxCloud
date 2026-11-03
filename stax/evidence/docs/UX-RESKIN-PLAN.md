@@ -52,3 +52,49 @@ Never owner-facing as concepts: Runtime, raw Logs, raw Sessions, workflow JSON, 
 7. Demotions: Logs+Runtime under Settings/Advanced; Settings reorganized.
 8. Monolith split (internal, zero visual change): split index_body.html + components.css per-surface; webchat.rs embedding change permitted here only.
 9. Setup + PWA: Wizard on AppShell primitives; manifest/SW versioning verified.
+
+## Round A — completion (2026-11-02)
+
+Deployed 2026-11-02 ~23:31 CST to fang.sefer.team. Code: HEAD `69f0e0c`
+(7 commits on `f7bd958`). Live binary sha256 `b8dd9dfe…`; rollback on the
+box: `openfang-pre-roundA.bak`. Evidence: `screenshots/roundA/` (350 files,
+incl. both-navigation-mode device captures).
+
+What landed:
+
+- Navigation restructure per Director Verdict 4: the dock is FOUR —
+  Stax · Work · Boards · Leads. Channels lives only in the side card;
+  Boards only in the dock; chip walls and duplicate paths removed;
+  Scheduler / Automations / Playbooks / Capabilities demoted intact to
+  Advanced; "Done" returns Home everywhere; document title is "StaxCloud".
+- Home composition: the mascot is the sole top element, the conversation
+  a sheet beneath it; brief-first with the Needs-you row.
+- Traditional tile set wired through the single sprite (8 of 12 tiles;
+  envelope / links / contacts / machine staged for later rounds).
+- Amendment 1 (dock vs. the Android navigation bar): `viewport-fit=cover`
+  added so the docks' safe-area inset actually applies; bench-proven on
+  the 6T in three-button and gesture modes. The non-zero-inset case in the
+  installed WebAPK cannot be bench-proven — the owner-phone check after
+  deploy is the outstanding gate.
+- Amendment 2 (external-review items; both relayed review rounds are now
+  closed): chat titles from the first message + date; the "Working on it"
+  status resolves into the answer instead of persisting; links in replies
+  are tappable, never break mid-word, and the app-download link renders as
+  a button; Home hides "Set up my studio" once a setup-complete record
+  exists (the live box has no `setup/profile` record yet — the behavior is
+  staging-verified, and creating the record is the owner's setup
+  conversation with Stax, never a faked record); the status-bar theme
+  color follows the app theme (device-proven; the TWA wrapper's own
+  `themeColorDark` value is a specified follow-up rebuild). A
+  reply-brevity conduct rule was added to the stax hand (rule 12) and
+  loaded at this restart.
+- The same restart window carried the Security Gate 2 shell reduction
+  (tool blocklist for the 13 running stock agents + 6 inactive hand
+  shadows; post-restart census zero, functionally probed — see
+  `docs/SECURITY-GATE-2.md`) and the Canvas designer hand's refreshed
+  SKILL.md.
+
+Size ledger: statics net +43,725 B for the round — code −11,831 B against
+the owner-ordered tile assets (+55,556 B, the recorded exception class).
+Queued as Round B's first ledger line: delete the dead i18n framework
+(76 KB, unserved, never wired), which closes Round A net-negative.

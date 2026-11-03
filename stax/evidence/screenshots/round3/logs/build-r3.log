@@ -1,0 +1,5 @@
+   Compiling openfang-api v0.6.9 (/home/shawnlowe/openfang-build/repo/crates/openfang-api)
+   Compiling openfang-cli v0.6.9 (/home/shawnlowe/openfang-build/repo/crates/openfang-cli)
+    Finished `release` profile [optimized] target(s) in 7m 21s
+warning: the following packages contain code that will be rejected by a future version of Rust: imap-proto v0.10.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

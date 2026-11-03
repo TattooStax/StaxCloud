@@ -279,3 +279,7 @@ if actions:
     req("PUT", f"/api/memory/agents/{SHARED}/kv/{enc}", {"value": rec})
     print(now(), "crew check: repair recorded at crew/health —", "; ".join(actions))
 PYEOF
+
+# ── Digest phase (Memory Sweep Phase 1, 2026-11-02): the deterministic
+# brief-input digest + memsweep hash ledger live in sidecar-phases.py. ──
+python3 sidecar-phases.py digest >> pull-sync.log 2>&1 || true
