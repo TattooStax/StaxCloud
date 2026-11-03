@@ -854,10 +854,13 @@ function staxDrawer() {
       if (!page || !brand) return;
       var r = page.getBoundingClientRect();
       var brandRight = brand.getBoundingClientRect().right - this.$el.getBoundingClientRect().left;
-      if (r.left <= 12 || r.left >= brandRight + 8) {
+      var far = r.left > 12 && r.left >= brandRight + 8;
+      if (r.left <= 12 || far) {
         held.style.left = Math.round(r.left) + 'px';
         held.style.top = Math.round(r.top) + 'px';
       }
+      // The header keeps its leading slot free only when the button sits there.
+      this.$el.classList.toggle('sd-held-far', far);
     },
 
     // Keyboard users toggle with the same button: opening from a page's menu

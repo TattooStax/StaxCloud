@@ -418,8 +418,9 @@
 
 .sd-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 12px 14px 58px; padding-top: calc(8px + env(safe-area-inset-top)); border-bottom: 1px solid transparent; transition: border-color 0.2s ease; }
 .sd-head.is-scrolled { border-bottom-color: var(--border); }
+.stax-side.sd-held-far .sd-head { padding-left: 20px; }
 .sd-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--surface); box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 1px 0 rgba(255,255,255,0.16); }
-.sd-mark svg { width: 22px; height: 22px; }
+.sd-mark svg { width: 30px; height: 30px; }
 .sd-brand { min-width: 0; }
 .sd-wordmark { font-size: 18px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.1; color: var(--text); }
 .sd-shop { font-size: 13px; font-weight: 500; color: var(--text-dim); margin-top: 2px; }
@@ -439,7 +440,8 @@ button.sd-person:hover { background: var(--sd-hover); }
 button.sd-person:active { background: var(--sd-press); }
 .sd-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; }
 .sd-avatar svg { width: 21px; height: 21px; }
-.sd-avatar--stax { background: var(--accent); color: var(--surface); }
+.sd-avatar--stax { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.sd-avatar--stax svg { width: 30px; height: 30px; }
 .sd-avatar--a { background: color-mix(in srgb, var(--sec-channels) 16%, var(--surface)); color: var(--sec-channels); }
 .sd-avatar--b { background: color-mix(in srgb, var(--sec-studio) 16%, var(--surface)); color: var(--sec-studio); }
 .sd-person-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -541,8 +543,8 @@ body.sd-dragging { -webkit-user-select: none; user-select: none; }
 .home-id { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px 0 4px; margin-left: -4px; border: none; border-radius: 999px; background: none; color: var(--text); font: inherit; cursor: pointer; }
 .home-id:hover { background: var(--surface); }
 .home-id-name { font-size: 16px; font-weight: 700; letter-spacing: -0.015em; }
-.home-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--bg); }
-.home-avatar svg { width: 62%; height: 62%; }
+.home-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.home-avatar svg { width: 86%; height: 86%; }
 .home-avatar--sm { width: 28px; height: 28px; margin-top: 2px; }
 .home-avatar--lg { width: 56px; height: 56px; }
 
@@ -556,16 +558,13 @@ body.sd-dragging { -webkit-user-select: none; user-select: none; }
 
 /* First open — the one bold moment */
 .home-hero { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 24px 40px; }
-.home-mascot { width: 168px; height: 168px; padding: 0; border: none; background: none; border-radius: 50%; cursor: pointer; color: var(--accent); margin-bottom: 28px; }
-.home-mascot-svg { width: 100%; height: 100%; overflow: visible; }
-.m-halo { fill: none; stroke: var(--border); stroke-width: 1.5; }
-.m-disc { fill: var(--accent-glow); }
-.m-ring { fill: none; stroke: currentColor; stroke-width: 10.3; stroke-dasharray: 100; stroke-dashoffset: 0; transform: rotate(-90deg); transform-origin: 80px 80px; animation: m-draw 1.1s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.m-arrow { fill: none; stroke: currentColor; stroke-width: 10.3; stroke-linecap: round; stroke-linejoin: round; animation: m-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
-.m-orbit { fill: currentColor; transform-origin: 80px 80px; transform: rotate(48deg); animation: m-orbit 1.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
-@keyframes m-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
-@keyframes m-rise { from { transform: translateY(10px); opacity: 0.25; } to { transform: none; opacity: 1; } }
-@keyframes m-orbit { from { transform: rotate(-150deg); } to { transform: rotate(48deg); } }
+.home-mascot { width: 180px; height: 180px; padding: 0; border: none; background: none; border-radius: 24px; cursor: pointer; margin-bottom: 22px; }
+.home-mascot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+/* The reaper mascot: stax-mascot-phone.png, embedded by webchat.rs as a
+   data URI on .home-mascot-art (see the rule appended after this sheet). */
+.home-mascot-art { display: block; width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; background-size: contain; animation: m-arrive 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes m-arrive { from { transform: translateY(10px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .home-mascot-art { animation: none; } }
 .home-status--hero { margin: 0 0 18px; max-width: 100%; }
 .home-greet { font-size: clamp(30px, 7.4vw, 40px); line-height: 1.1; font-weight: 600; letter-spacing: -0.035em; text-wrap: balance; margin: 0 0 28px; color: var(--text); }
 .home-cta { min-height: 52px; padding: 0 30px; border: none; border-radius: 999px; background: var(--accent); color: var(--bg); font: inherit; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; cursor: pointer; box-shadow: var(--shadow-accent); transition: transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out); }
@@ -675,7 +674,7 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .sys-row--quiet .sys-name { font-weight: 500; color: var(--text-dim); }
 .sys-chev { flex: none; width: 16px; height: 16px; color: var(--text-muted); }
 .sys-ask { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
-.sys-ask svg { width: 16px; height: 16px; }
+.sys-ask svg { width: 18px; height: 18px; }
 .sys-seg { flex: none; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--border-subtle); }
 .sys-seg button { min-height: 36px; min-width: 52px; padding: 0 12px; border: none; border-radius: 999px; background: none; color: var(--text-dim); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1), color 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
 .sys-seg button.is-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
@@ -687,6 +686,10 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .sys-status[data-tone="warn"] { color: var(--warning); }
 .sys-ident { margin: 18px 4px 0; font-size: 13.5px; color: var(--text-muted); }
 [data-theme="dark"] .sys-ident { color: var(--text-dim); }
+/* System > Advanced: the old circular-arrow identity mark, kept here only */
+.sys-ident--mark { display: flex; align-items: center; gap: 8px; }
+.sys-ident--mark svg { flex: none; width: 18px; height: 18px; color: var(--text-muted); }
+.auth-reaper { display: block; margin: 0 auto; }
 .sys-link { border: none; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 @media (max-width: 420px) {
   .sys-row { padding: 10px 14px; gap: 10px; }

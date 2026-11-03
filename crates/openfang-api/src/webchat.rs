@@ -131,7 +131,11 @@ const WEBCHAT_HTML: &str = concat!(
     include_str!("../static/css/components.css"),
     "\n",
     include_str!("../static/vendor/github-dark.min.css"),
-    "\n</style>\n",
+    // Home's centerpiece: the reaper mascot (static/brand/stax-mascot-phone.png
+    // at 512px), inlined as a data URI so no new route is needed.
+    "\n.home-mascot-art{background-image:url(data:image/png;base64,",
+    include_str!("../static/brand/stax-mascot-phone-512.png.b64"),
+    ")}\n</style>\n",
     include_str!("../static/index_body.html"),
     // Vendor libs: marked + highlight first (used by app.js), then Chart.js
     "<script nonce=\"__NONCE__\">\n",
