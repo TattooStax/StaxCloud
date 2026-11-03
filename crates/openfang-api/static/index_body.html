@@ -5341,10 +5341,10 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
           <!-- My Forms -->
           <div x-show="!loading && !loadError && tab === 'forms'">
-            <p class="text-sm text-dim" style="margin:2px 0 16px">Your forms and what each one has collected. Want a new form, or changes? Ask the Forms agent — the Agent tab in this panel.</p>
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Your forms and what each one has collected. Want a new form, or changes? Ask the Forms helper — the Agent tab below.</p>
             <div x-show="defs.length === 0" class="empty-state">
               <h4>No forms yet</h4>
-              <p class="hint">Ask the Forms agent: "Make me a contact form for the website."</p>
+              <p class="hint">Ask the Forms helper: "Make me a contact form for the website."</p>
             </div>
             <div class="card-grid">
               <template x-for="d in defs" :key="d.slug">
