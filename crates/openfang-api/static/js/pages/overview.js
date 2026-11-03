@@ -222,10 +222,10 @@ function overviewPage() {
 
     get setupChecklist() {
       return [
-        { key: 'provider', label: 'Configure an LLM provider', done: this.configuredProviders.length > 0, action: '#settings' },
+        { key: 'provider', label: 'Configure an LLM provider', done: this.configuredProviders.length > 0, action: '#advanced/configuration' },
         { key: 'agent', label: 'Create your first agent', done: (Alpine.store('app').agents || []).length > 0, action: '#agents' },
         { key: 'chat', label: 'Send your first message', done: localStorage.getItem('of-first-msg') === 'true', action: '#chat' },
-        { key: 'channel', label: 'Connect a messaging channel', done: this.channels.length > 0, action: '#channels' },
+        { key: 'channel', label: 'Connect a messaging channel', done: this.channels.length > 0, action: '#advanced/integrations' },
         { key: 'skill', label: 'Browse or install a skill', done: localStorage.getItem('of-skill-browsed') === 'true', action: '#skills' }
       ];
     },

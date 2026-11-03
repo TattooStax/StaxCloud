@@ -145,6 +145,8 @@ document.addEventListener('alpine:init', function() {
     // mounted Home thread reloads the now-active session.
     homeReload: 0,
     homeEngage: false,
+    // A request drafted by an Ask Stax row, placed in the Home composer.
+    askDraft: '',
     formsTab: 'forms',
     smsTab: 'inbox',
     setupDone: false,
@@ -397,12 +399,14 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { chat: 'home', sms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', overview: 'advanced', agents: 'advanced', setup: 'advanced', comms: 'advanced', logs: 'advanced', runtime: 'advanced', wizard: 'advanced' },
-    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'channels', advanced: 'agents' },
+    surfaceOf: { chat: 'home', sms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', advanced: 'advanced', configuration: 'advanced', integrations: 'advanced', overview: 'advanced', agents: 'advanced', setup: 'advanced', comms: 'advanced', logs: 'advanced', runtime: 'advanced', wizard: 'advanced' },
+    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'settings', advanced: 'advanced' },
     // Pages demoted to System > Advanced. Their page keys are unchanged;
     // only their URL hash carries an advanced/ prefix, so a stale #agents or
     // #overview bookmark lands on home instead of the old consoles.
-    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard'],
+    // The stock Settings console (configuration) and the integrations
+    // catalog (integrations) live here too; 'advanced' itself is the index.
+    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard', 'configuration', 'integrations'],
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -429,7 +433,7 @@ function app() {
       });
 
       // Hash routing
-      var validPages = ['overview','chat','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard'];
+      var validPages = ['overview','chat','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard','advanced'];
       var pageRedirects = {
         'templates': 'agents',
         'triggers': 'workflows',
@@ -462,6 +466,7 @@ function app() {
         if (validPages.indexOf(hash) >= 0) {
           self.page = hash;
           if (hash === 'chat' && self.surface !== 'channels') self.surface = 'home';
+          else if (hash !== 'chat' && self.surfaceOf[hash]) self.surface = self.surfaceOf[hash];
         }
       }
       window.addEventListener('hashchange', handleHash);
@@ -530,6 +535,23 @@ function app() {
     goSurface(s) {
       this.navigate(this.surfaceHome[s]);
       this.surface = s;
+    },
+
+    // The System corner (Settings, Connections, Advanced and every console
+    // under Advanced) carries its own module dock instead of the main one.
+    inSystemCorner() {
+      var s = this.surf();
+      return s === 'system' || s === 'advanced';
+    },
+
+    // Agent-first settings: a setting with no owner control is changed by
+    // asking Stax. Opens the Stax conversation with the request drafted.
+    askStax(text) {
+      var store = Alpine.store('app');
+      store.staxAgent();
+      store.askDraft = text || '';
+      store.homeEngage = true;
+      this.goSurface('home');
     },
 
     setTheme(mode) {

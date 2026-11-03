@@ -235,27 +235,8 @@
             <button class="stax-chip" :class="{ active: page === 'skills' }" @click="navigate('skills')">Capabilities</button>
         </div>
       </template>
-      <template x-if="surf() === 'system'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" :class="{ active: page === 'channels' }" @click="navigate('channels')">Connections</button>
-            <button class="stax-chip" :class="{ active: page === 'settings' }" @click="navigate('settings')">Settings</button>
-            <button class="stax-chip" @click="navigate('agents')">Advanced</button>
-        </div>
-      </template>
-      <!-- System > Advanced: the demoted consoles, fully working, off every
-           owner surface. -->
-      <template x-if="surf() === 'advanced'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" @click="navigate('channels')">System</button>
-            <button class="stax-chip" :class="{ active: page === 'agents' }" @click="navigate('agents')">Helpers</button>
-            <button class="stax-chip" :class="{ active: page === 'overview' }" @click="navigate('overview')">Overview</button>
-            <button class="stax-chip" :class="{ active: page === 'comms' }" @click="navigate('comms')">Team traffic</button>
-            <button class="stax-chip" :class="{ active: page === 'logs' }" @click="navigate('logs')">Diagnostics</button>
-            <button class="stax-chip" :class="{ active: page === 'runtime' }" @click="navigate('runtime')">System status</button>
-            <button class="stax-chip" :class="{ active: page === 'setup' }" @click="navigate('setup')">Step-by-step setup</button>
-            <button class="stax-chip" :class="{ active: $store.app.r4Open }" @click="$store.app.r4Open = true">Side chats</button>
-        </div>
-      </template>
+      <!-- The System corner (Settings, Connections, Advanced) has no pill
+           row: its sub-navigation is the module dock at the bottom. -->
         </div>
       </div>
     </div>
@@ -413,7 +394,7 @@
             <p style="font-size:12px;color:var(--text-dim)">Get started quickly with the guided Setup Wizard, or configure manually:</p>
             <div class="flex gap-2">
               <button class="btn btn-primary" @click="location.hash='wizard'">Launch Setup Wizard</button>
-              <button class="btn btn-ghost" @click="location.hash='settings'">Configure Manually</button>
+              <button class="btn btn-ghost" @click="location.hash='advanced/configuration'">Configure Manually</button>
               <button class="btn btn-ghost" @click="$store.app.dismissOnboarding()">Dismiss</button>
             </div>
           </div>
@@ -469,7 +450,7 @@
 
           <!-- Secondary stats row -->
           <div class="stats-row animate-entry stagger-5" style="margin-bottom:16px">
-            <div class="stat-card" @click="location.hash='channels'" style="cursor:pointer">
+            <div class="stat-card" @click="location.hash='advanced/integrations'" style="cursor:pointer">
               <div class="stat-value" style="font-size:18px" x-text="channels.length"></div>
               <div class="stat-label">Channels</div>
             </div>
@@ -502,7 +483,7 @@
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
               <template x-for="p in providers" :key="p.id">
-                <div class="badge" :class="providerBadgeClass(p)" :title="providerTooltip(p)" style="cursor:pointer;transition:all 0.15s var(--ease-spring);padding:4px 10px" @click="location.hash='settings'" @mouseenter="$el.style.transform='translateY(-1px)'" @mouseleave="$el.style.transform=''">
+                <div class="badge" :class="providerBadgeClass(p)" :title="providerTooltip(p)" style="cursor:pointer;transition:all 0.15s var(--ease-spring);padding:4px 10px" @click="location.hash='advanced/configuration'" @mouseenter="$el.style.transform='translateY(-1px)'" @mouseleave="$el.style.transform=''">
                   <span x-show="p.auth_status === 'configured'" style="display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px" :style="p.health === 'cooldown' || p.health === 'open' ? 'background:var(--warning);animation:pulse-ring 1.5s infinite' : 'background:var(--success)'"></span>
                   <span x-text="p.display_name"></span>
                 </div>
@@ -589,7 +570,7 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
                 Browse Skills
               </button>
-              <button class="btn btn-ghost btn-sm" @click="location.hash='channels'" style="display:flex;align-items:center;gap:4px">
+              <button class="btn btn-ghost btn-sm" @click="location.hash='advanced/integrations'" style="display:flex;align-items:center;gap:4px">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3l-2 18M16 3l-2 18"/></svg>
                 Add Channel
               </button>
@@ -597,7 +578,7 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12M18 9a9 9 0 0 1-9 9"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
                 Create Workflow
               </button>
-              <button class="btn btn-ghost btn-sm" @click="location.hash='settings'" style="display:flex;align-items:center;gap:4px">
+              <button class="btn btn-ghost btn-sm" @click="location.hash='advanced/configuration'" style="display:flex;align-items:center;gap:4px">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg>
                 Settings
               </button>
@@ -655,7 +636,7 @@
                 <div class="quick-action-desc">Spawn a new agent</div>
               </div>
             </div>
-            <div class="quick-action-card" @click="location.hash='settings'">
+            <div class="quick-action-card" @click="location.hash='advanced/configuration'">
               <div class="quick-action-icon" style="background:var(--success-subtle)">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               </div>
@@ -2555,11 +2536,86 @@
       </div>
     </template>
 
-    <!-- Page: Channels -->
+    <!-- System corner: owner surfaces. Settings and Connections are plain
+         lists; the machinery they used to show lives under Advanced. A
+         setting without an owner control is an Ask Stax row, never a toggle. -->
+    <template x-if="page === 'settings'">
+      <div class="sys-page">
+        <div class="page-header"><h2>Settings</h2></div>
+        <div class="page-body">
+          <ul class="sys-list" aria-label="Settings">
+            <li class="sys-row">
+              <span class="sys-text"><span class="sys-name" id="sys-appearance">Appearance</span><span class="sys-sub">How StaxCloud looks on this device</span></span>
+              <span class="sys-seg" role="radiogroup" aria-labelledby="sys-appearance">
+                <button role="radio" :aria-checked="themeMode === 'light'" :class="{ 'is-on': themeMode === 'light' }" @click="setTheme('light')">Light</button>
+                <button role="radio" :aria-checked="themeMode === 'system'" :class="{ 'is-on': themeMode === 'system' }" @click="setTheme('system')">Auto</button>
+                <button role="radio" :aria-checked="themeMode === 'dark'" :class="{ 'is-on': themeMode === 'dark' }" @click="setTheme('dark')">Dark</button>
+              </span>
+            </li>
+            <li><button class="sys-row" @click="askStax('I want to update my shop details.')"><span class="sys-text"><span class="sys-name">Shop details</span><span class="sys-sub">Name, hours, and what you offer</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#sd-mark"/></svg>Ask Stax</span></button></li>
+            <li><button class="sys-row" @click="askStax('What does Stax check with me before doing? I want to change that.')"><span class="sys-text"><span class="sys-name">What Stax checks with you first</span><span class="sys-sub">Texts, posts, and anything that spends money</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#sd-mark"/></svg>Ask Stax</span></button></li>
+            <li><button class="sys-row" @click="askStax('I want to set a monthly spending limit.')"><span class="sys-text"><span class="sys-name">Spending limit</span><span class="sys-sub">A monthly cap on what Stax can spend</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#sd-mark"/></svg>Ask Stax</span></button></li>
+            <li><button class="sys-row" @click="navigate('advanced')"><span class="sys-text"><span class="sys-name">Advanced</span><span class="sys-sub">The full controls behind the scenes</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="$store.app.staxAgent(); navigate('chat')"><span class="sys-text"><span class="sys-name">Report a bug</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li x-show="$store.app.sessionUser"><button class="sys-row sys-row--quiet" @click="$store.app.sessionLogout()"><span class="sys-text"><span class="sys-name">Sign out</span></span></button></li>
+          </ul>
+          <p class="sys-ident">Fargo Tattoo runs StaxCloud<span x-show="connected && version" x-text="' ' + version"></span>.</p>
+        </div>
+      </div>
+    </template>
+
     <template x-if="page === 'channels'">
+      <div class="sys-page" x-data="channelsPage">
+        <div class="page-header"><h2>Connections</h2></div>
+        <div class="page-body" x-init="loadChannels()">
+          <p class="sys-lede" x-show="loading">Checking your connections&hellip;</p>
+          <p class="sys-lede" x-show="!loading && loadError">Your connections did not load. Check that StaxCloud is online, then try again. <button class="sys-link" @click="loadData()">Try again</button></p>
+          <template x-if="!loading && !loadError">
+            <div>
+              <p class="sys-lede" x-text="configuredCount === 0 ? 'Nothing is connected yet. Stax can set up texting, chat apps, and email for you.' : 'Where your shop talks to people.'"></p>
+              <ul class="sys-list" aria-label="Connections">
+                <template x-for="ch in allChannels.filter(c => c.configured)" :key="ch.name">
+                  <li class="sys-row">
+                    <span class="sys-text"><span class="sys-name" x-text="ch.display_name"></span></span>
+                    <span class="sys-status" :data-tone="ch.connected ? 'ok' : 'warn'"><span class="sys-dot" aria-hidden="true"></span><span x-text="ch.connected ? 'Connected' : 'Needs attention'"></span></span>
+                  </li>
+                </template>
+                <li><button class="sys-row" @click="askStax('I want to connect something new so customers can reach the shop.')"><span class="sys-text"><span class="sys-name">Connect something new</span><span class="sys-sub">Texting, chat apps, email</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#sd-mark"/></svg>Ask Stax</span></button></li>
+              </ul>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- System > Advanced: the index of the demoted consoles. Machinery is
+         allowed here and nowhere above it. -->
+    <template x-if="page === 'advanced'">
+      <div class="sys-page">
+        <div class="page-header"><h2>Advanced</h2></div>
+        <div class="page-body">
+          <p class="sys-lede">The full controls behind StaxCloud, kept as they were. Most changes are easier by asking Stax.</p>
+          <ul class="sys-list" aria-label="Advanced">
+            <li><button class="sys-row" @click="navigate('configuration')"><span class="sys-text"><span class="sys-name">Settings console</span><span class="sys-sub">Providers, models, config, tools, security, network, budget</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('integrations')"><span class="sys-text"><span class="sys-name">Integrations catalog</span><span class="sys-sub">Every channel adapter and its setup</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('agents')"><span class="sys-text"><span class="sys-name">Helpers</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('overview')"><span class="sys-text"><span class="sys-name">Overview</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('comms')"><span class="sys-text"><span class="sys-name">Team traffic</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('logs')"><span class="sys-text"><span class="sys-name">Diagnostics</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('runtime')"><span class="sys-text"><span class="sys-name">System status</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('setup')"><span class="sys-text"><span class="sys-name">Step-by-step setup</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="$store.app.r4Open = true"><span class="sys-text"><span class="sys-name">Side chats</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+          </ul>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Integrations catalog (System > Advanced). The stock channels
+         console, moved intact out of the Connections landing. -->
+    <template x-if="page === 'integrations'">
       <div x-data="channelsPage">
         <div class="page-header">
-          <h2>Connections <span class="badge badge-muted" x-text="configuredCount + '/' + allChannels.length + ' configured'"></span></h2>
+          <h2>Integrations catalog <span class="badge badge-muted" x-text="configuredCount + '/' + allChannels.length + ' configured'"></span></h2>
         </div>
         <div class="page-body" x-init="loadChannels()">
           <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading channels...</span></div>
@@ -3940,10 +3996,12 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
-    <!-- Page: Settings -->
-    <template x-if="page === 'settings'">
+    <!-- Page: Settings console (System > Advanced). The stock settings
+         console — providers, models, config, tools, security and the rest —
+         moved intact out of the Settings landing. -->
+    <template x-if="page === 'configuration'">
       <div x-data="settingsPage">
-        <div class="page-header"><h2>Settings</h2></div>
+        <div class="page-header"><h2>Settings console</h2></div>
         <div class="page-body" x-init="loadSettings()">
           <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading settings...</span></div>
           <div x-show="!loading && loadError" class="error-state">
@@ -6211,7 +6269,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
   <!-- Dock: five tabs, in plan order. Stax and Channels both land on the
        conversation; the shell tracks the entered surface so the tab the
        user tapped is the one that lights. Only Work carries a badge. -->
-  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms'" aria-label="Primary">
+  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms' && !inSystemCorner()" aria-label="Primary">
       <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
         <svg class="stax-ic" aria-hidden="true"><use href="#ic-stax"/></svg>
         <span>Stax</span>
@@ -6233,6 +6291,27 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
         <svg class="stax-ic" aria-hidden="true"><use href="#ic-channels"/></svg>
         <span>Channels</span>
       </button>
+  </nav>
+
+  <!-- System corner module dock: Settings, Connections, Advanced (every
+       console under Advanced keeps Advanced lit). Done returns to Stax. -->
+  <nav class="stax-dock" x-cloak x-show="inSystemCorner()" aria-label="System">
+    <button class="stax-dock-btn" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')" aria-label="Settings">
+      <svg aria-hidden="true"><use href="#g-settings"/></svg>
+      <span>Settings</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: page === 'channels' }" :aria-current="page === 'channels' ? 'page' : false" @click="navigate('channels')" aria-label="Connections">
+      <svg aria-hidden="true"><use href="#g-connections"/></svg>
+      <span>Connections</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: surf() === 'advanced' }" :aria-current="page === 'advanced' ? 'page' : false" @click="navigate('advanced')" aria-label="Advanced">
+      <svg aria-hidden="true"><use href="#g-advanced"/></svg>
+      <span>Advanced</span>
+    </button>
+    <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
+      <svg aria-hidden="true"><use href="#g-done"/></svg>
+      <span>Done</span>
+    </button>
   </nav>
 </div>
 

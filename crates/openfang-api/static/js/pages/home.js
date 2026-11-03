@@ -35,6 +35,25 @@ function homePinStax(chat) {
   }
   pick();
   chat.$watch('$store.app.agents', pick);
+  // An Ask Stax row drafted a request: put it in the composer, ready to send.
+  function takeDraft() {
+    var store = Alpine.store('app');
+    var d = store.askDraft;
+    if (!d) return;
+    store.askDraft = '';
+    setTimeout(function() {
+      chat.inputText = d;
+      chat.$nextTick(function() {
+        var el = document.getElementById('msg-input');
+        if (!el) return;
+        el.focus();
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+      });
+    }, 250);
+  }
+  takeDraft();
+  chat.$watch('$store.app.askDraft', takeDraft);
   // The drawer switched or started a Stax conversation: reload the thread
   // onto the now-active session (same calls as the chat's session switch).
   chat.$watch('$store.app.homeReload', function() {
