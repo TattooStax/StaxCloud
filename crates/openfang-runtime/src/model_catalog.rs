@@ -253,6 +253,19 @@ impl ModelCatalog {
         self.find_model(id_or_alias)
     }
 
+    /// Whether `model` on `provider` accepts image input. Provider-prefixed
+    /// (`openrouter/openai/gpt-4o`) and unprefixed (`openai/gpt-4o`) names
+    /// resolve identically; an unknown model resolves to false.
+    pub fn model_supports_vision(&self, model: &str, provider: &str) -> bool {
+        let bare = model
+            .strip_prefix(provider)
+            .and_then(|m| m.strip_prefix('/'))
+            .unwrap_or(model);
+        self.find_model(&format!("{provider}/{bare}"))
+            .or_else(|| self.find_model(bare))
+            .is_some_and(|m| m.supports_vision)
+    }
+
     /// Resolve an alias to a canonical model ID, or None if not an alias.
     pub fn resolve_alias(&self, alias: &str) -> Option<&str> {
         self.aliases.get(&alias.to_lowercase()).map(|s| s.as_str())
@@ -4084,6 +4097,30 @@ mod tests {
     fn test_catalog_has_providers() {
         let catalog = ModelCatalog::new();
         assert_eq!(catalog.list_providers().len(), 42);
+    }
+
+    // Build V (i): the vision lookup resolves prefixed and unprefixed names identically.
+    #[test]
+    fn test_vision_prefixed_and_unprefixed_resolve_identically() {
+        let catalog = ModelCatalog::new();
+        for (bare, expect) in [
+            ("openai/gpt-4o", true),
+            ("google/gemini-2.5-flash", true),
+            ("deepseek/deepseek-chat", false),
+            ("no/such-model", false),
+        ] {
+            let prefixed = format!("openrouter/{bare}");
+            assert_eq!(
+                catalog.model_supports_vision(bare, "openrouter"),
+                expect,
+                "{bare}"
+            );
+            assert_eq!(
+                catalog.model_supports_vision(&prefixed, "openrouter"),
+                expect,
+                "{prefixed}"
+            );
+        }
     }
 
     #[test]

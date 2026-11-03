@@ -1190,7 +1190,8 @@ function chatPage() {
 
       var httpBody = { message: finalText };
       if (uploadedFiles && uploadedFiles.length) httpBody.attachments = uploadedFiles;
-      var ok = await OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/message', httpBody).then(function() { return true; }, function() { return false; });
+      var turn = this._turn;
+      var ok = await OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/message', httpBody).then(function(r) { if (r && r.image_unseen) turn.unseen = true; return true; }, function() { return false; });
       this._settle(ok ? 'end' : 'fail');
     },
 
