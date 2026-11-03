@@ -159,6 +159,17 @@ function homePage() {
       return t;
     },
 
+    // The thread shows conversation, not machinery. A finished agent turn
+    // with no words (it only ran tools on the way to the answer) is not a
+    // message, and neither is a note the system injected into the user side
+    // ("[System: ...]"). "Working on it" belongs to the in-flight turn only.
+    homeShowMsg(m) {
+      if (!m) return false;
+      if (m.role === 'user') return !/^\[System:/.test(m.text || '');
+      if (m.role !== 'agent' || m.thinking || m.streaming) return true;
+      return !!(m.text && m.text.trim()) || (m.tools || []).some(function(t) { return t._imageUrls && t._imageUrls.length; });
+    },
+
     homeIsFailure(text) {
       return /^error\b|failed|not connected|exception|panic/i.test(String(text || ''));
     }

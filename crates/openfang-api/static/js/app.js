@@ -61,6 +61,10 @@ function renderMarkdown(text) {
     html = html.replace(/<pre><code/g, '<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code');
     // Open external links in new tab
     html = html.replace(/<a\s+href="(https?:\/\/[^"]*)"(?![^>]*target=)([^>]*)>/gi, '<a href="$1" target="_blank" rel="noopener"$2>');
+    // A link shown as its own address is marked so it can end in an ellipsis
+    // instead of breaking mid-word; the app download becomes a button.
+    html = html.replace(/<a href="([^"]*\/download\/staxcloud\.apk)"([^>]*)>[^<]*<\/a>/gi, '<a href="$1"$2 class="link-app">Get the StaxCloud app</a>');
+    html = html.replace(/<a href="(https?:\/\/[^"]*)"([^>]*)>(https?:\/\/[^<]*)<\/a>/gi, '<a href="$1"$2 class="link-url">$3</a>');
     return html;
   }
   return escapeHtml(text);
@@ -210,6 +214,12 @@ document.addEventListener('alpine:init', function() {
     plain(t) {
       return String(t || '').replace(/\s*\(\s*(?:<[a-z_-]+>|\{\{?\s*[a-z_-]+\s*\}?\})\s*\)/gi, '')
         .replace(/<[a-z_-]+>|\{\{\s*[a-z_-]+\s*\}\}/gi, '').replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+    },
+
+    // A plain short date for list rows ("Nov 2"); nothing when unknown.
+    shortDate(ts) {
+      var d = ts ? new Date(ts) : null;
+      return d && !isNaN(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
     },
 
     isCrew(a) { return !!a && this.crewNames.indexOf(a.name) >= 0; },
@@ -433,6 +443,15 @@ function app() {
 
     init() {
       var self = this;
+
+      // The browser's own bars (status bar, toolbar) follow the app's theme:
+      // the dark background in dark, StaxCloud teal in light.
+      var tint = function() {
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', self.theme === 'dark' ? '#0c0c0e' : '#146e68');
+      };
+      tint();
+      this.$watch('theme', tint);
 
       // Listen for OS theme changes (only matters when mode is 'system')
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {

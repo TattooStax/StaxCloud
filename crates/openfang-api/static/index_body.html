@@ -549,14 +549,14 @@
               <!-- The conversation with Stax -->
               <div class="home-thread" aria-live="polite">
                 <template x-for="(msg, $index) in messages" :key="msg.id">
-                  <div class="home-msg" :class="'home-msg--' + msg.role" :style="{ order: $index * 2 }">
+                  <div class="home-msg" :class="'home-msg--' + msg.role" :style="{ order: $index * 2 }" x-show="homeShowMsg(msg)">
                     <template x-if="msg.role === 'agent'">
                       <div class="home-msg-row">
                         <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
                         <div class="home-msg-card">
                           <div class="typing-dots" x-show="msg.thinking" aria-label="Stax is thinking"><span></span><span></span><span></span></div>
                           <div class="markdown-body home-msg-text" x-show="!msg.thinking && msg.text && msg.text.trim()" x-html="renderMarkdown(msg.text)"></div>
-                          <div class="home-msg-working" x-show="!msg.thinking && !(msg.text && msg.text.trim())">Working on it</div>
+                          <div class="home-msg-working" x-show="msg.streaming && !msg.thinking && !(msg.text && msg.text.trim())">Working on it</div>
                           <template x-for="tool in (msg.tools || [])" :key="tool.id">
                             <div class="home-msg-images" x-show="tool._imageUrls && tool._imageUrls.length">
                               <template x-for="iurl in (tool._imageUrls || [])" :key="iurl">
@@ -4989,14 +4989,14 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
             <div class="table-wrap" x-show="filteredSessions.length">
               <table>
-                <thead><tr><th>Session</th><th>Agent</th><th>Messages</th><th>Created</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Chat</th><th>Agent</th><th>Messages</th><th>Started</th><th>Actions</th></tr></thead>
                 <tbody>
                   <template x-for="s in filteredSessions" :key="s.session_id">
                     <tr>
-                      <td class="text-xs truncate" style="font-family:monospace;max-width:120px" x-text="s.session_id ? s.session_id.substring(0, 8) + '...' : '-'" :title="s.session_id"></td>
+                      <td class="truncate" style="max-width:220px" x-text="(s.label && s.label.trim()) || 'Earlier conversation'" :title="s.session_id"></td>
                       <td class="font-bold" x-text="s.agent_name || s.agent_id"></td>
                       <td x-text="s.message_count"></td>
-                      <td class="text-xs" x-text="s.created_at ? new Date(s.created_at).toLocaleString() : '-'"></td>
+                      <td class="text-xs" x-text="$store.app.shortDate(s.created_at)"></td>
                       <td>
                         <button class="btn btn-primary btn-sm" @click="openInChat(s)">Chat</button>
                         <button class="btn btn-danger btn-sm" @click="deleteSession(s.session_id)">Delete</button>
@@ -6304,6 +6304,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
         <button class="sd-chat" :class="{ 'is-current': s.active }" :aria-current="s.active ? 'true' : false" @click="openConversation(s, () => goSurface('home'))" :disabled="busy">
           <span class="sd-chat-dot" aria-hidden="true"></span>
           <span class="sd-chat-title" x-text="chatTitle(s)"></span>
+          <span class="sd-chat-when" x-text="$store.app.shortDate(s.created_at)"></span>
         </button>
       </template>
       <button class="sd-more" x-show="chats.length > chatLimit" @click="showAll = !showAll" x-text="showAll ? 'Show fewer' : 'Show all ' + chats.length"></button>
