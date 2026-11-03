@@ -97,6 +97,18 @@ maintains the same keys; values are JSON objects stored whole):
 - `designrec/index` — `{"designs": [<id>, ...]}`.
 - `designjob/<id>` — one sidecar job record (next section).
 - `designjob/index` — `{"jobs": [<id>, ...]}`.
+- `designedit/<request_id>` — one AI edit request and its
+  state (awaiting a supplied result, applied, or refused with
+  the reason). `designedit/index` — `{"edits": [...]}`.
+- `designcover/<coverup_id>` — one cover-up session record:
+  the calibration and the guarantee note are part of the
+  record. `designcover/index` — `{"coverups": [...]}`.
+- `designlib/<artist_id>/<element_id>` — one library element
+  owned by that artist (its image bytes ride the record or a
+  file beside it, by the same 256 KiB rule).
+  `designlib/index` — `{"entries": ["<artist>/<element>", ...]}`.
+- `designkit/<artist_id>/<kit_id>` — one stamp kit owned by
+  that artist. `designkit/index` — `{"kits": [...]}`.
 - `draft/design-<request_id>` — the durable approval hold
   (Approvals section).
 
@@ -189,12 +201,67 @@ never work around it):
   an approved snapshot is the artist's signed-off version),
   `doc.snapshot_restore` {design_id, name} restores it,
   `doc.snapshot_list` {design_id} lists a design's snapshots.
+- AI edits (S7): `edit.request` {design_id, request_id,
+  instruction, target, protected?, base_revision?} validates
+  the request and holds it at `designedit/<request_id>`,
+  awaiting a result. A deterministic instruction (move,
+  resize, hide, ...) is REFUSED by the core's guard with a
+  pointer to `doc.op` — that refusal is the guard working;
+  never rephrase a transform as an edit to get around it.
+  `edit.apply` {design_id, request_id, result_ref} applies a
+  result image that a host leg produced and placed as a file
+  (`file:edits/<name>.png`, full-canvas RGBA) through the
+  core's gates, IN ORDER: a stale `base_revision` refuses the
+  job outright (the R1 refusal shape); then protected-region
+  verification — if the result changed even one protected
+  pixel, the edit is refused, the design is byte-identical,
+  and the job result carries `refused: true` with the
+  verification and a preview record. The structural outline
+  is protected BY DEFAULT whenever one is set. THE SIDECAR
+  GENERATES NOTHING: results are supplied, gates are
+  enforced. `edit.get` {request_id} reads a request's state.
+- Cover-ups (S8): `coverup.create` {design_id, coverup_id,
+  photo_ref, physical_width_mm, physical_height_mm,
+  orientation_deg?, curvature_note?, skin_note?, threshold?}
+  opens a session: the
+  photo (a file a host leg placed) becomes the design's
+  locked bottom reference layer and the session record lands
+  at `designcover/<coverup_id>`, guarantee note included.
+  `coverup.analyze` {coverup_id, margin?} returns the
+  darkness/coverage figures + a highlight file — an artist
+  AID, never a coverage promise. `coverup.overlay`
+  {coverup_id} renders the working view (reference under the
+  new art) as a file; `coverup.set_opacity` {coverup_id,
+  opacity, base_revision?} adjusts the reference's overlay
+  opacity through the one sanctioned lock exception.
+  `coverup.export` {coverup_id} exports the NEW ART ONLY —
+  the reference is removed on a copy, the working design
+  keeps it. `coverup.get` {coverup_id} reads the record.
+- Library + stamp kits: `library.save_element` {design_id,
+  layer_id, artist_id, element_id?, name?, kind?, tags?}
+  saves a design layer into the OWNING artist's library at
+  `designlib/<artist_id>/<element_id>`; `library.get_element`,
+  `library.list` {artist_id} read them; `library.create_kit`
+  {artist_id, name}, `library.add_to_kit` /
+  `library.remove_from_kit` {artist_id, kit_id, element_id}
+  manage kits at `designkit/<artist_id>/<kit_id>` — a kit
+  holds only its owner's elements, and the core refuses
+  another artist's element (that refusal is the ownership
+  rule, not a bug). `library.reuse` {artist_id, element_id,
+  design_id, base_revision?} pulls an element into a design
+  as a new layer stamped with its provenance. Elements NEVER
+  expire; `library.delete_element` {artist_id, element_id} —
+  the owning artist's explicit act — is the only removal
+  path, and it also pulls the element out of their kits.
 
 REVISIONS (R1): every design record carries a `revision` that
 advances with each mutating job (read it from a `doc.get`
 result or a mutating job's result). When you queue a mutating
 job (`doc.op`, `doc.set_structural_outline`, `doc.set_lighting`,
-`doc.snapshot_restore`) against a design you have been working
+`doc.snapshot_restore`, `coverup.create`,
+`coverup.set_opacity`, `library.reuse` — and `edit.apply`,
+whose guard is the base_revision its `edit.request` stored)
+against a design you have been working
 from a recalled record, include `base_revision` with the
 revision you read. If the design has moved since, the sidecar
 REFUSES the job — status error with a `refusal` naming both
@@ -331,9 +398,12 @@ profile.set_customer_designs, profile.set_versions_per_request
 (jobs `profile.get` / `profile.update`; the artist list is
 `artist/index`), library.save_element, library.get_element,
 library.delete_element, library.create_kit, library.add_to_kit,
-library.remove_from_kit (package library — not yet wired as
-sidecar jobs in this pass; the designer's library/kit work
-rides a later sidecar version).
+library.remove_from_kit (jobs `library.save_element`,
+`library.get_element`, `library.list`,
+`library.delete_element`, `library.create_kit`,
+`library.add_to_kit`, `library.remove_from_kit`, and reuse
+into a design as a provenance-stamped layer via
+`library.reuse`).
 
 Customer flow (the lifecycle, in order): customer.intake,
 customer.evaluate_offer, customer.route, customer.plan,
@@ -351,14 +421,21 @@ doc.set_lighting (job `doc.set_lighting`), doc.set_structural_outline,
 doc.shading_plan, doc.measure_contours (jobs of the same names).
 Still package-only: doc.set_element_lighting, lighting.list_presets,
 lighting.get_preset (the preset keys ride the `doc.set_lighting`
-job's `preset` arg). Edits + cover-ups: edit.validate_request,
-edit.build_mask, edit.verify_protected, edit.apply_edit,
-edit.classify_intent, coverup.create, coverup.calibration,
-coverup.set_reference_opacity, coverup.render_overlay,
-coverup.darkness_map, coverup.coverage_analysis,
-coverup.export_highlight, coverup.export_design (package
-modules — not yet wired as sidecar jobs; a design that needs
-them is built where they are wired, and this hand says so).
+job's `preset` arg). Edits (wired as jobs): edit.classify_intent,
+edit.validate_request (inside `edit.request` — deterministic
+intents bounce there), edit.build_mask, edit.verify_protected,
+edit.apply_edit (inside `edit.apply` — the sidecar supplies no
+pixels; a host leg's result file is gated, never generated),
+edit state via `edit.get`. Cover-ups (wired as jobs):
+coverup.create (job `coverup.create`; calibration rides its
+result), coverup.set_reference_opacity, coverup.render_overlay,
+coverup.coverage_analysis + coverup.darkness_map (inside
+`coverup.analyze`, whose highlight is coverup.export_highlight's
+output as a file), coverup.export_design (job `coverup.export` —
+new art only, reference excluded), session state via
+`coverup.get`. Region-only edit targets stay verify-only in the
+core (apply_edit lands pixels on ONE layer) — not wired as an
+apply path here, and this hand says so.
 
 Brush export (S10, bonus interchange): brush.export_brush,
 brush.export_brushset — stamp elements and kits as .brush /

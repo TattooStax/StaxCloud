@@ -74,6 +74,25 @@ whole — there is no partial update):
                        `snapshot_b64` or a file sidecar
                        `snapshot_ref`, same size rule as designs)
 - `designver/index`    {"versions": ["<design_id>/<name>", ...]}
+- `designedit/<request_id>`  one S7 edit request + its state:
+                       {request: EditRequest record, status
+                       (awaiting_result / applied / refused_stale /
+                       refused_protected), outcome?}
+- `designedit/index`   {"edits": [<request_id>, ...]}  (fixed key)
+- `designcover/<coverup_id>`  one S8 cover-up session record
+                       (CoverUpRecord verbatim — guarantee note
+                       included) + session state
+- `designcover/index`  {"coverups": [<coverup_id>, ...]} (fixed key)
+- `designlib/<artist_id>/<element_id>`  one library element: the
+                       core ElementLibrary record (owner stamped)
+                       + its PNG bytes (inline `element_b64` or a
+                       file sidecar `element_ref`, same size rule)
+- `designlib/index`    {"entries": ["<artist_id>/<element_id>", ...]}
+- `designlib/meta`     {"kit_counter": n} — the core kit counter,
+                       persisted so kit ids never collide across
+                       sidecar processes
+- `designkit/<artist_id>/<kit_id>`  one stamp kit (core record)
+- `designkit/index`    {"kits": ["<artist_id>/<kit_id>", ...]}
 - `draft/design-<request_id>`  the durable approval hold
 
 REVISIONS (R1): every `design/<id>` record carries `revision`,
@@ -119,7 +138,10 @@ designer records are the designer's own, so no exception here.
 No generative call lives here either: `doc.build` runs the
 package pipeline on a synthetic stand-in element or on an
 element image file a host leg produced. The model call stays in
-the chat/host image path, as in every package slice.
+the chat/host image path, as in every package slice. The S7
+edit jobs follow the same rule: `edit.apply` takes a result
+image a host leg produced (a file sidecar) and runs the core's
+gates on it — the sidecar enforces, it never generates.
 """
 
 from __future__ import annotations
@@ -157,6 +179,11 @@ REQUEST_INDEX = "designreq/index"
 DESIGNREC_INDEX = "designrec/index"
 JOB_INDEX = "designjob/index"
 VERSION_INDEX = "designver/index"
+EDIT_INDEX = "designedit/index"
+COVERUP_INDEX = "designcover/index"
+LIBRARY_INDEX = "designlib/index"
+LIBRARY_META = "designlib/meta"
+KIT_INDEX = "designkit/index"
 DRAFT_PREFIX = "draft/design-"
 
 
@@ -265,6 +292,17 @@ class HttpKvTransport:
         self._req("PUT", f"/api/memory/agents/{self.agent_id()}/kv/{enc}",
                   {"value": value})
 
+    def delete(self, key: str) -> None:
+        # The daemon's kv DELETE route — the same one the landing
+        # cleanups used (it answers {"status": "deleted"}). Only
+        # the library delete op uses it: an artist deleting their
+        # own element is the one true record removal in the
+        # package. Agents have no delete tool; this door is the
+        # deterministic sidecar's, like the approvals door.
+        enc = urllib.parse.quote(key, safe="")
+        self._req("DELETE",
+                  f"/api/memory/agents/{self.agent_id()}/kv/{enc}")
+
     def list_pairs(self) -> list[tuple[str, object]]:
         d = self._req("GET", f"/api/memory/agents/{self.agent_id()}/kv")
         pairs = d.get("kv_pairs", []) if isinstance(d, dict) else []
@@ -335,6 +373,12 @@ class FileSidecarStore:
 
     def exists(self, ref: str) -> bool:
         return os.path.exists(self._path(ref))
+
+    def remove(self, ref: str) -> None:
+        try:
+            os.unlink(self._path(ref))
+        except FileNotFoundError:
+            pass
 
 
 # ---------------------------------------------------------------------
@@ -497,6 +541,27 @@ def load_snapshot_bundle(files: FileSidecarStore, record: dict) -> bytes:
                      f"neither snapshot_b64 nor snapshot_ref")
 
 
+# Library element PNGs follow the same size rule, under their own
+# record fields (an element record never reads as a design).
+def store_element_bytes(files: FileSidecarStore, artist_id: str,
+                        element_id: str, data: bytes) -> dict:
+    if len(data) <= BUNDLE_INLINE_MAX_BYTES:
+        return {"element_b64": base64.b64encode(data).decode("ascii"),
+                "size_bytes": len(data)}
+    ref = f"file:library/{artist_id}/{element_id}.png"
+    files.put_bytes(ref, data)
+    return {"element_ref": ref, "size_bytes": len(data)}
+
+
+def load_element_bytes(files: FileSidecarStore, record: dict) -> bytes:
+    if record.get("element_b64"):
+        return base64.b64decode(record["element_b64"])
+    if record.get("element_ref"):
+        return files.get_bytes(record["element_ref"])
+    raise ValueError(f"library element {record.get('element_id')!r} "
+                     f"carries neither element_b64 nor element_ref")
+
+
 def _require_fresh(args: dict, record: dict) -> None:
     """The R1 revision guard for mutating jobs: when the job's
     args carry base_revision and it no longer equals the design
@@ -553,7 +618,7 @@ def _synthetic_element(width: int, height: int, variant: int = 0) -> Image.Image
 
 def _ctx(transport, files):
     return {"transport": transport, "files": files,
-            "store": None, "flow": None}
+            "store": None, "flow": None, "library": None}
 
 
 def _store(ctx):
@@ -1024,6 +1089,524 @@ def _op_doc_snapshot_list(ctx, args):
     return {"design_id": args["design_id"], "snapshots": out}
 
 
+# ---------------------------------------------------------------------
+# S7 edit ops — request + apply. The sidecar generates NOTHING:
+# edit.request validates and stores the EditRequest (the core's
+# deterministic-intent guard bounces transforms to doc.op before
+# anything is stored); edit.apply takes a result image a host
+# leg produced (a file sidecar) and runs the core's apply_edit —
+# stale revision refused first, then protected-region
+# verification. The outline is protected by default because the
+# core's effective_protected adds it; there is no switch here.
+# ---------------------------------------------------------------------
+
+def _save_edit_record(transport, rec: dict) -> None:
+    transport.put(f"designedit/{rec['request']['request_id']}", rec)
+    _index_add(transport, EDIT_INDEX, "edits",
+               rec["request"]["request_id"])
+
+
+def _load_edit_record(transport, request_id: str) -> dict:
+    rec = transport.get(f"designedit/{request_id}")
+    if not isinstance(rec, dict):
+        raise KeyError(f"no edit record at designedit/{request_id}")
+    return rec
+
+
+def _op_edit_request(ctx, args):
+    """Validate an AI edit request against the stored doc and
+    hold it as a durable designedit record, awaiting a supplied
+    result. A deterministic intent (move/resize/hide/...) is
+    refused by the core's guard with the ops pointer — that
+    refusal IS the bounce to doc.op, and nothing is stored."""
+    from studio_design.editmask import EditRequest, validate_edit_request
+    record, doc = _load_doc(ctx, args["design_id"])
+    request = EditRequest(
+        request_id=args["request_id"],
+        doc_id=args["design_id"],
+        instruction=args["instruction"],
+        target=args["target"],
+        protected=list(args.get("protected") or []),
+        created_by=args.get("created_by", ""),
+        geometry_authorized=bool(args.get("geometry_authorized", False)),
+        kind=args.get("kind"),
+        # The revision the eventual result will be computed
+        # against: the caller's, or the doc's current revision
+        # when the request is made against what is stored now.
+        base_revision=(int(args["base_revision"])
+                       if args.get("base_revision") is not None
+                       else doc.revision),
+    )
+    governing = validate_edit_request(doc, request)
+    rec = {"request": request.to_dict(), "status": "awaiting_result",
+           "design_revision": record.get("revision"),
+           "created": _now(), "updated": _now()}
+    _save_edit_record(ctx["transport"], rec)
+    return {"request_id": request.request_id,
+            "design_id": args["design_id"],
+            "status": "awaiting_result",
+            "base_revision": request.base_revision,
+            "target": governing["target"],
+            "protected": governing["protected"],
+            "intent": governing["intent"]}
+
+
+def _op_edit_apply(ctx, args):
+    """Apply a supplied edit result through the core's gates, in
+    the core's order: stale revision FIRST (job-level refusal,
+    R1 pattern — the edit record is closed refused_stale),
+    then protected-region verification inside apply_edit (a
+    refusal there is the gate's verdict: the edit record closes
+    refused_protected with the verification + preview, the job
+    result carries refused=true, and the stored bundle is not
+    re-stashed — the design is byte-identical)."""
+    from io import BytesIO
+    from studio_design.document import StaleRevisionError
+    from studio_design.editmask import EditRequest, apply_edit
+    transport = ctx["transport"]
+    rec = _load_edit_record(transport, args["request_id"])
+    if rec["status"] != "awaiting_result":
+        raise ValueError(f"edit {args['request_id']!r} is "
+                         f"{rec['status']}, not awaiting_result — "
+                         f"a decided edit is final; queue a new "
+                         f"edit.request to edit again")
+    request = EditRequest.from_dict(rec["request"])
+    record, doc = _load_doc(ctx, args["design_id"])
+    if request.doc_id != args["design_id"]:
+        raise ValueError(f"edit {args['request_id']!r} is for doc "
+                         f"{request.doc_id!r}, not {args['design_id']!r}")
+    if (request.base_revision is not None
+            and int(request.base_revision) != int(record.get("revision", 0))):
+        rec["status"] = "refused_stale"
+        rec["updated"] = _now()
+        rec["outcome"] = {"refused": True, "reason": "stale_revision",
+                          "base_revision": int(request.base_revision),
+                          "current_revision": int(record.get("revision", 0))}
+        _save_edit_record(transport, rec)
+        raise StaleRevisionError(args["design_id"],
+                                 int(request.base_revision),
+                                 int(record.get("revision", 0)))
+    result_ref = args["result_ref"]
+    img = Image.open(BytesIO(ctx["files"].get_bytes(result_ref)))
+    img.load()
+    outcome = apply_edit(doc, request, img)
+    rec["updated"] = _now()
+    if outcome.get("refused"):
+        rec["status"] = "refused_protected"
+        rec["outcome"] = {"refused": True, "reason": "protected_region",
+                          "verification": outcome.get("verification"),
+                          "preview": outcome.get("preview"),
+                          "discarded_px": outcome.get("discarded_px")}
+        _save_edit_record(transport, rec)
+        return {"request_id": args["request_id"],
+                "design_id": args["design_id"],
+                "refused": True, "reason": "protected_region",
+                "verification": outcome.get("verification"),
+                "preview": outcome.get("preview"),
+                "revision": record.get("revision")}
+    rec["status"] = "applied"
+    rec["outcome"] = {"refused": False,
+                      "verification": outcome.get("verification"),
+                      "discarded_px": outcome.get("discarded_px"),
+                      "mask_editable_px": outcome.get("mask_editable_px")}
+    _save_edit_record(transport, rec)
+    _restash_design(ctx, record, doc)
+    return {"request_id": args["request_id"],
+            "design_id": args["design_id"],
+            "refused": False, "revision": doc.revision,
+            "verification": outcome.get("verification"),
+            "discarded_px": outcome.get("discarded_px"),
+            "mask_editable_px": outcome.get("mask_editable_px")}
+
+
+def _op_edit_get(ctx, args):
+    rec = _load_edit_record(ctx["transport"], args["request_id"])
+    return {"edit": rec}
+
+
+# ---------------------------------------------------------------------
+# S8 cover-up ops — the session record is a durable kv record at
+# designcover/<coverup_id>; the workspace lives ON the design doc
+# (the locked reference layer), so create / set_opacity are
+# design-mutating and revision-guarded, while analyze / overlay /
+# export read the doc as stored. Exports are the core's own
+# new-art-only bundle: the reference is removed on a copy, and
+# the export record carries the guarantee note.
+# ---------------------------------------------------------------------
+
+def _save_coverup_record(transport, rec: dict) -> None:
+    transport.put(f"designcover/{rec['coverup_id']}", rec)
+    _index_add(transport, COVERUP_INDEX, "coverups", rec["coverup_id"])
+
+
+def _load_coverup(ctx, coverup_id: str):
+    from studio_design.coverup import CoverUpRecord
+    rec = ctx["transport"].get(f"designcover/{coverup_id}")
+    if not isinstance(rec, dict):
+        raise KeyError(f"no cover-up record at designcover/{coverup_id}")
+    return rec, CoverUpRecord.from_dict(rec["record"])
+
+
+def _op_coverup_create(ctx, args):
+    """Open a cover-up session on a stored design: the reference
+    photo (a file sidecar a host leg placed) becomes the doc's
+    locked bottom reference layer, and the session record —
+    calibration fields + the guarantee note, verbatim — is
+    stored as a durable kv record."""
+    from io import BytesIO
+    from studio_design.coverup import calibration, create_coverup
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    if isinstance(ctx["transport"].get(
+            f"designcover/{args['coverup_id']}"), dict):
+        raise ValueError(f"cover-up {args['coverup_id']!r} already "
+                         f"exists — create is create-once")
+    photo = Image.open(BytesIO(ctx["files"].get_bytes(args["photo_ref"])))
+    photo.load()
+    cu = create_coverup(
+        doc, args["coverup_id"], photo, source_ref=args["photo_ref"],
+        physical_width_mm=float(args["physical_width_mm"]),
+        physical_height_mm=float(args["physical_height_mm"]),
+        orientation_deg=float(args.get("orientation_deg", 0.0)),
+        curvature_note=args.get("curvature_note", ""),
+        skin_note=args.get("skin_note", ""),
+        threshold=int(args.get("threshold", 128)))
+    _restash_design(ctx, record, doc)
+    rec = {"coverup_id": cu.coverup_id, "design_id": args["design_id"],
+           "record": cu.to_dict(), "status": "open",
+           "created": _now(), "updated": _now()}
+    _save_coverup_record(ctx["transport"], rec)
+    return {"coverup_id": cu.coverup_id, "design_id": args["design_id"],
+            "reference_layer_id": cu.reference_layer_id,
+            "calibration": calibration(doc, cu),
+            "guarantee_note": cu.guarantee_note,
+            "revision": doc.revision}
+
+
+def _op_coverup_analyze(ctx, args):
+    """The darkness/coverage figures for the session, with the
+    highlight written as a working-aid file. An artist aid —
+    the result carries the guarantee note so the figures never
+    travel without their limit."""
+    from studio_design.coverup import (calibration, coverage_analysis,
+                                       export_highlight)
+    rec, cu = _load_coverup(ctx, args["coverup_id"])
+    record, doc = _load_doc(ctx, rec["design_id"])
+    analysis = coverage_analysis(doc, cu,
+                                 margin=int(args.get("margin", 24)))
+    highlight_ref = (f"file:designs/{rec['design_id']}/"
+                     f"coverup-{cu.coverup_id}-highlight.png")
+    ctx["files"].put_bytes(highlight_ref, export_highlight(analysis))
+    figures = {k: analysis[k] for k in
+               ("threshold", "margin", "old_dark_px", "covered_px",
+                "uncovered_px", "coverage_ratio")}
+    rec["last_analysis"] = {**figures, "highlight_ref": highlight_ref,
+                            "ts": _now()}
+    rec["updated"] = _now()
+    _save_coverup_record(ctx["transport"], rec)
+    return {"coverup_id": cu.coverup_id, "design_id": rec["design_id"],
+            **figures, "highlight_ref": highlight_ref,
+            "calibration": calibration(doc, cu),
+            "guarantee_note": cu.guarantee_note}
+
+
+def _op_coverup_overlay(ctx, args):
+    """The working view (reference at its overlay opacity with
+    the new art over it) as a file. A viewing aid — never a
+    design export; the export op is coverup.export."""
+    from io import BytesIO
+    from studio_design.coverup import render_overlay
+    rec, cu = _load_coverup(ctx, args["coverup_id"])
+    record, doc = _load_doc(ctx, rec["design_id"])
+    buf = BytesIO()
+    render_overlay(doc, cu).save(buf, format="PNG")
+    ref = (f"file:designs/{rec['design_id']}/"
+           f"coverup-{cu.coverup_id}-overlay.png")
+    ctx["files"].put_bytes(ref, buf.getvalue())
+    return {"coverup_id": cu.coverup_id, "design_id": rec["design_id"],
+            "overlay_ref": ref}
+
+
+def _op_coverup_set_opacity(ctx, args):
+    """Adjust the reference's overlay opacity through the core's
+    sanctioned lock exception (the op log names it). Mutating:
+    revision-guarded like every design change."""
+    from studio_design.coverup import set_reference_opacity
+    rec, cu = _load_coverup(ctx, args["coverup_id"])
+    record, doc = _load_doc(ctx, rec["design_id"])
+    _require_fresh(args, record)
+    set_reference_opacity(doc, cu, float(args["opacity"]))
+    _restash_design(ctx, record, doc)
+    layer = doc.get(cu.reference_layer_id)
+    return {"coverup_id": cu.coverup_id, "design_id": rec["design_id"],
+            "reference_layer_id": cu.reference_layer_id,
+            "opacity": layer.opacity, "locked": layer.locked,
+            "revision": doc.revision}
+
+
+def _op_coverup_export(ctx, args):
+    """Export the NEW ART ONLY (the core removes the reference
+    on a copy; the working doc is untouched). The exported
+    bundle is stored as a file sidecar; the result names its
+    layer list so the exclusion is read from the export itself,
+    and the export record carries the guarantee note."""
+    from studio_design.coverup import export_coverup_design
+    from studio_design.document import DesignDoc
+    rec, cu = _load_coverup(ctx, args["coverup_id"])
+    record, doc = _load_doc(ctx, rec["design_id"])
+    out = export_coverup_design(doc, cu)
+    ref = (f"file:designs/{rec['design_id']}/"
+           f"coverup-{cu.coverup_id}-export.zip")
+    ctx["files"].put_bytes(ref, out["bundle"])
+    exported = DesignDoc.load_bundle(out["bundle"])
+    return {"coverup_id": cu.coverup_id, "design_id": rec["design_id"],
+            "export_ref": ref, "record": out["record"],
+            "guarantee_note": out["guarantee_note"],
+            "layers": [{"id": l.id, "name": l.name, "role": l.role}
+                       for l in exported.layers]}
+
+
+def _op_coverup_get(ctx, args):
+    rec, cu = _load_coverup(ctx, args["coverup_id"])
+    return {"coverup": rec}
+
+
+# ---------------------------------------------------------------------
+# Library + stamp kits — the core ElementLibrary rebuilt from kv
+# each cycle (the sidecar is stateless; the core owns the
+# scoping rules: an artist's kits hold only their own elements,
+# deletes are the owning artist's explicit act, nothing
+# expires). Element records are durable kv records at
+# designlib/<artist>/<element> + their PNG bytes; kits at
+# designkit/<artist>/<kit>. Mutations persist the touched
+# artist's slice back whole.
+# ---------------------------------------------------------------------
+
+_ELEMENT_CORE_FIELDS = ("element_id", "name", "kind",
+                        "source_design_id", "tags", "created_ts")
+
+
+def _load_library(ctx):
+    """Rebuild (ElementLibrary, bytes-by-(artist, element)) from
+    the fixed library/kit indexes. A record the index names but
+    the store lacks is skipped here and reported by the ops that
+    address it — never invented."""
+    if ctx["library"] is not None:
+        return ctx["library"]
+    import json as _json
+    from studio_design.library import ElementLibrary
+    transport = ctx["transport"]
+    elements: dict[str, list[dict]] = {}
+    bytes_map: dict[tuple[str, str], bytes] = {}
+    for entry in _index_ids(transport, LIBRARY_INDEX, "entries"):
+        artist_id, _, element_id = entry.partition("/")
+        rec = transport.get(f"designlib/{artist_id}/{element_id}")
+        if not isinstance(rec, dict):
+            continue
+        elements.setdefault(artist_id, []).append(
+            {k: rec.get(k) for k in _ELEMENT_CORE_FIELDS})
+        bytes_map[(artist_id, element_id)] = load_element_bytes(
+            ctx["files"], rec)
+    kits: dict[str, list[dict]] = {}
+    for entry in _index_ids(transport, KIT_INDEX, "kits"):
+        artist_id, _, kit_id = entry.partition("/")
+        rec = transport.get(f"designkit/{artist_id}/{kit_id}")
+        if isinstance(rec, dict):
+            kits.setdefault(artist_id, []).append(
+                {"kit_id": rec["kit_id"], "artist_id": artist_id,
+                 "name": rec["name"],
+                 "element_ids": list(rec.get("element_ids", []))})
+    meta = transport.get(LIBRARY_META)
+    counter = int(meta.get("kit_counter", 0)) if isinstance(meta, dict) else 0
+    lib = ElementLibrary.from_json(_json.dumps(
+        {"elements": elements, "kits": kits, "kit_counter": counter}))
+    ctx["library"] = (lib, bytes_map)
+    return ctx["library"]
+
+
+def _persist_library_artist(ctx, artist_id: str) -> None:
+    """Write one artist's library slice back to kv: element
+    records (with their byte-storage fields preserved — fresh
+    bytes were stored by the save op before this runs), kit
+    records, the artist's index entries, and the kit counter."""
+    import json as _json
+    lib, bytes_map = _load_library(ctx)
+    transport = ctx["transport"]
+    current_elements = {e["element_id"]: e
+                        for e in lib.list_elements(artist_id)}
+    old_entries = [e for e in _index_ids(transport, LIBRARY_INDEX,
+                                         "entries")
+                   if e.partition("/")[0] == artist_id]
+    for entry in old_entries:
+        element_id = entry.partition("/")[2]
+        if element_id not in current_elements:
+            old = transport.get(f"designlib/{artist_id}/{element_id}")
+            transport.delete(f"designlib/{artist_id}/{element_id}")
+            if isinstance(old, dict) and old.get("element_ref"):
+                ctx["files"].remove(old["element_ref"])
+            bytes_map.pop((artist_id, element_id), None)
+    for element_id, core_rec in current_elements.items():
+        key = f"designlib/{artist_id}/{element_id}"
+        existing = transport.get(key)
+        kv = dict(core_rec)
+        if (artist_id, element_id) in bytes_map and not (
+                isinstance(existing, dict)
+                and (existing.get("element_b64")
+                     or existing.get("element_ref"))):
+            kv.update(store_element_bytes(ctx["files"], artist_id,
+                                          element_id,
+                                          bytes_map[(artist_id,
+                                                       element_id)]))
+        elif isinstance(existing, dict):
+            for f in ("element_b64", "element_ref", "size_bytes"):
+                if f in existing:
+                    kv[f] = existing[f]
+        else:
+            raise ValueError(f"library element {element_id!r} has "
+                             f"no stored bytes to persist")
+        transport.put(key, kv)
+    for kit in lib.list_kits(artist_id):
+        transport.put(f"designkit/{artist_id}/{kit['kit_id']}", kit)
+    other_e = [e for e in _index_ids(transport, LIBRARY_INDEX,
+                                     "entries")
+               if e.partition("/")[0] != artist_id]
+    _index_set(transport, LIBRARY_INDEX, "entries",
+               other_e + [f"{artist_id}/{eid}"
+                          for eid in current_elements])
+    other_k = [e for e in _index_ids(transport, KIT_INDEX, "kits")
+               if e.partition("/")[0] != artist_id]
+    _index_set(transport, KIT_INDEX, "kits",
+               other_k + [f"{artist_id}/{k['kit_id']}"
+                          for k in lib.list_kits(artist_id)])
+    counter = _json.loads(lib.to_json())["kit_counter"]
+    transport.put(LIBRARY_META, {"kit_counter": counter})
+
+
+def _op_library_save_element(ctx, args):
+    """Save one layer of a stored design into its artist's
+    library: the core record (owner-stamped, no expiry — ever)
+    plus the layer's PNG bytes. The design itself is only read,
+    so no revision guard applies."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    layer = doc.get(args["layer_id"])
+    kind = args.get("kind")
+    if kind is None:
+        if layer.kind == "stamp":
+            kind = "stamp"
+        elif layer.role in ("line", "shading"):
+            kind = layer.role
+        else:
+            kind = "raster"
+    element_id = args.get("element_id") or f"{args['design_id']}-{layer.id}"
+    lib, bytes_map = _load_library(ctx)
+    saved = lib.save_element(args["artist_id"], {
+        "element_id": element_id,
+        "name": args.get("name", layer.name),
+        "kind": kind,
+        "source_design_id": args["design_id"],
+        "tags": list(args.get("tags") or []),
+        "created_ts": _now()})
+    from io import BytesIO
+    img = Image.open(BytesIO(doc.share_layer(layer.id)))
+    img.load()
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    bytes_map[(args["artist_id"], element_id)] = buf.getvalue()
+    existing = ctx["transport"].get(
+        f"designlib/{args['artist_id']}/{element_id}")
+    if isinstance(existing, dict) and existing.get("element_ref"):
+        ctx["files"].remove(existing["element_ref"])
+    if isinstance(existing, dict):
+        for f in ("element_b64", "element_ref"):
+            existing.pop(f, None)
+        ctx["transport"].put(
+            f"designlib/{args['artist_id']}/{element_id}", existing)
+    _persist_library_artist(ctx, args["artist_id"])
+    stored = ctx["transport"].get(
+        f"designlib/{args['artist_id']}/{element_id}")
+    return {"element": saved,
+            "storage": "element_ref" if "element_ref" in stored
+                       else "element_b64",
+            "size_bytes": stored.get("size_bytes")}
+
+
+def _op_library_get_element(ctx, args):
+    lib, _ = _load_library(ctx)
+    rec = lib.get_element(args["artist_id"], args["element_id"])
+    return {"element": rec,
+            "provenance": lib.element_provenance(args["artist_id"],
+                                                 args["element_id"])}
+
+
+def _op_library_list(ctx, args):
+    lib, _ = _load_library(ctx)
+    return {"artist_id": args["artist_id"], **lib.artist_view(args["artist_id"])}
+
+
+def _op_library_delete_element(ctx, args):
+    """The ONLY removal path in the library, and it is the
+    owning artist's explicit act (the core also pulls the
+    element out of the artist's kits)."""
+    lib, _ = _load_library(ctx)
+    lib.delete_element(args["artist_id"], args["element_id"])
+    _persist_library_artist(ctx, args["artist_id"])
+    return {"artist_id": args["artist_id"],
+            "deleted": args["element_id"]}
+
+
+def _op_library_create_kit(ctx, args):
+    lib, _ = _load_library(ctx)
+    kit = lib.create_kit(args["artist_id"], args["name"])
+    _persist_library_artist(ctx, args["artist_id"])
+    return {"kit": kit}
+
+
+def _op_library_add_to_kit(ctx, args):
+    """Add one of the artist's OWN elements to their kit — the
+    core refuses another artist's element (KeyError), and that
+    refusal is the ownership rule working."""
+    lib, _ = _load_library(ctx)
+    kit = lib.add_to_kit(args["artist_id"], args["kit_id"],
+                         args["element_id"])
+    _persist_library_artist(ctx, args["artist_id"])
+    return {"kit": kit}
+
+
+def _op_library_remove_from_kit(ctx, args):
+    lib, _ = _load_library(ctx)
+    kit = lib.remove_from_kit(args["artist_id"], args["kit_id"],
+                              args["element_id"])
+    _persist_library_artist(ctx, args["artist_id"])
+    return {"kit": kit}
+
+
+_REUSE_ROLE = {"line": "line", "shading": "shading",
+               "stamp": "line", "raster": "art"}
+
+
+def _op_library_reuse(ctx, args):
+    """Pull a library element into a (possibly different, later)
+    design as a new layer, stamped with the core's provenance
+    record — the reuse is on record through save/load. Design-
+    mutating: revision-guarded."""
+    from io import BytesIO
+    lib, bytes_map = _load_library(ctx)
+    provenance = lib.element_provenance(args["artist_id"],
+                                        args["element_id"])
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    img = Image.open(BytesIO(bytes_map[(args["artist_id"],
+                                        args["element_id"])]))
+    img.load()
+    element = lib.get_element(args["artist_id"], args["element_id"])
+    role = args.get("role") or _REUSE_ROLE.get(element["kind"], "art")
+    layer_id = doc.add_raster(args.get("name", element["name"]), img,
+                              role=role, provenance=provenance)
+    _restash_design(ctx, record, doc)
+    return {"design_id": args["design_id"], "layer_id": layer_id,
+            "provenance": provenance, "revision": doc.revision}
+
+
 JOB_OPS = {
     "profile.seed": _op_profile_seed,
     "profile.get": _op_profile_get,
@@ -1054,6 +1637,23 @@ JOB_OPS = {
     "doc.snapshot_put": _op_doc_snapshot_put,
     "doc.snapshot_restore": _op_doc_snapshot_restore,
     "doc.snapshot_list": _op_doc_snapshot_list,
+    "edit.request": _op_edit_request,
+    "edit.apply": _op_edit_apply,
+    "edit.get": _op_edit_get,
+    "coverup.create": _op_coverup_create,
+    "coverup.analyze": _op_coverup_analyze,
+    "coverup.overlay": _op_coverup_overlay,
+    "coverup.set_opacity": _op_coverup_set_opacity,
+    "coverup.export": _op_coverup_export,
+    "coverup.get": _op_coverup_get,
+    "library.save_element": _op_library_save_element,
+    "library.get_element": _op_library_get_element,
+    "library.list": _op_library_list,
+    "library.delete_element": _op_library_delete_element,
+    "library.create_kit": _op_library_create_kit,
+    "library.add_to_kit": _op_library_add_to_kit,
+    "library.remove_from_kit": _op_library_remove_from_kit,
+    "library.reuse": _op_library_reuse,
 }
 
 
