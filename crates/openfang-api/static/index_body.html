@@ -500,31 +500,30 @@
     </template>
 
     <!-- Page: Home — the conversation with Stax is the landing.
-         Order: identity header, status, morning brief (+ Needs you),
-         the thread with Stax, the Ask Stax composer. The thread runs on
+         One top element, the mascot (identity); beneath it one raised
+         sheet: status, then the first-open greeting + next action or the
+         morning brief (+ Needs you) and the thread; the Ask Stax composer. The thread runs on
          chatPage (same WS + HTTP fallback, same sessions); the brief card
          is the brief/<date> kv record; Needs you is the approvals queue. -->
     <template x-if="page === 'chat'">
       <div class="home" x-data="homePage" :class="{ 'home--first': homeFirstOpen && !homeEngaged }">
         <div class="home-inner" x-data="chatPage" x-init="homePinStax($data)">
-          <header class="home-head">
+          <!-- The drawer toggle floats in the corner; it is not a header row. -->
+          <div class="home-head">
             <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
-            <button class="home-id" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
-              <span class="home-avatar"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
-              <span class="home-id-name">Stax</span>
-            </button>
-            <span class="home-status" x-show="!(homeFirstOpen && !homeEngaged)" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
-          </header>
+          </div>
 
-          <div class="home-scroll" id="messages">
+          <div class="home-scroll" id="messages" :class="{ 'home-scroll--first': homeFirstOpen && !homeEngaged }">
+            <button class="home-mascot" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
+              <span class="home-mascot-art" aria-hidden="true"></span>
+            </button>
+
+            <div class="home-sheet">
+            <span class="home-status" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
             <!-- First open (no setup/profile yet): one next action -->
             <section class="home-hero" x-show="homeFirstOpen && !homeEngaged" aria-label="Welcome">
-              <button class="home-mascot" @click="homeCard = true" aria-label="About Stax">
-                <span class="home-mascot-art" aria-hidden="true"></span>
-              </button>
-              <span class="home-status home-status--hero" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
               <h1 class="home-greet">What&rsquo;s next, <span x-text="$store.app.ownerName"></span>?</h1>
               <button class="home-cta" @click="homeStartSetup(messages.length)">Set up my studio</button>
               <button class="home-quiet-link" x-show="messages.length > 0" @click="homeEngaged = true; $nextTick(() => scrollToBottom())">Show our earlier conversation</button>
@@ -643,6 +642,7 @@
                 </template>
               </div>
             </div>
+            </div>
           </div>
 
           <!-- Ask Stax -->
@@ -660,7 +660,7 @@
             </div>
           </div>
 
-          <!-- The Stax card (opened from the identity header or the mascot) -->
+          <!-- The Stax card (opened from the mascot or the drawer's Stax row) -->
           <div class="home-card-scrim" x-show="homeCard" x-cloak x-transition.opacity @click="homeCard = false"></div>
           <section class="home-card" x-show="homeCard" x-cloak role="dialog" aria-modal="true" aria-labelledby="home-card-title" @keydown.escape.window="homeCard = false"
                    x-transition:enter="home-card-enter" x-transition:enter-start="home-card-from" x-transition:enter-end="home-card-to"

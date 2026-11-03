@@ -313,33 +313,35 @@ body.sd-dragging { -webkit-user-select: none; user-select: none; }
 .home { background: var(--bg); }
 .home-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
-.home-head { flex: none; display: flex; align-items: center; gap: 8px; height: var(--header-height); padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--bg); }
-.home-head .stax-menu-btn { margin: 0 0 0 -10px; }
-.home-id { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px 0 4px; margin-left: -4px; border: none; border-radius: 999px; background: none; color: var(--text); font: inherit; cursor: pointer; }
-.home-id:hover { background: var(--surface); }
-.home-id-name { font-size: 16px; font-weight: 700; letter-spacing: -0.015em; }
+/* The drawer toggle keeps Round 3's spot but floats: it is not a row. */
+.home-head { position: absolute; z-index: 5; top: 0; left: 0; display: flex; align-items: center; height: var(--header-height); padding: 0 16px; pointer-events: none; }
+.home-head .stax-menu-btn { margin: 0 0 0 -10px; pointer-events: auto; }
 .home-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
 .home-avatar svg { width: 86%; height: 86%; }
 .home-avatar--sm { width: 28px; height: 28px; margin-top: 2px; }
 
-.home-status { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 62%; }
+.home-status { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 32px); }
 .home-status-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 .home-status[data-tone="warn"] .home-status-dot { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-subtle); }
 .home-status[data-tone="quiet"] .home-status-dot { background: var(--text-muted); box-shadow: none; }
 
-.home-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.home-column { max-width: 680px; margin: 0 auto; padding: 16px 16px 28px; display: flex; flex-direction: column; gap: 20px; }
+.home-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+.home-column { width: 100%; max-width: 680px; margin: 0 auto; padding: 16px 16px 28px; display: flex; flex-direction: column; gap: 20px; }
+
+/* One focal point, then one quiet raised sheet holding everything else. */
+.home-sheet { flex: 1 0 auto; width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; padding-top: 20px; background: var(--surface); border: 1px solid var(--border-subtle, var(--border)); border-bottom: none; border-radius: 28px 28px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,0.07); }
+.home-sheet .home-brief, .home-sheet .home-msg-card, .home-sheet .home-reply:not(.is-on):not(.home-reply--go) { background: var(--bg); }
 
 /* First open — the one bold moment */
-.home-hero { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 24px 40px; }
-.home-mascot { width: 180px; height: 180px; padding: 0; border: none; background: none; border-radius: 24px; cursor: pointer; margin-bottom: 22px; }
+.home-hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 22px 24px 40px; }
+.home-mascot { flex: none; align-self: center; width: 112px; height: 112px; padding: 0; border: none; background: none; border-radius: 24px; cursor: pointer; margin: 14px 0 14px; }
+.home-scroll--first .home-mascot { width: 180px; height: 180px; margin: 44px 0 24px; }
 .home-mascot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 /* The reaper mascot: stax-mascot-phone.png, embedded by webchat.rs as a
    data URI on .home-mascot-art (see the rule appended after this sheet). */
 .home-mascot-art { display: block; width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; background-size: contain; animation: m-arrive 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes m-arrive { from { transform: translateY(10px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .home-mascot-art { animation: none; } }
-.home-status--hero { margin: 0 0 18px; max-width: 100%; }
 .home-greet { font-size: clamp(30px, 7.4vw, 40px); line-height: 1.1; font-weight: 600; letter-spacing: -0.035em; text-wrap: balance; margin: 0 0 28px; color: var(--text); }
 .home-cta { min-height: 52px; padding: 0 30px; border: none; border-radius: 999px; background: var(--accent); color: var(--bg); font: inherit; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; cursor: pointer; box-shadow: var(--shadow-accent); transition: transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out); }
 .home-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 22px var(--accent-glow); }
@@ -423,7 +425,7 @@ button.home-needs:hover { background: var(--accent-subtle); }
 
 @media (min-width: 720px) {
   .home-head { padding: 0 20px; }
-  .home-mascot { width: 196px; height: 196px; }
+  .home-scroll--first .home-mascot { width: 196px; height: 196px; }
   .home-card { left: 50%; right: auto; bottom: auto; top: 50%; width: 400px; transform: translate(-50%, -50%); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-xl); }
   .home-card-from { transform: translate(-50%, calc(-50% + 16px)); opacity: 0; }
   .home-card-to { transform: translate(-50%, -50%); opacity: 1; }
