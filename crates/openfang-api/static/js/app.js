@@ -839,11 +839,15 @@ function staxDrawer() {
         if (!isOpen) return;
         if (!self._dragOpened) self.collapseAll();
         self._dragOpened = false;
-        self.loadChats().then(function() { self.cue(); });
+        self.loadChats();
         self.cue();
       });
-      this.$watch('open', function() { self.cue(); }, { deep: true });
-      this.$watch('showAll', function() { self.cue(); });
+      // Sections opening, chats loading, Show all: any change in the one
+      // scroll's content re-checks the bottom cue.
+      if (window.ResizeObserver) {
+        var ro = new ResizeObserver(function() { self.cue(); });
+        Array.prototype.forEach.call(this.$el.querySelector('.sd-body').children, function(c) { ro.observe(c); });
+      }
       this.initGestures();
     },
 
@@ -1032,8 +1036,8 @@ function staxDrawer() {
     // Bottom fade while the one scroll continues past the fold.
     cue() {
       var self = this;
-      this.$nextTick(function() {
-        var b = self.$el.querySelector('.sd-body');
+      requestAnimationFrame(function() {
+        var b = document.querySelector('.stax-side .sd-body');
         self.more = !!b && b.scrollHeight - b.scrollTop - b.clientHeight > 4;
       });
     },
