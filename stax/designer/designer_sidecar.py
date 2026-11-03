@@ -66,9 +66,28 @@ whole — there is no partial update):
                        exists only after artist approval (Gate 2)
 - `designrec/index`    {"designs": [<id>, ...]}   (fixed key)
 - `designjob/<id>`     one job record {job_id, op, args, status,
-                       result?, error?, ts, finished?}
+                       result?, error?, refusal?, ts, finished?}
 - `designjob/index`    {"jobs": [<id>, ...]}      (fixed key)
+- `designver/<design_id>/<name>`  one DURABLE named snapshot of a
+                       design (R1): {design_id, name, approved,
+                       revision, ts} + the bundle (inline
+                       `snapshot_b64` or a file sidecar
+                       `snapshot_ref`, same size rule as designs)
+- `designver/index`    {"versions": ["<design_id>/<name>", ...]}
 - `draft/design-<request_id>`  the durable approval hold
+
+REVISIONS (R1): every `design/<id>` record carries `revision`,
+the core document's mutation counter, rewritten from the loaded
+doc after every mutating job. A mutating job (doc.op,
+doc.set_structural_outline, doc.set_lighting, doc.snapshot_restore)
+MAY carry `base_revision` in its args — the revision the caller
+computed against. When it is present and no longer equals the
+record's revision, the job is REFUSED before anything runs: the
+job record closes status "error" with a structured `refusal`
+{reason: "stale_revision", base_revision, current_revision} and
+the cycle report lists it under "refused". A delayed result can
+never overwrite newer edits. Jobs without base_revision are
+legacy/unguarded (the pre-R1 protocol) and run as before.
 
 FILE SIDECARS: a design bundle over BUNDLE_INLINE_MAX_BYTES is
 NOT base64'd into kv (layered RGBA at print size is tens of MB;
@@ -137,6 +156,7 @@ DESIGN_INDEX = "design/index"
 REQUEST_INDEX = "designreq/index"
 DESIGNREC_INDEX = "designrec/index"
 JOB_INDEX = "designjob/index"
+VERSION_INDEX = "designver/index"
 DRAFT_PREFIX = "draft/design-"
 
 
@@ -264,6 +284,29 @@ class HttpKvTransport:
                   {"message": message})
 
 
+def _atomic_write(path: str, data: bytes) -> None:
+    """Temp-file + fsync + rename in the same directory (R1): a
+    crash leaves the old file or the new one, never a torn one.
+    A local helper (mirroring studio_design.storage) — this
+    sidecar deploys as a single file and its file store must not
+    depend on package internals."""
+    import tempfile
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path),
+                               prefix=".tmp-", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 class FileSidecarStore:
     """Bytes that do not belong in kv: design bundles over the
     inline threshold and every rendered export."""
@@ -283,8 +326,7 @@ class FileSidecarStore:
     def put_bytes(self, ref: str, data: bytes) -> str:
         path = self._path(ref)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
-            f.write(data)
+        _atomic_write(path, data)
         return ref
 
     def get_bytes(self, ref: str) -> bytes:
@@ -432,6 +474,53 @@ def load_bundle(transport, files: FileSidecarStore, record: dict) -> bytes:
 def _save_design_record(transport, record: dict) -> None:
     transport.put(f"design/{record['id']}", record)
     _index_add(transport, DESIGN_INDEX, "designs", record["id"])
+
+
+# Snapshot bundles follow the design-bundle size rule, under their
+# own record fields so a snapshot record never reads as a design.
+def store_snapshot_bundle(files: FileSidecarStore, design_id: str,
+                          name: str, bundle: bytes) -> dict:
+    if len(bundle) <= BUNDLE_INLINE_MAX_BYTES:
+        return {"snapshot_b64": base64.b64encode(bundle).decode("ascii"),
+                "size_bytes": len(bundle)}
+    ref = f"file:designs/{design_id}/snapshots/{name}.zip"
+    files.put_bytes(ref, bundle)
+    return {"snapshot_ref": ref, "size_bytes": len(bundle)}
+
+
+def load_snapshot_bundle(files: FileSidecarStore, record: dict) -> bytes:
+    if record.get("snapshot_b64"):
+        return base64.b64decode(record["snapshot_b64"])
+    if record.get("snapshot_ref"):
+        return files.get_bytes(record["snapshot_ref"])
+    raise ValueError(f"snapshot record {record.get('name')!r} carries "
+                     f"neither snapshot_b64 nor snapshot_ref")
+
+
+def _require_fresh(args: dict, record: dict) -> None:
+    """The R1 revision guard for mutating jobs: when the job's
+    args carry base_revision and it no longer equals the design
+    record's revision, raise StaleRevisionError BEFORE anything
+    runs — the caller has been working from an older state."""
+    from studio_design.document import StaleRevisionError
+    base = (args or {}).get("base_revision")
+    if base is None:
+        return
+    current = int(record.get("revision", 0))
+    if int(base) != current:
+        raise StaleRevisionError(record.get("id", "?"), int(base), current)
+
+
+def _restash_design(ctx, record: dict, doc) -> None:
+    """Re-store a mutated doc under its record: bundle (size rule),
+    the R1 revision read back off the doc, and the timestamp."""
+    record.pop("bundle_b64", None)
+    record.pop("bundle_ref", None)
+    record.update(store_bundle(ctx["transport"], ctx["files"],
+                               record["id"], doc.save_bundle()))
+    record["revision"] = doc.revision
+    record["updated"] = _now()
+    _save_design_record(ctx["transport"], record)
 
 
 def _synthetic_element(width: int, height: int, variant: int = 0) -> Image.Image:
@@ -678,12 +767,14 @@ def _op_doc_build(ctx, args):
               "layers": [{"id": line_id, "name": "line", "role": "line"},
                          {"id": shading_id, "name": "shading",
                           "role": "shading"}],
+              "revision": doc.revision,
               "updated": _now()}
     record.update(store_bundle(ctx["transport"], ctx["files"],
                                doc_id, doc.save_bundle()))
     _save_design_record(ctx["transport"], record)
     return {"design": {k: record[k] for k in
-                       ("id", "artist_id", "title", "size_bytes")},
+                       ("id", "artist_id", "title", "size_bytes",
+                        "revision")},
             "storage": "bundle_ref" if "bundle_ref" in record
                        else "bundle_b64"}
 
@@ -693,8 +784,15 @@ def _load_doc(ctx, design_id: str):
     record = ctx["transport"].get(f"design/{design_id}")
     if not isinstance(record, dict):
         raise KeyError(f"no design record at design/{design_id}")
-    return record, DesignDoc.load_bundle(
+    doc = DesignDoc.load_bundle(
         load_bundle(ctx["transport"], ctx["files"], record))
+    # The record is the host-side ledger: when it carries a
+    # revision it wins over the bundle's own entry (they are
+    # written together by _restash_design; the record is what
+    # _require_fresh checks against, so the doc must agree).
+    if isinstance(record.get("revision"), int):
+        doc.revision = record["revision"]
+    return record, doc
 
 
 def _op_doc_validate(ctx, args):
@@ -740,14 +838,18 @@ _DOC_OPS = ("transform", "reorder", "set_opacity", "set_visible",
 def _op_doc_op(ctx, args):
     """One deterministic layer op against a stored doc (the chat
     ops of the playbook, executed here — never by regenerating).
-    The changed doc is re-stored under the same size rule."""
+    The changed doc is re-stored under the same size rule, its
+    record revision advanced. A stale base_revision in the job
+    args refuses the op before anything runs (R1)."""
     record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
     op = args["op"]
     if op not in _DOC_OPS:
         raise ValueError(f"doc.op {op!r} not in {list(_DOC_OPS)}")
     a = args.get("args", {})
     if op == "transform":
         doc.transform(args["layer_id"], x=a.get("x"), y=a.get("y"),
+                      dx=int(a.get("dx", 0)), dy=int(a.get("dy", 0)),
                       scale=a.get("scale"), rotation=a.get("rotation"))
     elif op == "reorder":
         doc.reorder(args["layer_id"], int(a["new_index"]))
@@ -761,13 +863,9 @@ def _op_doc_op(ctx, args):
         doc.lock_layer(args["layer_id"])
     elif op == "unlock":
         doc.unlock_layer(args["layer_id"])
-    record.pop("bundle_b64", None)
-    record.pop("bundle_ref", None)
-    record.update(store_bundle(ctx["transport"], ctx["files"],
-                               args["design_id"], doc.save_bundle()))
-    record["updated"] = _now()
-    _save_design_record(ctx["transport"], record)
+    _restash_design(ctx, record, doc)
     return {"design_id": args["design_id"], "op": op,
+            "revision": doc.revision,
             "layers": [l.id for l in doc.layers]}
 
 
@@ -777,6 +875,153 @@ def _op_doc_get(ctx, args):
         raise KeyError(f"no design record at design/{args['design_id']}")
     return {"design": {k: v for k, v in record.items()
                        if k != "bundle_b64"}}
+
+
+# ---------------------------------------------------------------------
+# R1 ops — outline-first + lighting wired as jobs, and durable
+# named snapshots as kv records (designver/<design_id>/<name>).
+# ---------------------------------------------------------------------
+
+def _op_doc_set_structural_outline(ctx, args):
+    """Mark a line layer as the document's structural outline
+    (the core op locks it). Mutating: revision-guarded, the
+    record's revision advances with the doc's."""
+    from studio_design.outline import set_structural_outline
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    set_structural_outline(doc, args["layer_id"])
+    _restash_design(ctx, record, doc)
+    return {"design_id": args["design_id"],
+            "outline_layer": doc.outline_layer,
+            "revision": doc.revision}
+
+
+def _op_doc_shading_plan(ctx, args):
+    """Plan shading against the doc. Read-only, but GATED by the
+    core: with a structural outline set, a plan that does not
+    reference it is refused (the error lands on the job record)."""
+    from studio_design.outline import shading_plan
+    record, doc = _load_doc(ctx, args["design_id"])
+    return shading_plan(doc, targets=args.get("targets"),
+                        outline_ref=args.get("outline_ref"))
+
+
+def _op_doc_measure_contours(ctx, args):
+    """The closed-contour REPORT for one layer (the outline layer
+    by default). A report, never a stencil verdict (S6)."""
+    from io import BytesIO
+    from studio_design.outline import measure_contours
+    record, doc = _load_doc(ctx, args["design_id"])
+    layer_id = args.get("layer_id") or doc.outline_layer
+    if not layer_id:
+        raise ValueError("measure_contours needs a layer_id — the "
+                         "document has no structural outline to "
+                         "default to")
+    img = Image.open(BytesIO(doc.share_layer(layer_id)))
+    img.load()
+    return {"design_id": args["design_id"], "layer_id": layer_id,
+            "report": measure_contours(img)}
+
+
+def _op_doc_set_lighting(ctx, args):
+    """Set the document's lighting from a preset key (plus
+    overrides), a full spec dict, or clear=true. Mutating:
+    revision-guarded; the spec lives in the manifest and the
+    prompt path reads it from there."""
+    from studio_design.lighting import set_lighting, spec_from_preset
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    if args.get("clear"):
+        spec = None
+    elif args.get("preset"):
+        spec = spec_from_preset(args["preset"],
+                                **(args.get("overrides") or {}))
+    elif "spec" in args:
+        spec = args["spec"]
+    else:
+        raise ValueError("doc.set_lighting needs a preset, a spec, "
+                         "or clear=true")
+    set_lighting(doc, spec)
+    _restash_design(ctx, record, doc)
+    return {"design_id": args["design_id"], "lighting": doc.lighting,
+            "revision": doc.revision}
+
+
+_SNAPSHOT_NAME_OK = None  # compiled on first use
+
+
+def _check_snapshot_name(name) -> str:
+    global _SNAPSHOT_NAME_OK
+    import re
+    if _SNAPSHOT_NAME_OK is None:
+        _SNAPSHOT_NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    if not isinstance(name, str) or not _SNAPSHOT_NAME_OK.match(name):
+        raise ValueError(
+            f"snapshot name {name!r} must be a simple name "
+            f"(letters, digits, '.', '_' or '-', no path separators) — "
+            f"it becomes a kv key segment and a file name")
+    return name
+
+
+def _op_doc_snapshot_put(ctx, args):
+    """Persist a NAMED snapshot of the current doc as a durable
+    designver record (R1): the bundle bytes, the approved flag,
+    and the revision they were taken at. Capturing state does not
+    mutate the doc, so no revision guard applies."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    name = _check_snapshot_name(args["name"])
+    snap = {"design_id": args["design_id"], "name": name,
+            "approved": bool(args.get("approved", False)),
+            "revision": doc.revision, "ts": _now()}
+    snap.update(store_snapshot_bundle(ctx["files"], args["design_id"],
+                                      name, doc.save_bundle()))
+    ctx["transport"].put(f"designver/{args['design_id']}/{name}", snap)
+    _index_add(ctx["transport"], VERSION_INDEX, "versions",
+               f"{args['design_id']}/{name}")
+    return {"design_id": args["design_id"], "name": name,
+            "approved": snap["approved"], "revision": doc.revision,
+            "size_bytes": snap["size_bytes"],
+            "storage": "snapshot_ref" if "snapshot_ref" in snap
+                       else "snapshot_b64"}
+
+
+def _op_doc_snapshot_restore(ctx, args):
+    """Restore a design to a persisted named snapshot, through
+    the core's own restore op (history push + ops log + revision
+    bump). MUTATING: a stale base_revision refuses it — restoring
+    over newer edits is exactly what the guard exists for."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    name = _check_snapshot_name(args["name"])
+    snap = ctx["transport"].get(f"designver/{args['design_id']}/{name}")
+    if not isinstance(snap, dict):
+        raise KeyError(f"no snapshot at designver/"
+                       f"{args['design_id']}/{name}")
+    bundle = load_snapshot_bundle(ctx["files"], snap)
+    doc.snapshots.put(name, bundle, approved=bool(snap.get("approved")))
+    doc.restore_snapshot(name)
+    _restash_design(ctx, record, doc)
+    return {"design_id": args["design_id"], "restored_from": name,
+            "snapshot_revision": snap.get("revision"),
+            "revision": doc.revision}
+
+
+def _op_doc_snapshot_list(ctx, args):
+    """Snapshot metadata for one design, read from the fixed
+    version index (never by guessing keys)."""
+    out = []
+    for entry in _index_ids(ctx["transport"], VERSION_INDEX, "versions"):
+        design_id, _, name = entry.partition("/")
+        if design_id != args["design_id"]:
+            continue
+        rec = ctx["transport"].get(f"designver/{entry}")
+        if isinstance(rec, dict):
+            out.append({"name": name,
+                        "approved": bool(rec.get("approved")),
+                        "revision": rec.get("revision"),
+                        "size_bytes": rec.get("size_bytes"),
+                        "ts": rec.get("ts")})
+    return {"design_id": args["design_id"], "snapshots": out}
 
 
 JOB_OPS = {
@@ -802,6 +1047,13 @@ JOB_OPS = {
     "doc.export": _op_doc_export,
     "doc.op": _op_doc_op,
     "doc.get": _op_doc_get,
+    "doc.set_structural_outline": _op_doc_set_structural_outline,
+    "doc.shading_plan": _op_doc_shading_plan,
+    "doc.measure_contours": _op_doc_measure_contours,
+    "doc.set_lighting": _op_doc_set_lighting,
+    "doc.snapshot_put": _op_doc_snapshot_put,
+    "doc.snapshot_restore": _op_doc_snapshot_restore,
+    "doc.snapshot_list": _op_doc_snapshot_list,
 }
 
 
@@ -812,8 +1064,17 @@ JOB_OPS = {
 def run_jobs(transport, files) -> dict:
     """Phase 1 — execute queued jobs discovered ONLY through the
     fixed index key. A job already done/error is final (the agent
-    queues a new job rather than re-running one)."""
-    report = {"executed": [], "errors": [], "missing_records": []}
+    queues a new job rather than re-running one).
+
+    R1: a StaleRevisionError from a mutating op is a REFUSAL, not
+    a failure — the job record closes status "error" (final, like
+    any refusal) with a structured `refusal` naming both
+    revisions, and the cycle report lists it under "refused" as
+    well as "errors". Nothing was applied; the design record is
+    exactly as it was."""
+    from studio_design.document import StaleRevisionError
+    report = {"executed": [], "errors": [], "missing_records": [],
+              "refused": []}
     ctx = _ctx(transport, files)
     for job_id in _index_ids(transport, JOB_INDEX, "jobs"):
         job = transport.get(f"designjob/{job_id}")
@@ -835,6 +1096,14 @@ def run_jobs(transport, files) -> dict:
             job["result"] = result
             job.pop("error", None)
             report["executed"].append(job_id)
+        except StaleRevisionError as exc:
+            job["status"] = "error"
+            job["error"] = f"{type(exc).__name__}: {exc}"
+            job["refusal"] = {"reason": "stale_revision",
+                              "base_revision": exc.base_revision,
+                              "current_revision": exc.current_revision}
+            report["errors"].append({"job_id": job_id, "error": job["error"]})
+            report["refused"].append(job_id)
         except Exception as exc:
             job["status"] = "error"
             job["error"] = f"{type(exc).__name__}: {exc}"

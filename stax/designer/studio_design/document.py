@@ -40,6 +40,29 @@ it, the PSD layer list omits it, and the stencil — built from
 'line' layers only — cannot contain it. The sanctioned way to SEE
 the reference under a design is coverup.render_overlay.
 
+Slice R1 (durable recovery, REVIEW-GBT2 §A.5/§B.1/§B.2) adds:
+
+- REVISION: every document carries `revision`, a monotonically
+  increasing integer bumped by EVERY successful mutation through
+  the op system — layer ops, locking, lighting, undo/redo and
+  snapshot restores included (a state swap is a mutation: a result
+  computed before it is stale after it). The counter is NOT part
+  of the manifest (content hashes keep measuring artwork alone);
+  it persists as a `revision.json` entry beside the manifest in
+  every serialization, so it round-trips save/load. Async results
+  (edit requests, host jobs) carry the revision they were computed
+  against as `base_revision`; applying one whose base no longer
+  matches is refused (editmask.apply_edit, StaleRevisionError).
+- DURABLE SNAPSHOTS: the S5 runtime snapshot store gains a
+  persistence layer (SnapshotStore.save_to / load_from): named
+  snapshots — approved flag and the never-auto-evict rule
+  included — written to a directory beside the document, so an
+  approved version survives a process restart and restores
+  byte-identical (manifest + layer bytes).
+- ATOMIC WRITES: save() lands every file through
+  storage.atomic_write_bytes (temp + rename); a crash mid-save
+  leaves the old file or the new one, never a torn one.
+
 The document serializes to an ordered set of (arcname, bytes) entries.
 A directory on disk and a .zip bundle are two sinks for the exact same
 entries, so save/load behaviour is identical across hosts (directory for
@@ -48,6 +71,7 @@ StaxCloud/InkStax package stores, bundle for Fang kv storage).
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import math
@@ -55,6 +79,8 @@ import os
 import zipfile
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+from .storage import atomic_write_bytes
 
 FORMAT_VERSION = 1
 DEFAULT_DPI = 300
@@ -78,6 +104,24 @@ class LockedError(Exception):
 
     Raised BEFORE anything changes: the document, the layer, and the
     ops log are exactly as they were before the refused op."""
+
+
+class StaleRevisionError(Exception):
+    """An async result was offered against a revision the document
+    has since moved past (R1). Carries both revisions so a host can
+    record the refusal verbatim: the result was computed against
+    `base_revision`, the document is now at `current_revision`, and
+    NOTHING was applied — a delayed AI/job result can never silently
+    overwrite newer edits."""
+
+    def __init__(self, doc_id: str, base_revision: int, current_revision: int):
+        self.doc_id = doc_id
+        self.base_revision = int(base_revision)
+        self.current_revision = int(current_revision)
+        super().__init__(
+            f"stale result for doc {doc_id!r}: computed against "
+            f"revision {self.base_revision}, document is now at "
+            f"revision {self.current_revision} — refused, nothing applied")
 
 
 def mm_to_px(mm: float, dpi: int = DEFAULT_DPI) -> int:
@@ -241,6 +285,93 @@ class SnapshotStore:
     def __len__(self) -> int:
         return len(self._records)
 
+    # -- durable persistence (R1): the store on disk -------------------
+    # Layout of the directory save_to writes:
+    #   index.json       {"max_snapshots": n, "records":
+    #                     [{name, approved, seq, file}, ...]}
+    #   snap-<seq>.zip   one snapshot's bundle bytes, verbatim
+    # Every file lands atomically (storage.atomic_write_bytes), and
+    # bundle files orphaned by a re-put under the same name are
+    # removed, so the directory always mirrors the store exactly.
+    # The invariants are the runtime ones, enforced identically on
+    # load: the cap evicts oldest NON-APPROVED first; approved
+    # snapshots are never evicted automatically — a directory whose
+    # records are all approved keeps all of them rather than
+    # dropping one to fit the cap.
+
+    def _enforce_cap(self) -> None:
+        while len(self._records) > self.max_snapshots:
+            evictable = [r for r in self._records.values()
+                         if not r["approved"]]
+            if not evictable:
+                break  # approved overflow is kept, never dropped
+            oldest = min(evictable, key=lambda r: r["seq"])
+            del self._records[oldest["name"]]
+
+    def to_records(self) -> list[dict]:
+        """The whole store as JSON-able records (bundles base64'd) —
+        the transport form a host kv store can carry verbatim."""
+        return [{"name": r["name"], "approved": r["approved"],
+                 "seq": r["seq"],
+                 "bundle_b64": base64.b64encode(r["bundle"]).decode("ascii")}
+                for r in sorted(self._records.values(), key=lambda r: r["seq"])]
+
+    @classmethod
+    def from_records(cls, records: list[dict],
+                     max_snapshots: int = SNAPSHOT_MAX) -> "SnapshotStore":
+        store = cls(max_snapshots=max_snapshots)
+        for rec in records:
+            store._records[rec["name"]] = {
+                "name": rec["name"], "bundle": base64.b64decode(rec["bundle_b64"]),
+                "approved": bool(rec["approved"]), "seq": int(rec["seq"])}
+            store._seq = max(store._seq, int(rec["seq"]))
+        store._enforce_cap()
+        return store
+
+    def save_to(self, dirpath: str) -> str:
+        """Persist every snapshot in this store under `dirpath`
+        (created if needed), atomically. Returns the dirpath."""
+        os.makedirs(dirpath, exist_ok=True)
+        index = {"max_snapshots": self.max_snapshots, "records": []}
+        live_files = set()
+        for r in sorted(self._records.values(), key=lambda r: r["seq"]):
+            fname = f"snap-{r['seq']}.zip"
+            atomic_write_bytes(os.path.join(dirpath, fname), r["bundle"])
+            live_files.add(fname)
+            index["records"].append({"name": r["name"],
+                                     "approved": r["approved"],
+                                     "seq": r["seq"], "file": fname})
+        for existing in os.listdir(dirpath):
+            if (existing.startswith("snap-") and existing.endswith(".zip")
+                    and existing not in live_files):
+                os.unlink(os.path.join(dirpath, existing))
+        atomic_write_bytes(os.path.join(dirpath, "index.json"),
+                           json.dumps(index, indent=2).encode("utf-8"))
+        return dirpath
+
+    @classmethod
+    def load_from(cls, dirpath: str,
+                  max_snapshots: int | None = None) -> "SnapshotStore":
+        """Rebuild a store from a save_to directory. A missing
+        directory or index yields an EMPTY store (a document that
+        never persisted snapshots has none — not an error)."""
+        index_path = os.path.join(dirpath, "index.json")
+        if not os.path.exists(index_path):
+            return cls(max_snapshots=max_snapshots or SNAPSHOT_MAX)
+        with open(index_path, "rb") as f:
+            index = json.loads(f.read().decode("utf-8"))
+        store = cls(max_snapshots=max_snapshots
+                    or int(index.get("max_snapshots", SNAPSHOT_MAX)))
+        for rec in index.get("records", []):
+            with open(os.path.join(dirpath, rec["file"]), "rb") as f:
+                bundle = f.read()
+            store._records[rec["name"]] = {
+                "name": rec["name"], "bundle": bundle,
+                "approved": bool(rec["approved"]), "seq": int(rec["seq"])}
+            store._seq = max(store._seq, int(rec["seq"]))
+        store._enforce_cap()
+        return store
+
 
 class DesignDoc:
     """A layered document. `layers` is ordered bottom-first (index 0 is
@@ -254,6 +385,13 @@ class DesignDoc:
         self.layers: list[Layer] = []
         self._counter = 0
         self.ops_log: list[dict] = []
+        # R1: the mutation counter async results are checked
+        # against (see the module header). Starts at 0; bumped by
+        # _note_mutation at the end of every successful mutating
+        # op, state swaps (undo/redo/restore) included. Persisted
+        # as the bundle's revision.json entry, never in the
+        # manifest, so content hashes measure artwork alone.
+        self.revision: int = 0
         # S6: structured lighting spec (a plain JSON dict as produced
         # by lighting.validate_lighting_spec, or None) and the
         # structural outline layer id (or None). Both are document
@@ -291,6 +429,15 @@ class DesignDoc:
         self._counter += 1
         return f"L{self._counter}"
 
+    def _note_mutation(self) -> int:
+        """Advance the revision counter after a successful mutation
+        (R1). Called exactly once at the END of each mutating op —
+        after validation, history capture, the mutation itself and
+        the ops-log entry — so a refused op never advances it and a
+        landed one always does. Returns the new revision."""
+        self.revision += 1
+        return self.revision
+
     def get(self, layer_id: str) -> Layer:
         for layer in self.layers:
             if layer.id == layer_id:
@@ -311,7 +458,12 @@ class DesignDoc:
         """Swap this document's content to a captured state, in place
         (callers and viewers holding this doc see the restored state).
         History stacks, the snapshot store, and the ops log are
-        session state and are left untouched."""
+        session state and are left untouched. The REVISION is also
+        left untouched: it counts this live document's mutations and
+        never rewinds — the public op performing the swap (undo /
+        redo / restore_snapshot) bumps it via _note_mutation, so a
+        result computed against the pre-swap state is stale after
+        the swap even though the artwork went back."""
         other = DesignDoc.load_bundle(bundle)
         self.id = other.id
         self.width_mm = other.width_mm
@@ -342,6 +494,7 @@ class DesignDoc:
             del self._redo[: len(self._redo) - HISTORY_MAX]
         self._restore_state(self._history.pop())
         self.ops_log.append({"op": "doc.undo"})
+        self._note_mutation()
         return True
 
     def redo(self) -> bool:
@@ -355,6 +508,7 @@ class DesignDoc:
             del self._history[: len(self._history) - HISTORY_MAX]
         self._restore_state(self._redo.pop())
         self.ops_log.append({"op": "doc.redo"})
+        self._note_mutation()
         return True
 
     # -- snapshots (S5: runtime store, named restore points) ----------------
@@ -377,10 +531,35 @@ class DesignDoc:
         self._push_history()
         self._restore_state(record["bundle"])
         self.ops_log.append({"op": "doc.restore_snapshot", "name": name})
+        self._note_mutation()
         return True
 
     def list_snapshots(self) -> list[dict]:
         return self.snapshots.list()
+
+    # -- durable snapshots (R1: the S5 store, persisted) ----------------
+    def save_snapshot_store(self, dirpath: str) -> str:
+        """Persist this document's snapshot store to `dirpath`
+        (SnapshotStore.save_to's layout), so named snapshots —
+        approved versions included — survive a process restart.
+        Beside the document directory is the convention:
+        save_snapshots_beside / load_snapshots_beside use
+        `<doc dir>/snapshots`."""
+        return self.snapshots.save_to(dirpath)
+
+    def load_snapshot_store(self, dirpath: str) -> SnapshotStore:
+        """Replace this document's snapshot store with the one
+        persisted at `dirpath` (an empty store when nothing was
+        ever saved there). The snapshots then restore through the
+        ordinary restore_snapshot op."""
+        self.snapshots = SnapshotStore.load_from(dirpath)
+        return self.snapshots
+
+    def save_snapshots_beside(self, doc_dir: str) -> str:
+        return self.save_snapshot_store(os.path.join(doc_dir, "snapshots"))
+
+    def load_snapshots_beside(self, doc_dir: str) -> SnapshotStore:
+        return self.load_snapshot_store(os.path.join(doc_dir, "snapshots"))
 
     # -- locking (S5) ---------------------------------------------------------
     @staticmethod
@@ -395,12 +574,14 @@ class DesignDoc:
         self._push_history()
         layer.locked = True
         self.ops_log.append({"op": "layer.lock", "id": layer_id})
+        self._note_mutation()
 
     def unlock_layer(self, layer_id: str) -> None:
         layer = self.get(layer_id)
         self._push_history()
         layer.locked = False
         self.ops_log.append({"op": "layer.unlock", "id": layer_id})
+        self._note_mutation()
 
     # -- layer ops (the whitelist) -----------------------------------------
     def add_raster(self, name: str, image: Image.Image, x: int = 0, y: int = 0,
@@ -413,6 +594,7 @@ class DesignDoc:
         self._push_history()
         self.layers.append(layer)
         self.ops_log.append({"op": "layer.add_raster", "id": layer.id, "name": name})
+        self._note_mutation()
         return layer.id
 
     def add_stamp(self, name: str, luminance: Image.Image, x: int = 0, y: int = 0,
@@ -425,6 +607,7 @@ class DesignDoc:
         self._push_history()
         self.layers.append(layer)
         self.ops_log.append({"op": "layer.add_stamp", "id": layer.id, "name": name})
+        self._note_mutation()
         return layer.id
 
     def transform(self, layer_id: str, x: int | None = None, y: int | None = None,
@@ -446,6 +629,7 @@ class DesignDoc:
         self.ops_log.append({"op": "layer.transform", "id": layer_id,
                              "x": layer.x, "y": layer.y, "scale": layer.scale,
                              "rotation": layer.rotation})
+        self._note_mutation()
 
     def reorder(self, layer_id: str, new_index: int) -> None:
         """Move a layer to `new_index` in the stack (0 = bottom)."""
@@ -456,6 +640,7 @@ class DesignDoc:
         new_index = max(0, min(new_index, len(self.layers)))
         self.layers.insert(new_index, layer)
         self.ops_log.append({"op": "layer.reorder", "id": layer_id, "index": new_index})
+        self._note_mutation()
 
     def move_below(self, layer_id: str, other_id: str) -> None:
         other = self.get(other_id)
@@ -465,6 +650,7 @@ class DesignDoc:
         self.layers.remove(layer)
         self.layers.insert(self.layers.index(other), layer)
         self.ops_log.append({"op": "layer.reorder", "id": layer_id, "below": other_id})
+        self._note_mutation()
 
     def move_above(self, layer_id: str, other_id: str) -> None:
         other = self.get(other_id)
@@ -474,6 +660,7 @@ class DesignDoc:
         self.layers.remove(layer)
         self.layers.insert(self.layers.index(other) + 1, layer)
         self.ops_log.append({"op": "layer.reorder", "id": layer_id, "above": other_id})
+        self._note_mutation()
 
     def set_opacity(self, layer_id: str, opacity: float) -> None:
         layer = self.get(layer_id)
@@ -483,6 +670,7 @@ class DesignDoc:
         self._push_history()
         layer.opacity = float(opacity)
         self.ops_log.append({"op": "layer.set_opacity", "id": layer_id, "opacity": opacity})
+        self._note_mutation()
 
     def set_visible(self, layer_id: str, visible: bool) -> None:
         layer = self.get(layer_id)
@@ -490,6 +678,7 @@ class DesignDoc:
         self._push_history()
         layer.visible = bool(visible)
         self.ops_log.append({"op": "layer.set_visible", "id": layer_id, "visible": visible})
+        self._note_mutation()
 
     def remove(self, layer_id: str) -> None:
         layer = self.get(layer_id)
@@ -497,6 +686,7 @@ class DesignDoc:
         self._push_history()
         self.layers.remove(layer)
         self.ops_log.append({"op": "layer.remove", "id": layer_id})
+        self._note_mutation()
 
     # -- outline-first (S6) ------------------------------------------------
     def set_structural_outline(self, layer_id: str) -> str:
@@ -518,6 +708,7 @@ class DesignDoc:
         layer.locked = True
         self.outline_layer = layer_id
         self.ops_log.append({"op": "doc.set_structural_outline", "id": layer_id})
+        self._note_mutation()
         return layer_id
 
     # -- rendering ---------------------------------------------------------
@@ -669,7 +860,11 @@ class DesignDoc:
 
     def to_entries(self) -> list[tuple[str, bytes]]:
         """The document as ordered (arcname, bytes) entries — the single
-        serialization every sink (directory, zip bundle) shares."""
+        serialization every sink (directory, zip bundle) shares. The
+        R1 revision rides as its own `revision.json` entry, NOT in
+        the manifest: content hashes (manifest + pixels) keep
+        measuring the artwork alone, while the counter still
+        round-trips every save/load."""
         entries: list[tuple[str, bytes]] = [
             ("manifest.json", json.dumps(self.manifest(), indent=2).encode("utf-8"))
         ]
@@ -677,6 +872,8 @@ class DesignDoc:
             buf = io.BytesIO()
             layer.image.save(buf, "PNG")
             entries.append((f"layers/{layer.filename}", buf.getvalue()))
+        entries.append(("revision.json",
+                        json.dumps({"revision": self.revision}).encode("utf-8")))
         return entries
 
     def save_bundle(self) -> bytes:
@@ -687,11 +884,12 @@ class DesignDoc:
         return buf.getvalue()
 
     def save(self, path: str) -> None:
-        """Save as a document directory: manifest.json + layers/."""
-        os.makedirs(os.path.join(path, "layers"), exist_ok=True)
+        """Save as a document directory: manifest.json + layers/ +
+        revision.json. Every file lands atomically (R1: temp +
+        rename via storage.atomic_write_bytes), so an interrupted
+        save never leaves a torn file at a final path."""
         for arcname, data in self.to_entries():
-            with open(os.path.join(path, arcname), "wb") as f:
-                f.write(data)
+            atomic_write_bytes(os.path.join(path, arcname), data)
 
     @classmethod
     def from_entries(cls, entries: dict[str, bytes]) -> "DesignDoc":
@@ -720,6 +918,11 @@ class DesignDoc:
             )
             doc.layers.append(layer)
             doc._counter = max(doc._counter, int(entry["id"][1:]) if entry["id"][1:].isdigit() else doc._counter)
+        # R1: the revision entry, when present (bundles written
+        # before R1 carry none and load at revision 0).
+        raw_revision = entries.get("revision.json")
+        if raw_revision is not None:
+            doc.revision = int(json.loads(raw_revision.decode("utf-8"))["revision"])
         return doc
 
     @classmethod
@@ -737,6 +940,10 @@ class DesignDoc:
         for entry in manifest["layers"]:
             with open(os.path.join(path, "layers", entry["file"]), "rb") as f:
                 entries[f"layers/{entry['file']}"] = f.read()
+        revision_path = os.path.join(path, "revision.json")
+        if os.path.exists(revision_path):
+            with open(revision_path, "rb") as f:
+                entries["revision.json"] = f.read()
         return cls.from_entries(entries)
 
 

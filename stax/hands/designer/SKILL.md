@@ -174,6 +174,33 @@ never work around it):
   `doc.op` (one deterministic layer op: transform, reorder,
   set_opacity, set_visible, remove, lock, unlock),
   `doc.get`.
+- Outline + lighting (R1): `doc.set_structural_outline`
+  {design_id, layer_id} (marks a line layer as the locked
+  structural outline), `doc.shading_plan` {design_id, targets?,
+  outline_ref?} (REFUSED by the core when an outline is set and
+  the plan does not reference it — that refusal is the gate
+  working), `doc.measure_contours` {design_id, layer_id?} (a
+  report, never a stencil verdict), `doc.set_lighting`
+  {design_id, preset | spec | clear} (lighting intent stored
+  on the document; it is intent, never a relighting claim).
+- Durable versions (R1): `doc.snapshot_put` {design_id, name,
+  approved?} persists a named snapshot as a durable record at
+  `designver/<design_id>/<name>` (it survives sidecar restarts;
+  an approved snapshot is the artist's signed-off version),
+  `doc.snapshot_restore` {design_id, name} restores it,
+  `doc.snapshot_list` {design_id} lists a design's snapshots.
+
+REVISIONS (R1): every design record carries a `revision` that
+advances with each mutating job (read it from a `doc.get`
+result or a mutating job's result). When you queue a mutating
+job (`doc.op`, `doc.set_structural_outline`, `doc.set_lighting`,
+`doc.snapshot_restore`) against a design you have been working
+from a recalled record, include `base_revision` with the
+revision you read. If the design has moved since, the sidecar
+REFUSES the job — status error with a `refusal` naming both
+revisions — rather than overwriting newer work: re-read the
+design, reconcile, and queue a fresh job. A refusal is final;
+never re-queue the same stale job hoping it lands.
 
 ## Approvals — the draft + sidecar-carry pattern
 
@@ -282,14 +309,16 @@ layer.add_stamp (the build pipeline's steps), layer.transform,
 layer.reorder, layer.set_opacity, layer.remove, layer.lock,
 layer.unlock (via `doc.op`), doc.render, doc.share_canvas,
 doc.share_layer, doc.export_stencil, doc.export_psd,
-doc.validate, doc.undo, doc.redo, doc.snapshot,
-doc.restore_snapshot, doc.list_snapshots, doc.drag_layer,
-doc.drag_element, doc.drag_element_to, doc.drag_rotate,
-doc.drag_scale, viewer.select, viewer.toggle_visibility,
-viewer.layer_list (the drag/viewer family and undo/snapshots
-are the package's document API — on this host, layer changes
-ride `doc.op`; undo/snapshots and a pointer surface are not
-wired as jobs yet, and this hand does not claim them).
+doc.validate, doc.snapshot, doc.restore_snapshot,
+doc.list_snapshots (R1: jobs `doc.snapshot_put` /
+`doc.snapshot_restore` / `doc.snapshot_list` — durable named
+versions at `designver/<design_id>/<name>`), doc.undo, doc.redo,
+doc.drag_layer, doc.drag_element, doc.drag_element_to,
+doc.drag_rotate, doc.drag_scale, viewer.select, viewer.toggle_visibility,
+viewer.layer_list (the drag/viewer family and undo are the
+package's document API — on this host, layer changes ride
+`doc.op`; undo and a pointer surface are not wired as jobs
+yet, and this hand does not claim them).
 
 Generation support: gen.route_request (job `route_request`),
 gen.plan_versions (job `plan_versions`), gen.record_cost
@@ -317,18 +346,19 @@ customer.check_outbound, customer.customer_designs (jobs
 the guard inside `request.send`; the customer view is
 `designrec/index` + `designrec/<id>`).
 
-Lighting, outline, edits, cover-ups: doc.set_lighting,
-doc.set_element_lighting, lighting.list_presets,
-lighting.get_preset, doc.set_structural_outline,
-doc.shading_plan, doc.measure_contours, edit.validate_request,
+Lighting + outline (R1 — wired as jobs, see the allowlist):
+doc.set_lighting (job `doc.set_lighting`), doc.set_structural_outline,
+doc.shading_plan, doc.measure_contours (jobs of the same names).
+Still package-only: doc.set_element_lighting, lighting.list_presets,
+lighting.get_preset (the preset keys ride the `doc.set_lighting`
+job's `preset` arg). Edits + cover-ups: edit.validate_request,
 edit.build_mask, edit.verify_protected, edit.apply_edit,
 edit.classify_intent, coverup.create, coverup.calibration,
 coverup.set_reference_opacity, coverup.render_overlay,
 coverup.darkness_map, coverup.coverage_analysis,
 coverup.export_highlight, coverup.export_design (package
-modules — not yet wired as sidecar jobs in this pass; a design
-that needs them is built where they are wired, and this hand
-says so).
+modules — not yet wired as sidecar jobs; a design that needs
+them is built where they are wired, and this hand says so).
 
 Brush export (S10, bonus interchange): brush.export_brush,
 brush.export_brushset — stamp elements and kits as .brush /
