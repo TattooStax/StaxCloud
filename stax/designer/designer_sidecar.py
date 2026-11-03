@@ -74,6 +74,23 @@ whole — there is no partial update):
                        `snapshot_b64` or a file sidecar
                        `snapshot_ref`, same size rule as designs)
 - `designver/index`    {"versions": ["<design_id>/<name>", ...]}
+- `designhist/<design_id>`  the design's undo/redo stacks
+                       (OPS18): {design_id, undo: [...], redo:
+                       [...], updated} — each entry one captured
+                       document bundle (inline `bundle_b64` or a
+                       file sidecar under designs/<id>/history/,
+                       same size rule). Addressed by the design's
+                       own id — auxiliary state of a known record,
+                       not a discovery surface, so no index.
+- `designmask/<design_id>/<name>`  one named edit mask (OPS18):
+                       {design_id, name, size, size_bytes, ts} +
+                       the mask PNG (inline `mask_b64` or a file
+                       sidecar `mask_ref` under designs/<id>/
+                       masks/, same size rule). The core resolves
+                       a request's `mask_ref` only when a host
+                       supplies the named masks; this store is how
+                       this host holds them, durably.
+- `designmask/index`   {"entries": ["<design_id>/<name>", ...]}
 - `designedit/<request_id>`  one S7 edit request + its state:
                        {request: EditRequest record, status
                        (awaiting_result / applied / refused_stale /
@@ -98,15 +115,26 @@ whole — there is no partial update):
 REVISIONS (R1): every `design/<id>` record carries `revision`,
 the core document's mutation counter, rewritten from the loaded
 doc after every mutating job. A mutating job (doc.op,
-doc.set_structural_outline, doc.set_lighting, doc.snapshot_restore)
-MAY carry `base_revision` in its args — the revision the caller
-computed against. When it is present and no longer equals the
-record's revision, the job is REFUSED before anything runs: the
-job record closes status "error" with a structured `refusal`
-{reason: "stale_revision", base_revision, current_revision} and
-the cycle report lists it under "refused". A delayed result can
-never overwrite newer edits. Jobs without base_revision are
-legacy/unguarded (the pre-R1 protocol) and run as before.
+doc.set_structural_outline, doc.set_lighting, doc.snapshot_restore,
+doc.undo, doc.redo, edit.apply, coverup.create, coverup.set_opacity,
+library.reuse) MAY carry `base_revision` in its args — the
+revision the caller computed against. When it is present and no
+longer equals the record's revision, the job is REFUSED before
+anything runs: the job record closes status "error" with a
+structured `refusal` {reason: "stale_revision", base_revision,
+current_revision} and the cycle report lists it under "refused".
+A delayed result can never overwrite newer edits. Jobs without
+base_revision are legacy/unguarded (the pre-R1 protocol) and run
+as before.
+
+UNDO/REDO (OPS18): sidecar cycles are fresh processes, so the
+core's runtime history stacks would die with each cycle. They
+are therefore persisted verbatim (the core's export_history /
+import_history) at `designhist/<design_id>` on every design
+re-store and re-imported on every load — undo/redo across
+cycles restore the exact captured bundles, with the core's own
+semantics (an undo is itself a mutation: it bumps the revision
+and pushes the pre-undo state onto the redo stack).
 
 FILE SIDECARS: a design bundle over BUNDLE_INLINE_MAX_BYTES is
 NOT base64'd into kv (layered RGBA at print size is tens of MB;
@@ -181,6 +209,7 @@ JOB_INDEX = "designjob/index"
 VERSION_INDEX = "designver/index"
 EDIT_INDEX = "designedit/index"
 COVERUP_INDEX = "designcover/index"
+MASK_INDEX = "designmask/index"
 LIBRARY_INDEX = "designlib/index"
 LIBRARY_META = "designlib/meta"
 KIT_INDEX = "designkit/index"
@@ -562,6 +591,84 @@ def load_element_bytes(files: FileSidecarStore, record: dict) -> bytes:
                      f"carries neither element_b64 nor element_ref")
 
 
+# Design history stacks (OPS18) follow the same size rule, one
+# record per design at designhist/<design_id>. Entries are
+# positional file refs (history/<stack>-<i>.zip); a re-store
+# removes refs the new stacks no longer occupy, the same orphan
+# sweep SnapshotStore.save_to performs on disk.
+def _persist_history(ctx, design_id: str, doc) -> None:
+    """Write the doc's undo/redo stacks (the core's export_history,
+    verbatim bundles) to the design's durable history record."""
+    transport = ctx["transport"]
+    hist = doc.export_history()
+    old = transport.get(f"designhist/{design_id}")
+    old_refs = set()
+    if isinstance(old, dict):
+        for stack in ("undo", "redo"):
+            for entry in old.get(stack, []):
+                if isinstance(entry, dict) and entry.get("bundle_ref"):
+                    old_refs.add(entry["bundle_ref"])
+    new_refs = set()
+    rec = {"design_id": design_id, "updated": _now()}
+    for stack in ("undo", "redo"):
+        entries = []
+        for i, data in enumerate(hist[stack]):
+            if len(data) <= BUNDLE_INLINE_MAX_BYTES:
+                entries.append({
+                    "bundle_b64": base64.b64encode(data).decode("ascii"),
+                    "size_bytes": len(data)})
+            else:
+                ref = f"file:designs/{design_id}/history/{stack}-{i}.zip"
+                ctx["files"].put_bytes(ref, data)
+                new_refs.add(ref)
+                entries.append({"bundle_ref": ref,
+                                "size_bytes": len(data)})
+        rec[stack] = entries
+    transport.put(f"designhist/{design_id}", rec)
+    for ref in old_refs - new_refs:
+        ctx["files"].remove(ref)
+
+
+def _load_history(ctx, doc) -> None:
+    """Re-import a design's persisted undo/redo stacks into the
+    loaded doc (a design with no history record has empty stacks —
+    not an error)."""
+    rec = ctx["transport"].get(f"designhist/{doc.id}")
+    if not isinstance(rec, dict):
+        return
+    stacks = {}
+    for stack in ("undo", "redo"):
+        bundles = []
+        for entry in rec.get(stack, []):
+            if entry.get("bundle_b64"):
+                bundles.append(base64.b64decode(entry["bundle_b64"]))
+            elif entry.get("bundle_ref"):
+                bundles.append(ctx["files"].get_bytes(entry["bundle_ref"]))
+        stacks[stack] = bundles
+    doc.import_history(stacks["undo"], stacks["redo"])
+
+
+# Named-mask PNGs follow the same size rule, under their own
+# record fields (a mask record never reads as a design).
+def store_mask_bytes(files: FileSidecarStore, design_id: str,
+                     name: str, data: bytes) -> dict:
+    if len(data) <= BUNDLE_INLINE_MAX_BYTES:
+        return {"mask_b64": base64.b64encode(data).decode("ascii"),
+                "size_bytes": len(data)}
+    ref = f"file:designs/{design_id}/masks/{name}.png"
+    files.put_bytes(ref, data)
+    return {"mask_ref": ref, "size_bytes": len(data)}
+
+
+def load_mask_bytes(files: FileSidecarStore, record: dict) -> bytes:
+    if record.get("mask_b64"):
+        return base64.b64decode(record["mask_b64"])
+    if record.get("mask_ref"):
+        return files.get_bytes(record["mask_ref"])
+    raise ValueError(f"mask record {record.get('name')!r} carries "
+                     f"neither mask_b64 nor mask_ref")
+
+
 def _require_fresh(args: dict, record: dict) -> None:
     """The R1 revision guard for mutating jobs: when the job's
     args carry base_revision and it no longer equals the design
@@ -578,7 +685,9 @@ def _require_fresh(args: dict, record: dict) -> None:
 
 def _restash_design(ctx, record: dict, doc) -> None:
     """Re-store a mutated doc under its record: bundle (size rule),
-    the R1 revision read back off the doc, and the timestamp."""
+    the R1 revision read back off the doc, the timestamp — and the
+    OPS18 history stacks, so the undo/redo state a mutating op
+    produced survives this process."""
     record.pop("bundle_b64", None)
     record.pop("bundle_ref", None)
     record.update(store_bundle(ctx["transport"], ctx["files"],
@@ -586,6 +695,7 @@ def _restash_design(ctx, record: dict, doc) -> None:
     record["revision"] = doc.revision
     record["updated"] = _now()
     _save_design_record(ctx["transport"], record)
+    _persist_history(ctx, record["id"], doc)
 
 
 def _synthetic_element(width: int, height: int, variant: int = 0) -> Image.Image:
@@ -857,6 +967,10 @@ def _load_doc(ctx, design_id: str):
     # _require_fresh checks against, so the doc must agree).
     if isinstance(record.get("revision"), int):
         doc.revision = record["revision"]
+    # OPS18: the persisted undo/redo stacks ride along with every
+    # load, so a doc.undo job in THIS fresh process sees the
+    # history earlier cycles produced.
+    _load_history(ctx, doc)
     return record, doc
 
 
@@ -893,7 +1007,14 @@ def _op_doc_export(ctx, args):
     record["exports"] = exports
     record["updated"] = _now()
     _save_design_record(ctx["transport"], record)
-    return {"design_id": args["design_id"], "exports": written}
+    result = {"design_id": args["design_id"], "exports": written}
+    if "stencil" in written:
+        # The stencil's record carries the outline's provenance +
+        # review state (RESULTS19): a stencil built on an
+        # unreviewed threshold split says so in its record.
+        from studio_design.outline import stencil_export_record
+        result["stencil_record"] = stencil_export_record(doc)
+    return result
 
 
 _DOC_OPS = ("transform", "reorder", "set_opacity", "set_visible",
@@ -950,14 +1071,43 @@ def _op_doc_get(ctx, args):
 def _op_doc_set_structural_outline(ctx, args):
     """Mark a line layer as the document's structural outline
     (the core op locks it). Mutating: revision-guarded, the
-    record's revision advances with the doc's."""
+    record's revision advances with the doc's. Outline
+    provenance (RESULTS19): the job may name how the outline was
+    produced — source (threshold_split / candidate_step /
+    artist_supplied) plus the candidate step's production
+    report; the default stays the bare op's artist_supplied."""
     from studio_design.outline import set_structural_outline
     record, doc = _load_doc(ctx, args["design_id"])
     _require_fresh(args, record)
-    set_structural_outline(doc, args["layer_id"])
+    set_structural_outline(doc, args["layer_id"],
+                           source=args.get("source", "artist_supplied"),
+                           production=args.get("production"))
     _restash_design(ctx, record, doc)
     return {"design_id": args["design_id"],
             "outline_layer": doc.outline_layer,
+            "outline_provenance": doc.outline_provenance,
+            "revision": doc.revision}
+
+
+def _op_doc_outline_accept(ctx, args):
+    """The artist's review transition for the structural outline
+    (RESULTS19): unreviewed -> artist_reviewed, recorded with
+    who/when on the design's outline provenance. Mutating:
+    revision-guarded like every design-mutating job — a stale
+    base_revision refuses before the core op runs. The acceptor
+    defaults to the design's owning artist when the job does not
+    name one."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    accepted_by = args.get("accepted_by") or record.get("artist_id")
+    if not accepted_by:
+        raise ValueError("doc.outline_accept needs accepted_by "
+                         "(or a design record carrying artist_id)")
+    provenance = doc.accept_outline(str(accepted_by), at=args.get("at"))
+    _restash_design(ctx, record, doc)
+    return {"design_id": args["design_id"],
+            "outline_layer": doc.outline_layer,
+            "outline_provenance": provenance,
             "revision": doc.revision}
 
 
@@ -1089,6 +1239,201 @@ def _op_doc_snapshot_list(ctx, args):
     return {"design_id": args["design_id"], "snapshots": out}
 
 
+def _op_doc_undo(ctx, args):
+    """Undo the design's most recent mutation — across sidecar
+    cycles: the stacks were persisted at designhist/<design_id>
+    by every re-store and re-imported by _load_doc, so this fresh
+    process undoes work an earlier cycle did. The core's own
+    undo runs (state swap + redo push + revision bump): undoing
+    is a mutation, so the job is revision-guarded like the rest.
+    Nothing to undo is a clean no-op (undone=false), not an
+    error."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    done = doc.undo()
+    if done:
+        _restash_design(ctx, record, doc)
+    hist = doc.export_history()
+    return {"design_id": args["design_id"], "undone": done,
+            "revision": doc.revision,
+            "undo_depth": len(hist["undo"]),
+            "redo_depth": len(hist["redo"])}
+
+
+def _op_doc_redo(ctx, args):
+    """Redo the most recently undone mutation (same durable
+    stacks as doc.undo). An empty redo branch — including after
+    any new mutation, which clears it — is a clean no-op."""
+    record, doc = _load_doc(ctx, args["design_id"])
+    _require_fresh(args, record)
+    done = doc.redo()
+    if done:
+        _restash_design(ctx, record, doc)
+    hist = doc.export_history()
+    return {"design_id": args["design_id"], "redone": done,
+            "revision": doc.revision,
+            "undo_depth": len(hist["undo"]),
+            "redo_depth": len(hist["redo"])}
+
+
+def _op_doc_snapshot_delete(ctx, args):
+    """Delete one durable named snapshot (the R1 leftover): the
+    designver record and any file-sidecar bundle, via the kv
+    DELETE route the library delete proved. Deleting an APPROVED
+    snapshot — an artist's signed-off version — is a deliberate
+    act in the spirit of the core's never-auto-evict rule: the
+    job must carry confirm_approved=true, and the result names
+    that the deleted version was approved. The design itself is
+    not touched (no revision change)."""
+    transport = ctx["transport"]
+    design_id = args["design_id"]
+    name = _check_snapshot_name(args["name"])
+    key = f"designver/{design_id}/{name}"
+    snap = transport.get(key)
+    if not isinstance(snap, dict):
+        raise KeyError(f"no snapshot at {key}")
+    was_approved = bool(snap.get("approved"))
+    if was_approved and not args.get("confirm_approved"):
+        raise ValueError(
+            f"snapshot {name!r} of design {design_id!r} is an "
+            f"APPROVED version — deleting it is a deliberate act; "
+            f"pass confirm_approved=true to proceed (nothing was "
+            f"deleted)")
+    if snap.get("snapshot_ref"):
+        ctx["files"].remove(snap["snapshot_ref"])
+    transport.delete(key)
+    remaining = [e for e in _index_ids(transport, VERSION_INDEX,
+                                       "versions")
+                 if e != f"{design_id}/{name}"]
+    _index_set(transport, VERSION_INDEX, "versions", remaining)
+    return {"design_id": design_id, "name": name, "deleted": True,
+            "was_approved": was_approved,
+            "confirm_approved": bool(args.get("confirm_approved"))}
+
+
+# ---------------------------------------------------------------------
+# Named masks (OPS18) — the core resolves a request's mask_ref
+# only when a host supplies masks under those names; the doc
+# itself stores none. This host holds them durably, one record
+# per (design, name) at designmask/<design_id>/<name>, so an
+# edit's target/protected entries may name them across cycles.
+# A mask only ever CONSTRAINS an area (the core intersects);
+# storing one never widens what an edit may touch.
+# ---------------------------------------------------------------------
+
+_MASK_NAME_OK = None  # compiled on first use
+
+
+def _check_mask_name(name) -> str:
+    global _MASK_NAME_OK
+    import re
+    if _MASK_NAME_OK is None:
+        _MASK_NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    if not isinstance(name, str) or not _MASK_NAME_OK.match(name):
+        raise ValueError(
+            f"mask name {name!r} must be a simple name "
+            f"(letters, digits, '.', '_' or '-', no path separators) — "
+            f"it becomes a kv key segment and a file name")
+    return name
+
+
+def _op_mask_put(ctx, args):
+    """Store a named mask for a design from a supplied mask image
+    (a file sidecar a host leg placed — the sidecar draws no
+    masks of its own). The image must be exactly canvas size:
+    the core refuses a mismatched mask at mask-build time, and
+    failing here, at store time, names the problem earlier."""
+    from io import BytesIO
+    record, doc = _load_doc(ctx, args["design_id"])
+    name = _check_mask_name(args["name"])
+    img = Image.open(BytesIO(ctx["files"].get_bytes(args["mask_ref"])))
+    img.load()
+    if img.size != doc.size_px:
+        raise ValueError(
+            f"mask {name!r} is {img.size}, not the canvas size "
+            f"{doc.size_px} of design {args['design_id']!r} — a "
+            f"named mask must be a full-canvas image")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    rec = {"design_id": args["design_id"], "name": name,
+           "size": list(img.size), "ts": _now()}
+    rec.update(store_mask_bytes(ctx["files"], args["design_id"],
+                                name, buf.getvalue()))
+    ctx["transport"].put(f"designmask/{args['design_id']}/{name}", rec)
+    _index_add(ctx["transport"], MASK_INDEX, "entries",
+               f"{args['design_id']}/{name}")
+    return {"design_id": args["design_id"], "name": name,
+            "size": list(img.size), "size_bytes": rec["size_bytes"],
+            "storage": "mask_ref" if "mask_ref" in rec else "mask_b64"}
+
+
+def _op_mask_list(ctx, args):
+    """Named-mask metadata for one design, from the fixed mask
+    index (never by guessing keys)."""
+    out = []
+    for entry in _index_ids(ctx["transport"], MASK_INDEX, "entries"):
+        design_id, _, name = entry.partition("/")
+        if design_id != args["design_id"]:
+            continue
+        rec = ctx["transport"].get(f"designmask/{entry}")
+        if isinstance(rec, dict):
+            out.append({"name": name, "size": rec.get("size"),
+                        "size_bytes": rec.get("size_bytes"),
+                        "ts": rec.get("ts")})
+    return {"design_id": args["design_id"], "masks": out}
+
+
+def _op_mask_delete(ctx, args):
+    """Remove one named mask (record + any file sidecar + index
+    entry) via the kv DELETE route. An edit record that still
+    names the mask will fail honestly at apply time — the mask
+    is gone, and the sidecar does not invent one."""
+    transport = ctx["transport"]
+    design_id = args["design_id"]
+    name = _check_mask_name(args["name"])
+    key = f"designmask/{design_id}/{name}"
+    rec = transport.get(key)
+    if not isinstance(rec, dict):
+        raise KeyError(f"no named mask at {key}")
+    if rec.get("mask_ref"):
+        ctx["files"].remove(rec["mask_ref"])
+    transport.delete(key)
+    remaining = [e for e in _index_ids(transport, MASK_INDEX, "entries")
+                 if e != f"{design_id}/{name}"]
+    _index_set(transport, MASK_INDEX, "entries", remaining)
+    return {"design_id": design_id, "name": name, "deleted": True}
+
+
+def _mask_refs_of(request) -> list[str]:
+    """The mask_ref names a request's target + protected entries
+    carry, in first-use order."""
+    names = []
+    for area in [request.target, *request.protected]:
+        if isinstance(area, dict) and area.get("mask_ref"):
+            if area["mask_ref"] not in names:
+                names.append(area["mask_ref"])
+    return names
+
+
+def _resolve_masks(ctx, design_id: str, names: list[str]) -> dict:
+    """Load the named masks stored for a design as PIL images —
+    the mapping the core's build_mask / apply_edit resolve
+    mask_refs against. A missing name is a KeyError naming the
+    exact record that is not there."""
+    from io import BytesIO
+    out = {}
+    for name in names:
+        rec = ctx["transport"].get(f"designmask/{design_id}/{name}")
+        if not isinstance(rec, dict):
+            raise KeyError(
+                f"no named mask at designmask/{design_id}/{name} — "
+                f"store it with a mask.put job first")
+        img = Image.open(BytesIO(load_mask_bytes(ctx["files"], rec)))
+        img.load()
+        out[name] = img
+    return out
+
+
 # ---------------------------------------------------------------------
 # S7 edit ops — request + apply. The sidecar generates NOTHING:
 # edit.request validates and stores the EditRequest (the core's
@@ -1098,6 +1443,12 @@ def _op_doc_snapshot_list(ctx, args):
 # stale revision refused first, then protected-region
 # verification. The outline is protected by default because the
 # core's effective_protected adds it; there is no switch here.
+# Named masks (OPS18): a target/protected entry may carry a
+# mask_ref naming a mask in the durable designmask store;
+# edit.request verifies the names exist, edit.apply resolves
+# them into the mapping the core requires. A region-only target
+# (a rect, or a mask_ref with no layer) still has no apply path
+# — apply_edit lands pixels on ONE layer, by core design.
 # ---------------------------------------------------------------------
 
 def _save_edit_record(transport, rec: dict) -> None:
@@ -1138,8 +1489,21 @@ def _op_edit_request(ctx, args):
                        else doc.revision),
     )
     governing = validate_edit_request(doc, request)
+    # OPS18: a request may name masks (mask_ref in its target /
+    # protected entries). The core resolves them only against a
+    # host-supplied mapping, so the names must exist in THIS
+    # host's durable mask store for the design — checked now, at
+    # request time, so an apply never discovers a missing mask.
+    mask_refs = _mask_refs_of(request)
+    for name in mask_refs:
+        if not isinstance(ctx["transport"].get(
+                f"designmask/{args['design_id']}/{name}"), dict):
+            raise KeyError(
+                f"no named mask at designmask/{args['design_id']}/"
+                f"{name} — store it with a mask.put job first")
     rec = {"request": request.to_dict(), "status": "awaiting_result",
            "design_revision": record.get("revision"),
+           "mask_refs": mask_refs,
            "created": _now(), "updated": _now()}
     _save_edit_record(ctx["transport"], rec)
     return {"request_id": request.request_id,
@@ -1148,6 +1512,7 @@ def _op_edit_request(ctx, args):
             "base_revision": request.base_revision,
             "target": governing["target"],
             "protected": governing["protected"],
+            "mask_refs": mask_refs,
             "intent": governing["intent"]}
 
 
@@ -1189,7 +1554,14 @@ def _op_edit_apply(ctx, args):
     result_ref = args["result_ref"]
     img = Image.open(BytesIO(ctx["files"].get_bytes(result_ref)))
     img.load()
-    outcome = apply_edit(doc, request, img)
+    # OPS18: resolve the request's named masks from the durable
+    # mask store and hand them to the core — the mapping its
+    # build_mask / verification resolve mask_refs against. A
+    # mask deleted since the request fails here, honestly.
+    mask_refs = rec.get("mask_refs") or _mask_refs_of(request)
+    masks = (_resolve_masks(ctx, args["design_id"], mask_refs)
+             if mask_refs else None)
+    outcome = apply_edit(doc, request, img, masks=masks)
     rec["updated"] = _now()
     if outcome.get("refused"):
         rec["status"] = "refused_protected"
@@ -1607,6 +1979,97 @@ def _op_library_reuse(ctx, args):
             "provenance": provenance, "revision": doc.revision}
 
 
+# ---------------------------------------------------------------------
+# File exports (OPS18) — PSD (the doc's own layered export) and
+# the S10 Procreate stamp interchange (.brush / .brushset).
+# Exports are derived artifacts: the bytes go to the file store,
+# the core's export record rides the job result verbatim, and
+# exporting never mutates the design (no revision change). The
+# brush records carry SPEC_STATUS — research-conformant, import
+# UNPROVEN — and nothing here upgrades that claim.
+# ---------------------------------------------------------------------
+
+def _op_export_psd(ctx, args):
+    """The design's layered PSD (the core's export_psd: reference
+    layers excluded by the core), written as a file and recorded
+    on the design record's exports. The result's layer list is
+    read back through the core's own PSD reader, so what the job
+    reports is what the file actually holds."""
+    from studio_design.psd import read_psd
+    record, doc = _load_doc(ctx, args["design_id"])
+    data = doc.export_psd()
+    ref = f"file:designs/{args['design_id']}/export.psd"
+    ctx["files"].put_bytes(ref, data)
+    parsed = read_psd(data)
+    exports = dict(record.get("exports", {}))
+    exports["psd"] = ref
+    record["exports"] = exports
+    record["updated"] = _now()
+    _save_design_record(ctx["transport"], record)
+    return {"design_id": args["design_id"], "psd_ref": ref,
+            "size_bytes": len(data),
+            "width": parsed["width"], "height": parsed["height"],
+            "layers": [{"name": l["name"], "opacity": l["opacity"],
+                        "visible": l["visible"]}
+                       for l in parsed["layers"]]}
+
+
+def _op_export_brush(ctx, args):
+    """One design layer -> one .brush stamp file (the core's
+    export_stamp_brush). Source layer: layer_id, else the
+    structural outline, else the first line layer — a stamp is
+    made from linework. The export record rides the result
+    verbatim, spec_status included."""
+    from io import BytesIO
+    from studio_design.brush import export_stamp_brush
+    record, doc = _load_doc(ctx, args["design_id"])
+    layer_id = args.get("layer_id") or doc.outline_layer
+    if not layer_id:
+        line_layers = [l for l in doc.layers if l.role == "line"]
+        layer_id = line_layers[0].id if line_layers else None
+    if not layer_id:
+        raise ValueError("export.brush needs a layer_id — this "
+                         "design has no line layer to stamp from")
+    layer = doc.get(layer_id)
+    img = Image.open(BytesIO(doc.share_layer(layer_id)))
+    img.load()
+    data, rec = export_stamp_brush(img, args.get("name") or layer.name,
+                                   grain=args.get("grain", "blank"))
+    ref = (f"file:designs/{args['design_id']}/exports/"
+           f"{rec['brushes'][0]['uuid']}.brush")
+    ctx["files"].put_bytes(ref, data)
+    return {"design_id": args["design_id"], "layer_id": layer_id,
+            "brush_ref": ref, "size_bytes": len(data), "record": rec}
+
+
+def _op_export_brushset(ctx, args):
+    """One of an artist's stamp kits -> one .brushset file (the
+    core's export_stamp_kit_as_brushset): the kit's element ids
+    resolved to their stored library images, one stamp brush per
+    element. An empty kit is refused by the core — a brushset
+    needs at least one element."""
+    from io import BytesIO
+    from studio_design.brush import export_stamp_kit_as_brushset
+    lib, bytes_map = _load_library(ctx)
+    kit = lib.get_kit(args["artist_id"], args["kit_id"])
+    elements = []
+    for element_id in kit["element_ids"]:
+        element = lib.get_element(args["artist_id"], element_id)
+        img = Image.open(BytesIO(bytes_map[(args["artist_id"],
+                                            element_id)]))
+        img.load()
+        elements.append({"name": element["name"], "image": img,
+                         "element_id": element_id})
+    data, rec = export_stamp_kit_as_brushset(
+        elements, args.get("set_name") or kit["name"],
+        grain=args.get("grain", "blank"))
+    ref = f"file:library/{args['artist_id']}/{args['kit_id']}.brushset"
+    ctx["files"].put_bytes(ref, data)
+    return {"artist_id": args["artist_id"], "kit_id": args["kit_id"],
+            "brushset_ref": ref, "size_bytes": len(data),
+            "record": rec}
+
+
 JOB_OPS = {
     "profile.seed": _op_profile_seed,
     "profile.get": _op_profile_get,
@@ -1631,12 +2094,19 @@ JOB_OPS = {
     "doc.op": _op_doc_op,
     "doc.get": _op_doc_get,
     "doc.set_structural_outline": _op_doc_set_structural_outline,
+    "doc.outline_accept": _op_doc_outline_accept,
     "doc.shading_plan": _op_doc_shading_plan,
     "doc.measure_contours": _op_doc_measure_contours,
     "doc.set_lighting": _op_doc_set_lighting,
     "doc.snapshot_put": _op_doc_snapshot_put,
     "doc.snapshot_restore": _op_doc_snapshot_restore,
     "doc.snapshot_list": _op_doc_snapshot_list,
+    "doc.snapshot_delete": _op_doc_snapshot_delete,
+    "doc.undo": _op_doc_undo,
+    "doc.redo": _op_doc_redo,
+    "mask.put": _op_mask_put,
+    "mask.list": _op_mask_list,
+    "mask.delete": _op_mask_delete,
     "edit.request": _op_edit_request,
     "edit.apply": _op_edit_apply,
     "edit.get": _op_edit_get,
@@ -1654,6 +2124,9 @@ JOB_OPS = {
     "library.add_to_kit": _op_library_add_to_kit,
     "library.remove_from_kit": _op_library_remove_from_kit,
     "library.reuse": _op_library_reuse,
+    "export.psd": _op_export_psd,
+    "export.brush": _op_export_brush,
+    "export.brushset": _op_export_brushset,
 }
 
 

@@ -109,6 +109,19 @@ maintains the same keys; values are JSON objects stored whole):
   `designlib/index` — `{"entries": ["<artist>/<element>", ...]}`.
 - `designkit/<artist_id>/<kit_id>` — one stamp kit owned by
   that artist. `designkit/index` — `{"kits": [...]}`.
+- `designhist/<id>` — the design's undo/redo history: the
+  captured prior states the `doc.undo` / `doc.redo` jobs walk,
+  persisted by the sidecar on every design change (its entries
+  follow the same 256 KiB rule). It is addressed by the
+  design's own id — you never read or write it directly.
+- `designmask/<design_id>/<name>` — one named edit mask for a
+  design (a full-canvas PNG stored by a `mask.put` job): an
+  edit request's target/protected entries may carry
+  `mask_ref: "<name>"` to name it. `designmask/index` —
+  `{"entries": ["<design_id>/<name>", ...]}`.
+- `designver/<design_id>/<name>` — one durable named snapshot
+  of a design (see Durable versions below).
+  `designver/index` — `{"versions": [...]}`.
 - `draft/design-<request_id>` — the durable approval hold
   (Approvals section).
 
@@ -187,20 +200,43 @@ never work around it):
   set_opacity, set_visible, remove, lock, unlock),
   `doc.get`.
 - Outline + lighting (R1): `doc.set_structural_outline`
-  {design_id, layer_id} (marks a line layer as the locked
-  structural outline), `doc.shading_plan` {design_id, targets?,
-  outline_ref?} (REFUSED by the core when an outline is set and
-  the plan does not reference it — that refusal is the gate
-  working), `doc.measure_contours` {design_id, layer_id?} (a
-  report, never a stencil verdict), `doc.set_lighting`
-  {design_id, preset | spec | clear} (lighting intent stored
-  on the document; it is intent, never a relighting claim).
+  {design_id, layer_id, source?, production?} (marks a line
+  layer as the locked structural outline and records HOW it
+  was produced: threshold_split / candidate_step /
+  artist_supplied — a machine-made outline is never passed
+  off as an artist's), `doc.outline_accept` {design_id,
+  accepted_by?, at?, base_revision} (the artist's review
+  transition: the outline's provenance moves unreviewed ->
+  artist_reviewed, with who/when on the record; refused when
+  stale or already reviewed), `doc.shading_plan` {design_id,
+  targets?, outline_ref?} (REFUSED by the core when an outline
+  is set and the plan does not reference it — that refusal is
+  the gate working; the plan and stencil export records carry
+  the outline's provenance + review state), `doc.measure_contours`
+  {design_id, layer_id?} (a report, never a stencil verdict),
+  `doc.set_lighting` {design_id, preset | spec | clear}
+  (lighting intent stored on the document; it is intent,
+  never a relighting claim).
 - Durable versions (R1): `doc.snapshot_put` {design_id, name,
   approved?} persists a named snapshot as a durable record at
   `designver/<design_id>/<name>` (it survives sidecar restarts;
   an approved snapshot is the artist's signed-off version),
   `doc.snapshot_restore` {design_id, name} restores it,
   `doc.snapshot_list` {design_id} lists a design's snapshots.
+  `doc.snapshot_delete` {design_id, name, confirm_approved?}
+  deletes one — deleting an APPROVED version is a deliberate
+  act: without `confirm_approved: true` the job is refused and
+  nothing is deleted; with it, the result names that the
+  deleted version was approved. Never delete an approved
+  version on your own initiative.
+- Undo/redo (OPS18): `doc.undo` {design_id, base_revision?} /
+  `doc.redo` {design_id, base_revision?} walk the design's
+  history, which the sidecar persists across its own cycles —
+  an undo can reach back past sidecar restarts to any stored
+  change. Undo/redo are mutations themselves (they advance the
+  revision and are revision-guarded like the rest). Nothing to
+  undo is a clean result (`undone: false`), not an error; a
+  fresh change clears the redo branch.
 - AI edits (S7): `edit.request` {design_id, request_id,
   instruction, target, protected?, base_revision?} validates
   the request and holds it at `designedit/<request_id>`,
@@ -220,6 +256,19 @@ never work around it):
   is protected BY DEFAULT whenever one is set. THE SIDECAR
   GENERATES NOTHING: results are supplied, gates are
   enforced. `edit.get` {request_id} reads a request's state.
+  Named masks (OPS18): a target or protected entry may carry
+  `mask_ref: "<name>"` naming a mask stored for that design —
+  `mask.put` {design_id, name, mask_ref} stores one from a
+  supplied full-canvas mask image (a file a host leg placed;
+  a wrong-size image is refused at store time), `mask.list`
+  {design_id} lists a design's masks, `mask.delete`
+  {design_id, name} removes one. A mask only ever narrows
+  where an edit may land; an entry in `protected` naming a
+  mask protects exactly the mask's area. An edit naming a
+  mask that was never stored is refused at request time.
+  A region-only target (a rect, or a mask_ref with no layer)
+  still has NO apply path — edits land on one layer; region
+  targets are verify-only in the core, and this hand says so.
 - Cover-ups (S8): `coverup.create` {design_id, coverup_id,
   photo_ref, physical_width_mm, physical_height_mm,
   orientation_deg?, curvature_note?, skin_note?, threshold?}
@@ -253,14 +302,28 @@ never work around it):
   expire; `library.delete_element` {artist_id, element_id} —
   the owning artist's explicit act — is the only removal
   path, and it also pulls the element out of their kits.
+- File exports (OPS18): `export.psd` {design_id} writes the
+  design's layered PSD (the reference photo of a cover-up is
+  excluded by the core) as a file and records it on the
+  design's `exports`. `export.brush` {design_id, layer_id?,
+  name?, grain?} makes ONE Procreate stamp brush (.brush)
+  from a design layer (the outline/line layer by default);
+  `export.brushset` {artist_id, kit_id, set_name?, grain?}
+  makes a .brushset from one of the artist's stamp kits, one
+  brush per element. Both brush exports are
+  research-conformant only — Procreate import is UNPROVEN
+  until the iPad test-import gate passes, their records say
+  so verbatim, and you must say so whenever you offer one.
+  An empty kit cannot become a brushset.
 
 REVISIONS (R1): every design record carries a `revision` that
 advances with each mutating job (read it from a `doc.get`
 result or a mutating job's result). When you queue a mutating
 job (`doc.op`, `doc.set_structural_outline`, `doc.set_lighting`,
-`doc.snapshot_restore`, `coverup.create`,
-`coverup.set_opacity`, `library.reuse` — and `edit.apply`,
-whose guard is the base_revision its `edit.request` stored)
+`doc.snapshot_restore`, `doc.undo`, `doc.redo`,
+`coverup.create`, `coverup.set_opacity`, `library.reuse` —
+and `edit.apply`, whose guard is the base_revision its
+`edit.request` stored)
 against a design you have been working
 from a recalled record, include `base_revision` with the
 revision you read. If the design has moved since, the sidecar
@@ -375,17 +438,23 @@ stored by jobs, never by you directly), layer.add_raster,
 layer.add_stamp (the build pipeline's steps), layer.transform,
 layer.reorder, layer.set_opacity, layer.remove, layer.lock,
 layer.unlock (via `doc.op`), doc.render, doc.share_canvas,
-doc.share_layer, doc.export_stencil, doc.export_psd,
-doc.validate, doc.snapshot, doc.restore_snapshot,
+doc.share_layer, doc.export_stencil, doc.validate,
+doc.export_psd (job `export.psd` — the layered file lands in
+the file store, recorded on the design's `exports`),
+doc.snapshot, doc.restore_snapshot,
 doc.list_snapshots (R1: jobs `doc.snapshot_put` /
 `doc.snapshot_restore` / `doc.snapshot_list` — durable named
-versions at `designver/<design_id>/<name>`), doc.undo, doc.redo,
-doc.drag_layer, doc.drag_element, doc.drag_element_to,
+versions at `designver/<design_id>/<name>`; OPS18 adds
+`doc.snapshot_delete`, approved versions deliberate-only),
+doc.undo, doc.redo (OPS18: jobs `doc.undo` / `doc.redo` —
+the history is persisted at `designhist/<design_id>`, so
+undo reaches across sidecar cycles), doc.drag_layer,
+doc.drag_element, doc.drag_element_to,
 doc.drag_rotate, doc.drag_scale, viewer.select, viewer.toggle_visibility,
-viewer.layer_list (the drag/viewer family and undo are the
-package's document API — on this host, layer changes ride
-`doc.op`; undo and a pointer surface are not wired as jobs
-yet, and this hand does not claim them).
+viewer.layer_list (the drag/viewer family is the package's
+document API — on this host, layer changes ride `doc.op`;
+a pointer surface is not wired as jobs yet, and this hand
+does not claim one).
 
 Generation support: gen.route_request (job `route_request`),
 gen.plan_versions (job `plan_versions`), gen.record_cost
@@ -426,7 +495,12 @@ edit.validate_request (inside `edit.request` — deterministic
 intents bounce there), edit.build_mask, edit.verify_protected,
 edit.apply_edit (inside `edit.apply` — the sidecar supplies no
 pixels; a host leg's result file is gated, never generated),
-edit state via `edit.get`. Cover-ups (wired as jobs):
+edit state via `edit.get`. Named masks (OPS18: jobs `mask.put`
+/ `mask.list` / `mask.delete` — masks are held durably at
+`designmask/<design_id>/<name>` and resolved into the core's
+mask mapping at apply time; a mask_ref in a target or a
+protected entry is honored with the core's semantics —
+protected subtraction last, always). Cover-ups (wired as jobs):
 coverup.create (job `coverup.create`; calibration rides its
 result), coverup.set_reference_opacity, coverup.render_overlay,
 coverup.coverage_analysis + coverup.darkness_map (inside
@@ -439,10 +513,10 @@ apply path here, and this hand says so.
 
 Brush export (S10, bonus interchange): brush.export_brush,
 brush.export_brushset — stamp elements and kits as .brush /
-.brushset files, research-conformant only: Procreate import is
-UNPROVEN until the iPad test-import gate, and you must say so
-whenever you offer one. Not yet wired as sidecar jobs in this
-pass.
+.brushset files (OPS18: jobs `export.brush` /
+`export.brushset`), research-conformant only: Procreate
+import is UNPROVEN until the iPad test-import gate, and you
+must say so whenever you offer one.
 
 Host tools this hand itself uses (HAND.toml): memory_store,
 memory_recall, knowledge_add_entity, knowledge_add_relation,
