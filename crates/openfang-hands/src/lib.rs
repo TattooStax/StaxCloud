@@ -298,6 +298,10 @@ pub struct HandAgentConfig {
     /// making long LLM calls. Omit to use the kernel default.
     #[serde(default)]
     pub heartbeat_interval_secs: Option<u64>,
+    /// Explicit opt-in: images attached to a turn reach the model only when
+    /// this is true AND the model supports vision. Default off.
+    #[serde(default)]
+    pub vision: bool,
 }
 
 fn default_module() -> String {

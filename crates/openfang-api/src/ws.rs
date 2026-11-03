@@ -652,36 +652,26 @@ async fn handle_text_message(
                 }
             }
 
-            // Warn if the model doesn't support vision but images were attached
-            if has_images {
+            // The kernel drops the images unless vision is allowed; say so
+            if has_images && !state.kernel.agent_vision_allowed(agent_id) {
                 let model_name = state
                     .kernel
                     .registry
                     .get(agent_id)
                     .map(|e| e.manifest.model.model.clone())
                     .unwrap_or_default();
-                let supports_vision = state
-                    .kernel
-                    .model_catalog
-                    .read()
-                    .ok()
-                    .and_then(|cat| cat.find_model(&model_name).map(|m| m.supports_vision))
-                    .unwrap_or(false);
-                if !supports_vision {
-                    let _ = send_json(
-                        sender,
-                        &serde_json::json!({
-                            "type": "command_result",
-                            "message": format!(
-                                "**Vision not supported** — the current model `{}` cannot analyze images. \
-                                 Switch to a vision-capable model (e.g. `gemini-2.5-flash`, `claude-sonnet-4-20250514`, `gpt-4o`) \
-                                 with `/model <name>` for image analysis.",
-                                model_name
-                            ),
-                        }),
-                    )
-                    .await;
-                }
+                let _ = send_json(
+                    sender,
+                    &serde_json::json!({
+                        "type": "command_result",
+                        "message": format!(
+                            "**Vision not supported** — the image was not sent to `{}`: \
+                             this agent is not vision-enabled, or its model cannot analyze images.",
+                            model_name
+                        ),
+                    }),
+                )
+                .await;
             }
 
             // Send typing lifecycle: start

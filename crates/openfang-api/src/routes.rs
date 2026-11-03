@@ -382,6 +382,8 @@ pub async fn send_message(
     } else {
         None
     };
+    // The kernel drops images unless vision is allowed; the caller is told.
+    let image_unseen = content_blocks.is_some() && !state.kernel.agent_vision_allowed(agent_id);
 
     let kernel_handle: Arc<dyn KernelHandle> = state.kernel.clone() as Arc<dyn KernelHandle>;
     match state
@@ -414,16 +416,17 @@ pub async fn send_message(
             } else {
                 cleaned
             };
-            (
-                StatusCode::OK,
-                Json(serde_json::json!(MessageResponse {
-                    response,
-                    input_tokens: result.total_usage.input_tokens,
-                    output_tokens: result.total_usage.output_tokens,
-                    iterations: result.iterations,
-                    cost_usd: result.cost_usd,
-                })),
-            )
+            let mut body = serde_json::json!(MessageResponse {
+                response,
+                input_tokens: result.total_usage.input_tokens,
+                output_tokens: result.total_usage.output_tokens,
+                iterations: result.iterations,
+                cost_usd: result.cost_usd,
+            });
+            if image_unseen {
+                body["image_unseen"] = true.into();
+            }
+            (StatusCode::OK, Json(body))
         }
         Err(e) => {
             tracing::warn!("send_message failed for agent {id}: {e}");

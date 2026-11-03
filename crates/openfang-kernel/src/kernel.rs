@@ -288,6 +288,16 @@ impl DeliveryTracker {
     }
 }
 
+/// Images reach the model only when the agent opted in (`metadata.vision`,
+/// set from HAND.toml `[agent] vision = true`) AND its model supports vision.
+pub fn vision_allowed(
+    catalog: &openfang_runtime::model_catalog::ModelCatalog,
+    manifest: &AgentManifest,
+) -> bool {
+    manifest.metadata.get("vision").and_then(|v| v.as_bool()) == Some(true)
+        && catalog.model_supports_vision(&manifest.model.model, &manifest.model.provider)
+}
+
 /// Create the agent's private state directory layout. Holds identity files,
 /// AGENT.json, sessions/, memory/, and logs/. Lives under
 /// `~/.openfang/workspaces/{name}/` regardless of where the user pointed the
@@ -1831,6 +1841,36 @@ impl OpenFangKernel {
             .await
     }
 
+    /// Whether images attached to this agent's turns reach its model.
+    pub fn agent_vision_allowed(&self, agent_id: AgentId) -> bool {
+        let Some(entry) = self.registry.get(agent_id) else {
+            return false;
+        };
+        self.model_catalog
+            .read()
+            .is_ok_and(|cat| vision_allowed(&cat, &entry.manifest))
+    }
+
+    /// Drop image blocks unless `vision_allowed` for this manifest.
+    fn gate_images(
+        &self,
+        manifest: &AgentManifest,
+        blocks: Option<Vec<openfang_types::message::ContentBlock>>,
+    ) -> Option<Vec<openfang_types::message::ContentBlock>> {
+        let allowed = self
+            .model_catalog
+            .read()
+            .is_ok_and(|cat| vision_allowed(&cat, manifest));
+        if allowed {
+            return blocks;
+        }
+        let kept: Vec<_> = blocks?
+            .into_iter()
+            .filter(|b| !matches!(b, openfang_types::message::ContentBlock::Image { .. }))
+            .collect();
+        (!kept.is_empty()).then_some(kept)
+    }
+
     /// Send a multimodal message (text + images) to an agent and get a response.
     ///
     /// Used by channel bridges when a user sends a photo — the image is downloaded,
@@ -2120,6 +2160,7 @@ impl OpenFangKernel {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<StreamEvent>(64);
         let mut manifest = entry.manifest.clone();
+        let content_blocks = self.gate_images(&manifest, content_blocks);
 
         // Lazy backfill: create state_dir and workspace for existing agents
         // spawned before this field existed. Private state always lives under
@@ -2920,6 +2961,7 @@ impl OpenFangKernel {
         }
 
         let driver = self.resolve_driver(&manifest)?;
+        let content_blocks = self.gate_images(&manifest, content_blocks);
 
         // Look up model's actual context window from the catalog
         let ctx_window = self.model_catalog.read().ok().and_then(|cat| {
@@ -3889,6 +3931,11 @@ impl OpenFangKernel {
                 "hand_allowed_env".to_string(),
                 serde_json::to_value(&allowed_env).unwrap_or_default(),
             );
+        }
+        if def.agent.vision {
+            manifest
+                .metadata
+                .insert("vision".to_string(), serde_json::Value::Bool(true));
         }
 
         // Inject skill content into system prompt
@@ -8470,6 +8517,108 @@ mod tests {
             .activate_hand("lead", HashMap::new(), None)
             .expect("hand must be re-activatable after stop");
         assert_ne!(second.instance_id, first_instance_id);
+
+        kernel.shutdown();
+    }
+
+    // ----------------------------------------------------------------------
+    // Build V (ii)+(iii): per-hand vision gating. Only the designer opts in;
+    // vision needs the opt-in AND a vision-capable model.
+    // ----------------------------------------------------------------------
+    #[test]
+    fn test_vision_gated_per_hand_designer_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home_dir = tmp.path().join("openfang-kernel-vision-test");
+        for (id, toml) in [
+            (
+                "designer",
+                include_str!("../../../stax/hands/designer/HAND.toml"),
+            ),
+            ("lead", include_str!("../../../stax/hands/lead/HAND.toml")),
+            ("sms", include_str!("../../../stax/hands/sms/HAND.toml")),
+            ("forms", include_str!("../../../stax/hands/forms/HAND.toml")),
+            ("stax", include_str!("../../../stax/hands/stax/HAND.toml")),
+            (
+                "surface-builder",
+                include_str!("../../../stax/hands/surface-builder/HAND.toml"),
+            ),
+            (
+                "deep-work",
+                include_str!("../../../stax/hands/deep-work/HAND.toml"),
+            ),
+        ] {
+            let dir = home_dir.join("hands").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("HAND.toml"), toml).unwrap();
+        }
+        let mut config = KernelConfig {
+            home_dir: home_dir.clone(),
+            data_dir: home_dir.join("data"),
+            ..KernelConfig::default()
+        };
+        // A vision-capable model, unprefixed as agents store it.
+        config.default_model.provider = "openrouter".to_string();
+        config.default_model.model = "openai/gpt-4o".to_string();
+        let kernel = OpenFangKernel::boot_with_config(config).expect("kernel boots");
+
+        let agent = |hand: &str| {
+            let inst = kernel.activate_hand(hand, HashMap::new(), None).unwrap();
+            inst.agent_id.unwrap()
+        };
+        let designer = agent("designer");
+        for hand in [
+            "lead",
+            "sms",
+            "forms",
+            "stax",
+            "surface-builder",
+            "deep-work",
+        ] {
+            let id = agent(hand);
+            assert!(
+                !kernel.agent_vision_allowed(id),
+                "{hand} must not get vision"
+            );
+        }
+        assert!(kernel.agent_vision_allowed(designer));
+
+        // The designer on a non-vision model resolves false, prefixed or not.
+        let cat = kernel.model_catalog.read().unwrap();
+        let mut m = kernel.registry.get(designer).unwrap().manifest;
+        assert!(vision_allowed(&cat, &m));
+        m.model.model = "openrouter/openai/gpt-4o".to_string();
+        assert!(vision_allowed(&cat, &m));
+        for model in [
+            "deepseek/deepseek-chat",
+            "openrouter/deepseek/deepseek-chat",
+        ] {
+            m.model.model = model.to_string();
+            assert!(!vision_allowed(&cat, &m), "{model}");
+        }
+        drop(cat);
+
+        // Images are dropped for a non-opted-in manifest even on gpt-4o.
+        let img = || {
+            Some(vec![openfang_types::message::ContentBlock::Image {
+                media_type: "image/png".to_string(),
+                data: "AAAA".to_string(),
+            }])
+        };
+        let lead_manifest = kernel
+            .registry
+            .list()
+            .into_iter()
+            .find(|e| e.name == "lead-hand")
+            .unwrap()
+            .manifest;
+        assert!(kernel.gate_images(&lead_manifest, img()).is_none());
+        let designer_manifest = kernel.registry.get(designer).unwrap().manifest;
+        assert_eq!(
+            kernel
+                .gate_images(&designer_manifest, img())
+                .map(|b| b.len()),
+            Some(1)
+        );
 
         kernel.shutdown();
     }
