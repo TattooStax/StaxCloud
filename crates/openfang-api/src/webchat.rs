@@ -135,7 +135,10 @@ const WEBCHAT_HTML: &str = concat!(
     // at 512px), inlined as a data URI so no new route is needed.
     "\n.home-mascot-art{background-image:url(data:image/png;base64,",
     include_str!("../static/brand/stax-mascot-phone-512.png.b64"),
-    ")}\n</style>\n",
+    ")}\n",
+    // The traditional tiles (outer-level marks), 128px data URIs.
+    include_str!("../static/brand/tiles-128.css"),
+    "</style>\n",
     include_str!("../static/index_body.html"),
     // Vendor libs: marked + highlight first (used by app.js), then Chart.js
     "<script nonce=\"__NONCE__\">\n",

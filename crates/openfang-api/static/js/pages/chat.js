@@ -1140,7 +1140,27 @@ function chatPage() {
         return;
       }
 
+      await this.titleFromFirst(text);
       this._sendPayload(finalText, uploadedFiles, msgImages);
+    },
+
+    // A new chat takes its title from its first message: the first line,
+    // trimmed to a few words, stored as the session label (the existing
+    // label route). Written before the turn starts, since the turn saves the
+    // session back with whatever label it loaded. Unlabeled older sessions
+    // are never touched.
+    async titleFromFirst(text) {
+      var agent = this.currentAgent;
+      if (!agent || this.messages.filter(function(m) { return m.role === 'user'; }).length !== 1) return;
+      var title = String(text || '').split('\n')[0].replace(/['\u2019]/g, '')
+        .replace(/[^\p{L}\p{N} _-]+/gu, ' ').trim().split(/\s+/).slice(0, 6).join(' ').slice(0, 60).trim();
+      if (!title) return;
+      try {
+        var data = await OpenFangAPI.get('/api/agents/' + agent.id + '/sessions');
+        var cur = (data.sessions || []).find(function(x) { return x.active; });
+        if (!cur || cur.label || (cur.message_count || 0) > 0) return;
+        await OpenFangAPI.put('/api/sessions/' + cur.session_id + '/label', { label: title });
+      } catch(e) { /* the honest fallback title stays */ }
     },
 
     async _sendPayload(finalText, uploadedFiles, msgImages) {

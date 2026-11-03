@@ -148,6 +148,8 @@ document.addEventListener('alpine:init', function() {
     // A request drafted by an Ask Stax row, placed in the Home composer.
     askDraft: '',
     formsTab: 'forms',
+    // A board to open on arrival at Boards (the drawer's interim Canvas row).
+    boardPick: '',
     smsTab: 'inbox',
     setupDone: false,
     setupLoaded: false,
@@ -228,8 +230,8 @@ document.addEventListener('alpine:init', function() {
           .map(function(a) { return a.id; })
           .sort()
           .join(',');
-        if (pending.length > 0 && signature !== this.lastPendingApprovalSignature && typeof OpenFangToast !== 'undefined') {
-          OpenFangToast.warn('An agent is waiting for approval. Open Approvals to review.');
+        if (pending.length > 0 && signature !== this.lastPendingApprovalSignature && location.hash !== '#approvals' && typeof OpenFangToast !== 'undefined') {
+          OpenFangToast.warn('Something is waiting for you in Work.');
         }
         this.pendingApprovalCount = pending.length;
         this.pendingApprovals = pending;
@@ -399,14 +401,14 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { chat: 'home', sms: 'channels', approvals: 'work', contacts: 'leads', sessions: 'work', analytics: 'work', boards: 'boards', forms: 'studio', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', advanced: 'advanced', configuration: 'advanced', integrations: 'advanced', overview: 'advanced', agents: 'advanced', setup: 'advanced', comms: 'advanced', logs: 'advanced', runtime: 'advanced', wizard: 'advanced' },
-    surfaceHome: { home: 'chat', channels: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', studio: 'workflows', system: 'settings', advanced: 'advanced' },
+    surfaceOf: { chat: 'home', sms: 'texts', approvals: 'work', contacts: 'leads', boards: 'boards', forms: 'studio', library: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
+    surfaceHome: { home: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', system: 'settings', advanced: 'advanced' },
     // Pages demoted to System > Advanced. Their page keys are unchanged;
-    // only their URL hash carries an advanced/ prefix, so a stale #agents or
-    // #overview bookmark lands on home instead of the old consoles.
+    // only their URL hash carries an advanced/ prefix, so a stale bare
+    // bookmark (#agents, #scheduler, ...) lands on home instead.
     // The stock Settings console (configuration) and the integrations
     // catalog (integrations) live here too; 'advanced' itself is the index.
-    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard', 'configuration', 'integrations'],
+    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard', 'configuration', 'integrations', 'workflows', 'scheduler', 'hands', 'skills', 'sessions', 'analytics'],
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -465,8 +467,7 @@ function app() {
         }
         if (validPages.indexOf(hash) >= 0) {
           self.page = hash;
-          if (hash === 'chat' && self.surface !== 'channels') self.surface = 'home';
-          else if (hash !== 'chat' && self.surfaceOf[hash]) self.surface = self.surfaceOf[hash];
+          self.surface = self.surfaceOf[hash] || null;
         }
       }
       window.addEventListener('hashchange', handleHash);
@@ -511,12 +512,9 @@ function app() {
       }, 5000);
     },
 
-    // The surface the shell chrome (dock highlight, pill row) follows. It is
-    // the surface the user actually entered by, because two dock tabs (Stax
-    // and Channels) land on the same chat page and the page alone cannot
-    // say which one is active.
+    // The surface the shell chrome (dock highlight) follows.
     surf() {
-      return this.surface || this.surfaceOf[this.page] || 'home';
+      return this.surface || this.surfaceOf[this.page] || (this.advancedPages.indexOf(this.page) >= 0 ? 'advanced' : 'home');
     },
 
     navigate(p) {
@@ -526,7 +524,7 @@ function app() {
       Alpine.store('app').sideOpen = false;
       Alpine.store('app').r4Open = false;
       Alpine.store('app').staxCard = false;
-      this.surface = this.surfaceOf[p] || this.surface;
+      this.surface = this.surfaceOf[p] || (this.advancedPages.indexOf(p) >= 0 ? 'advanced' : this.surface);
       // The agents template stays mounted when moving between the list and
       // the chat page, so it cannot rely on init alone to open the chat.
       if (p === 'chat') window.dispatchEvent(new CustomEvent('open-chat'));
@@ -820,6 +818,7 @@ function staxDrawer() {
     chatLimit: 5,
     busy: false,
     scrolled: false,
+    more: false,      // drawer content continues below the fold
     _dragOpened: false,
 
     initDrawer() {
@@ -833,8 +832,11 @@ function staxDrawer() {
         if (!isOpen) return;
         if (!self._dragOpened) self.collapseAll();
         self._dragOpened = false;
-        self.loadChats();
+        self.loadChats().then(function() { self.cue(); });
+        self.cue();
       });
+      this.$watch('open', function() { self.cue(); }, { deep: true });
+      this.$watch('showAll', function() { self.cue(); });
       this.initGestures();
     },
 
@@ -1020,6 +1022,15 @@ function staxDrawer() {
       });
     },
 
+    // Bottom fade while the one scroll continues past the fold.
+    cue() {
+      var self = this;
+      this.$nextTick(function() {
+        var b = self.$el.querySelector('.sd-body');
+        self.more = !!b && b.scrollHeight - b.scrollTop - b.clientHeight > 4;
+      });
+    },
+
     collapseAll() {
       this.open.channels = false;
       this.open.studio = false;
@@ -1133,7 +1144,14 @@ function boardsPage() {
         });
         list.sort(function(a, b) { return a.title.localeCompare(b.title); });
         this.surfaces = list;
-        if (this.current && !list.some(function(s) { return s.slug === this.current; })) this.current = null;
+        var store = Alpine.store('app');
+        if (store.boardPick) {
+          var pick = store.boardPick;
+          store.boardPick = '';
+          if (list.some(function(s) { return s.slug === pick; })) this.current = pick;
+        }
+        var cur = this.current;
+        if (cur && !list.some(function(s) { return s.slug === cur; })) this.current = null;
       } catch(e) {
         this.loadError = e.message || 'Could not load boards.';
       }
@@ -1171,6 +1189,51 @@ function boardsPage() {
           await self.loadData();
         } catch(e) { OpenFangToast.error(e.message); }
       });
+    }
+  };
+}
+
+
+// ── Library v1: the shop's records shelf ──────────────────────────────────
+// One plain list, newest first, projected from the same kv snapshot Boards
+// reads: saved designs (design/<id>: title + updated) and the saved surface
+// records (surface/<slug>, live ones only). Families without records behind
+// them get no section; a missing date renders as nothing.
+function libraryPage() {
+  return {
+    items: [],
+    loading: true,
+    loadError: '',
+
+    async loadData() {
+      this.loading = true;
+      this.loadError = '';
+      try {
+        var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
+        var data = await OpenFangAPI.get('/api/memory/agents/' + agentId + '/kv');
+        var items = [];
+        (data.kv_pairs || []).forEach(function(pr) {
+          var k = pr.key || '';
+          var v = pr.value;
+          if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+          if (!v || typeof v !== 'object' || v.deleted) return;
+          if (k.indexOf('design/') === 0 && k !== 'design/index') {
+            items.push({ key: k, title: v.title || k.slice(7), kind: 'Design', when: v.updated || '' });
+          } else if (k.indexOf('surface/') === 0) {
+            items.push({ key: k, title: v.title || k.slice(8), kind: 'Saved board', when: v.updated || v.updated_at || '' });
+          }
+        });
+        items.sort(function(a, b) { return (b.when ? Date.parse(b.when) : 0) - (a.when ? Date.parse(a.when) : 0); });
+        this.items = items;
+      } catch(e) {
+        this.loadError = 'The shelf did not load. Try again in a moment.';
+      }
+      this.loading = false;
+    },
+
+    fmtDate(ts) {
+      var d = ts ? new Date(ts) : null;
+      return d && !isNaN(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     }
   };
 }

@@ -3,11 +3,9 @@
 <!-- The one icon sprite. Every app icon resolves here through <use>.
      Family: the StaxBox Icon System (64-unit grid, 3.4-3.6 ink weight),
      shown on a 48-unit window (viewBox 8 8 48 48) so marks fill the face.
-     Two tiers:
-       ic-*  outer level (dock, drawer section heads): filled flash shapes,
-             ink outline, our palette. Colors come from --ic-* tokens that
-             inherit through <use>, so light and dark each get their own ink.
-       g-*   inner level (drawer rows, module docks): one tone, currentColor. -->
+     The outer level (dock, drawer section heads, page marks) is the raster
+     tile set (.stax-tile, brand/tiles-128.css); glyphs here are the inner
+     level (drawer rows, module docks): one tone, currentColor. -->
 <svg class="stax-sprite" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
     <!-- Stax, the grim reaper: stax-avatar.svg (TattooStax/StaxCloud staxos/web/icons @ 58937fab),
@@ -27,13 +25,6 @@
     <!-- The old circular-arrow identity mark: shown only in System > Advanced. -->
     <symbol id="sd-mark" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15.5" fill="none" stroke="currentColor" stroke-width="4"/><path d="M20 27 V13 M12.5 19.5 L20 11 L27.5 19.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 
-    <!-- Outer tier: colorful -->
-    <symbol id="ic-work" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><circle cx="32" cy="17.5" r="7" style="fill:var(--ic-gold)"/><path d="M27 24.5 H37 L38.5 31 H25.5 Z" style="fill:var(--ic-gold-deep)"/><rect x="11.5" y="31" width="41" height="11.5" rx="3.5" style="fill:var(--ic-slate)"/><path d="M16.5 49.5 H47.5" style="fill:none;stroke:var(--ic-crimson);stroke-width:4.6"/><path d="M28.4 15 A4.5 4.5 0 0 1 31 12.8" style="fill:none;stroke:var(--ic-paper);stroke-width:2.4"/><path d="M16.5 35.5 H22" style="fill:none;stroke:var(--ic-paper);stroke-width:2.4"/></g></symbol>
-    <symbol id="ic-boards" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><path d="M13 23 a3 3 0 0 1 3-3 h9 l4 5 h19 a3 3 0 0 1 3 3 v2 H13 Z" style="fill:var(--ic-gold-deep)"/><rect x="13" y="27" width="38" height="20" rx="3.5" style="fill:var(--ic-gold)"/><path d="M18.5 32.5 H25" style="fill:none;stroke:var(--ic-paper);stroke-width:2.4"/></g></symbol>
-    <symbol id="ic-leads" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><path d="M13 47 V31 A19 19 0 0 1 51 31 V47 H41 V31 A9 9 0 0 0 23 31 V47 Z" style="fill:var(--ic-crimson)"/><path d="M13 40 H23 V47 H13 Z M41 40 H51 V47 H41 Z" style="fill:var(--ic-paper)"/><path d="M18 29 A14 14 0 0 1 24.5 19.5" style="fill:none;stroke:var(--ic-paper);stroke-width:2.4"/></g></symbol>
-    <symbol id="ic-channels" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><path d="M15 16 H49 a4.5 4.5 0 0 1 4.5 4.5 V38 a4.5 4.5 0 0 1 -4.5 4.5 H29 L19.5 50 V42.5 H15 a4.5 4.5 0 0 1 -4.5 -4.5 V20.5 A4.5 4.5 0 0 1 15 16 Z" style="fill:var(--ic-blue)"/><circle cx="22" cy="29.5" r="3" style="fill:var(--ic-paper);stroke:none"/><circle cx="32" cy="29.5" r="3" style="fill:var(--ic-paper);stroke:none"/><circle cx="42" cy="29.5" r="3" style="fill:var(--ic-paper);stroke:none"/></g></symbol>
-    <symbol id="ic-studio" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><rect x="12" y="15" width="40" height="34" rx="4.5" style="fill:var(--ic-pink)"/><rect x="18" y="21" width="28" height="22" rx="2" style="fill:var(--ic-paper)"/><circle cx="26" cy="28" r="3" style="fill:var(--ic-gold)"/><path d="M18.5 42.5 L28 34 L34 39 L38.5 35.5 L45.5 42.5 Z" style="fill:var(--ic-pink)"/></g></symbol>
-    <symbol id="ic-system" viewBox="8 8 48 48"><g style="stroke:var(--ic-ink);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round"><path d="M25 22 V18.5 a2.5 2.5 0 0 1 2.5 -2.5 h9 a2.5 2.5 0 0 1 2.5 2.5 V22" fill="none"/><rect x="11.5" y="22" width="41" height="26" rx="4.5" style="fill:var(--ic-slate)"/><path d="M11.5 32 H52.5" fill="none"/><rect x="28" y="28.5" width="8" height="8" rx="1.8" style="fill:var(--ic-gold)"/><path d="M16 27 H21" style="fill:none;stroke:var(--ic-paper);stroke-width:2.4"/></g></symbol>
 
     <!-- Inner tier: subtle, one tone -->
     <symbol id="g-inbox" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="19" width="36" height="26" rx="4"/><path d="M15.5 22.5 L32 35 L48.5 22.5"/></g></symbol>
@@ -83,181 +74,15 @@
 </div>
 
 <div class="app-layout" :class="{ 'focus-mode': $store.app.focusMode }">
-  <!-- Sidebar — x-cloak prevents Firefox flash-hidden during Alpine init -->
-  <nav class="sidebar" x-cloak :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileMenuOpen }">
-    <div class="sidebar-header">
-      <div class="sidebar-header-text">
-        <div class="sidebar-logo">
-          <svg width="28" height="28" aria-hidden="true"><use href="#stax-reaper"/></svg>
-          <div>
-            <h1>StaxCloud</h1>
-            <div class="version" x-text="'v' + version"></div>
-          </div>
-        </div>
-      </div>
-      <div class="theme-switcher">
-        <button class="theme-opt" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light">&#9788;</button>
-        <button class="theme-opt" :class="{ active: themeMode === 'system' }" @click="setTheme('system')" title="System">&#9675;</button>
-        <button class="theme-opt" :class="{ active: themeMode === 'dark' }" @click="setTheme('dark')" title="Dark">&#9790;</button>
-      </div>
-    </div>
-
-    <div class="sidebar-status" :class="{ offline: !connected && !$store.app.booting }">
-      <span class="status-dot"></span>
-      <span class="sidebar-label" x-show="connected" x-text="agentCount + ' agent(s) running'"></span>
-      <span class="sidebar-label" x-show="$store.app.booting && !connected" class="conn-reconnecting">Connecting...</span>
-      <span class="sidebar-label" x-show="!connected && !$store.app.booting && $store.app.connectionState === 'reconnecting'" class="conn-reconnecting">Reconnecting...</span>
-      <span class="sidebar-label" x-show="!connected && !$store.app.booting && $store.app.connectionState !== 'reconnecting'" x-text="'disconnected' + ($store.app.lastError ? ' — ' + $store.app.lastError : '')">disconnected</span>
-      <span class="conn-badge sidebar-label" :class="wsConnected ? 'ws' : 'http'" x-text="wsConnected ? 'WS' : 'HTTP'" x-show="connected"></span>
-    </div>
-
-        <div class="sidebar-nav" role="navigation" aria-label="Main navigation">
-      <!-- Home - first screen -->
-            <a class="nav-item" :class="{ active: page === 'overview' }" @click="navigate('overview')" :aria-current="page === 'overview' ? 'page' : false" style="margin-bottom: 4px;">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span>
-              <span class="nav-label">Home</span>
-            </a>
-
-      <!-- Channels - the conversation home surface -->
-            <a class="nav-item" :class="{ active: page === 'agents' }" @click="navigate('agents')" :aria-current="page === 'agents' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-              <span class="nav-label">Channels</span>
-            </a>
-
-      <div class="nav-section" x-data="{ collapsed: false }" aria-label="Work">
-        <div class="nav-section-title" @click="collapsed = !collapsed">
-          <span class="nav-label">Work</span>
-          <span class="nav-section-chevron" :style="collapsed ? '' : 'transform:rotate(90deg)'">&rsaquo;</span>
-        </div>
-        <div x-show="!collapsed" x-cloak x-transition>
-            <a class="nav-item" :class="{ active: page === 'approvals' }" @click="navigate('approvals')" :aria-current="page === 'approvals' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
-              <span class="nav-label">Needs you</span>
-              <span class="badge badge-warn" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'comms' }" @click="navigate('comms')" :aria-current="page === 'comms' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span>
-              <span class="nav-label">Messages</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'sessions' }" @click="navigate('sessions')" :aria-current="page === 'sessions' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m12 2-10 5 10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg></span>
-              <span class="nav-label">History</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'analytics' }" @click="navigate('analytics')" :aria-current="page === 'analytics' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span>
-              <span class="nav-label">Reports</span>
-            </a>
-        </div>
-      </div>
-
-      <div class="nav-section" x-data="{ collapsed: false }" aria-label="Studio">
-        <div class="nav-section-title" @click="collapsed = !collapsed">
-          <span class="nav-label">Studio</span>
-          <span class="nav-section-chevron" :style="collapsed ? '' : 'transform:rotate(90deg)'">&rsaquo;</span>
-        </div>
-        <div x-show="!collapsed" x-cloak x-transition>
-            <a class="nav-item" :class="{ active: page === 'workflows' }" @click="navigate('workflows')" :aria-current="page === 'workflows' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M6 3v12M18 9a9 9 0 0 1-9 9"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg></span>
-              <span class="nav-label">Automations</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'scheduler' }" @click="navigate('scheduler')" :aria-current="page === 'scheduler' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
-              <span class="nav-label">Scheduled</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'hands' }" @click="navigate('hands')" :aria-current="page === 'hands' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.4 16a2 2 0 0 1 3.2-2.4L8 15"/></svg></span>
-              <span class="nav-label">Playbooks</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'skills' }" @click="navigate('skills')" :aria-current="page === 'skills' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></span>
-              <span class="nav-label">Capabilities</span>
-            </a>
-        </div>
-      </div>
-
-      <div class="nav-section" x-data="{ collapsed: false }" aria-label="System">
-        <div class="nav-section-title" @click="collapsed = !collapsed">
-          <span class="nav-label">System</span>
-          <span class="nav-section-chevron" :style="collapsed ? '' : 'transform:rotate(90deg)'">&rsaquo;</span>
-        </div>
-        <div x-show="!collapsed" x-cloak x-transition>
-            <a class="nav-item" :class="{ active: page === 'channels' }" @click="navigate('channels')" :aria-current="page === 'channels' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3l-2 18M16 3l-2 18"/></svg></span>
-              <span class="nav-label">Connections</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'logs' }" @click="navigate('logs')" :aria-current="page === 'logs' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
-              <span class="nav-label">Diagnostics</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'runtime' }" @click="navigate('runtime')" :aria-current="page === 'runtime' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
-              <span class="nav-label">System status</span>
-            </a>
-            <a class="nav-item" :class="{ active: page === 'settings' }" @click="navigate('settings')" :aria-current="page === 'settings' ? 'page' : false">
-              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></span>
-              <span class="nav-label">Settings</span>
-            </a>
-        </div>
-      </div>
-    </div>
-
-    <div class="sidebar-footer">
-      <div x-show="$store.app.sessionUser" style="padding:4px 16px;display:flex;align-items:center;justify-content:space-between">
-        <span class="text-xs text-dim" x-text="$store.app.sessionUser" style="letter-spacing:0.5px"></span>
-        <button @click="$store.app.sessionLogout()" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;opacity:0.7" title="Sign out">Logout</button>
-      </div>
-      <div class="sidebar-label text-xs text-dim" style="padding:0 16px 4px;letter-spacing:0.5px">Ctrl+K agents | Ctrl+N new</div>
-    </div>
-    <div class="sidebar-toggle" @click="toggleSidebar()" x-text="sidebarCollapsed ? '\u276F' : '\u276E'"></div>
-  </nav>
-
-  <div class="sidebar-overlay" x-cloak @click="mobileMenuOpen = false"></div>
-
   <!-- Main Content -->
   <main class="main-content">
-    <!-- Shell bar: the menu button plus the current surface's pill row.
-         The one title on each screen lives in the page's own header, so
-         this bar carries no title of its own. -->
-    <div class="stax-chips" x-cloak x-show="page !== 'chat' || surf() === 'channels'">
-      <div class="stax-chips-row">
-        <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-        </button>
-        <div class="stax-pills" x-show="page !== 'chat' || surf() === 'channels'">
-      <template x-if="surf() === 'channels'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" :class="{ active: page === 'chat' }" @click="$store.app.staxAgent(); navigate('chat')">Chat</button>
-            <button class="stax-chip" :class="{ active: page === 'sms' }" @click="navigate('sms')">Texts</button>
-        </div>
-      </template>
-      <template x-if="surf() === 'work'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" :class="{ active: page === 'approvals' }" @click="navigate('approvals')">Needs you <span class="badge badge-warn" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span></button>
-            <button class="stax-chip" :class="{ active: page === 'contacts' }" @click="navigate('contacts')">Contacts</button>
-            <button class="stax-chip" :class="{ active: page === 'sessions' }" @click="navigate('sessions')">History</button>
-            <button class="stax-chip" :class="{ active: page === 'analytics' }" @click="navigate('analytics')">Reports</button>
-        </div>
-      </template>
-      <template x-if="surf() === 'studio'">
-        <div class="stax-pills-group">
-            <button class="stax-chip" :class="{ active: page === 'boards' }" @click="navigate('boards')">Boards</button>
-            <button class="stax-chip" :class="{ active: page === 'forms' }" @click="navigate('forms')">Forms</button>
-            <button class="stax-chip" :class="{ active: page === 'workflows' }" @click="navigate('workflows')">Automations</button>
-            <button class="stax-chip" :class="{ active: page === 'scheduler' }" @click="navigate('scheduler')">Scheduled</button>
-            <button class="stax-chip" :class="{ active: page === 'hands' }" @click="navigate('hands')">Playbooks</button>
-            <button class="stax-chip" :class="{ active: page === 'skills' }" @click="navigate('skills')">Capabilities</button>
-        </div>
-      </template>
-      <!-- The System corner (Settings, Connections, Advanced) has no pill
-           row: its sub-navigation is the module dock at the bottom. -->
-        </div>
-      </div>
+    <!-- Shell bar: the menu button. Each screen's title lives in the page's
+         own header; sub-navigation lives in a module dock or the side card. -->
+    <div class="stax-chips" x-cloak x-show="page !== 'chat'">
+      <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
     </div>
-
-    <!-- Mobile menu button -->
-    <button class="mobile-menu-btn btn btn-ghost" @click="mobileMenuOpen = !mobileMenuOpen">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
 
     <!-- Page: Overview -->
     <template x-if="page === 'overview'">
@@ -336,7 +161,7 @@
                   </div>
                 </template>
                 <div x-show="helperNames.length === 0" class="text-sm text-dim">No helpers yet — your first one is a message away.</div>
-                <button class="btn btn-ghost btn-sm" style="margin-top:10px" @click="navigate('agents')">Open Channels</button>
+                <button class="btn btn-ghost btn-sm" style="margin-top:10px" @click="navigate('agents')">Open Helpers</button>
               </div>
               <div class="card" style="flex:1;min-width:240px">
                 <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Coming up</div>
@@ -683,7 +508,7 @@
       <div class="home" x-data="homePage" :class="{ 'home--first': homeFirstOpen && !homeEngaged }">
         <div class="home-inner" x-data="chatPage" x-init="homePinStax($data)">
           <header class="home-head">
-            <button class="stax-menu-btn" x-show="surf() !== 'channels'" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
+            <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <button class="home-id" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
@@ -841,7 +666,7 @@
                    x-transition:enter="home-card-enter" x-transition:enter-start="home-card-from" x-transition:enter-end="home-card-to"
                    x-transition:leave="home-card-leave" x-transition:leave-start="home-card-to" x-transition:leave-end="home-card-from">
             <div class="home-card-top">
-              <span class="home-avatar home-avatar--lg"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+              <span class="page-mark page-mark--lg stax-tile stax-tile--reaper" aria-hidden="true"></span>
               <div>
                 <h2 id="home-card-title">Stax</h2>
                 <p>Your lead</p>
@@ -1681,7 +1506,7 @@
               </div>
               <div x-show="filtered.length === 0" class="empty-state">
                 <h4 x-text="filterStatus === 'pending' ? 'Nothing needs you' : 'Nothing here'"></h4>
-                <p class="hint" x-text="filterStatus === 'pending' ? 'When a helper wants to do something sensitive, it will ask here first — and in Channels, where you already are.' : 'No approvals with this status yet.'"></p>
+                <p class="hint" x-text="filterStatus === 'pending' ? 'When a helper wants to do something sensitive, it will ask here first — and on Home, in your conversation with Stax.' : 'No approvals with this status yet.'"></p>
               </div>
               <div class="card-grid">
                 <template x-for="a in filtered" :key="a.id">
@@ -2562,7 +2387,6 @@
             <li><button class="sys-row" @click="askStax('I want to update my shop details.')"><span class="sys-text"><span class="sys-name">Shop details</span><span class="sys-sub">Name, hours, and what you offer</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
             <li><button class="sys-row" @click="askStax('What does Stax check with me before doing? I want to change that.')"><span class="sys-text"><span class="sys-name">What Stax checks with you first</span><span class="sys-sub">Texts, posts, and anything that spends money</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
             <li><button class="sys-row" @click="askStax('I want to set a monthly spending limit.')"><span class="sys-text"><span class="sys-name">Spending limit</span><span class="sys-sub">A monthly cap on what Stax can spend</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
-            <li><button class="sys-row" @click="navigate('advanced')"><span class="sys-text"><span class="sys-name">Advanced</span><span class="sys-sub">The full controls behind the scenes</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="$store.app.staxAgent(); navigate('chat')"><span class="sys-text"><span class="sys-name">Report a bug</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li x-show="$store.app.sessionUser"><button class="sys-row sys-row--quiet" @click="$store.app.sessionLogout()"><span class="sys-text"><span class="sys-name">Sign out</span></span></button></li>
           </ul>
@@ -2611,6 +2435,12 @@
             <li><button class="sys-row" @click="navigate('logs')"><span class="sys-text"><span class="sys-name">Diagnostics</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('runtime')"><span class="sys-text"><span class="sys-name">System status</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('setup')"><span class="sys-text"><span class="sys-name">Step-by-step setup</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('workflows')"><span class="sys-text"><span class="sys-name">Automations</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('scheduler')"><span class="sys-text"><span class="sys-name">Scheduled</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('hands')"><span class="sys-text"><span class="sys-name">Playbooks</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('skills')"><span class="sys-text"><span class="sys-name">Capabilities</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('sessions')"><span class="sys-text"><span class="sys-name">History</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('analytics')"><span class="sys-text"><span class="sys-name">Reports</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="$store.app.r4Open = true"><span class="sys-text"><span class="sys-name">Side chats</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
           </ul>
           <p class="sys-ident sys-ident--mark"><svg aria-hidden="true"><use href="#sd-mark"/></svg><span>StaxCloud<span x-show="connected && version" x-text="' ' + version"></span></span></p>
@@ -5389,6 +5219,25 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </template>
 
     <!-- Page: Boards (R6 surfaces engine) -->
+    <!-- Page: Library — the shop's records shelf (libraryPage, app.js) -->
+    <template x-if="page === 'library'">
+      <div class="sys-page" x-data="libraryPage()" x-init="loadData()">
+        <div class="page-header">
+          <h2 class="page-mark-head"><span class="page-mark stax-tile stax-tile--book" aria-hidden="true"></span>Library</h2>
+        </div>
+        <div class="page-body">
+          <p x-show="loading" class="text-dim">Loading the shelf...</p>
+          <p x-show="!loading && loadError" class="text-dim" x-text="loadError"></p>
+          <p x-show="!loading && !loadError && items.length === 0" class="lib-empty">Designs and files Stax saves for the shop land here.</p>
+          <ul class="sys-list" x-show="!loading && !loadError && items.length > 0" aria-label="Library">
+            <template x-for="it in items" :key="it.key">
+              <li class="sys-row"><span class="sys-text"><span class="sys-name" x-text="it.title"></span><span class="sys-sub" x-text="it.kind + (fmtDate(it.when) ? ' · ' + fmtDate(it.when) : '')"></span></span></li>
+            </template>
+          </ul>
+        </div>
+      </div>
+    </template>
+
     <template x-if="page === 'boards'">
       <div x-data="boardsPage" x-init="loadData()">
         <div class="page-header">
@@ -5405,7 +5254,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
           <!-- Board list -->
           <div x-show="!loading && !loadError && !current">
-            <p class="text-sm text-dim" style="margin:2px 0 16px">Boards live here. Ask a helper in Channels — "make me a board for walk-ins" — and it shows up, kept current by your team.</p>
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Boards live here. Ask Stax — "make me a board for walk-ins" — and it shows up, kept current by your team.</p>
             <div x-show="surfaces.length === 0" class="empty-state">
               <h4>No boards yet</h4>
               <p class="hint">Your first board is one sentence away. Try: "Make me an SEO board for the shop."</p>
@@ -5469,7 +5318,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <div x-show="['heading','text','stats','list','kvlist'].indexOf(b.type) === -1" class="text-xs text-dim">A newer kind of block — update StaxCloud to view it.</div>
               </div>
             </template>
-            <p class="text-xs text-dim" style="margin-top:6px">Want changes? Ask a helper in Channels — boards are kept by your team, not by hand.</p>
+            <p class="text-xs text-dim" style="margin-top:6px">Want changes? Ask Stax — boards are kept by your team, not by hand.</p>
           </div>
         </div>
       </div>
@@ -6274,30 +6123,25 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
   </main>
 
-  <!-- Dock: five tabs, in plan order. Stax and Channels both land on the
-       conversation; the shell tracks the entered surface so the tab the
-       user tapped is the one that lights. Only Work carries a badge. -->
+  <!-- Dock: four tabs. Stax is the conversation's only dock home; only
+       Work carries a badge. -->
   <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms' && !inSystemCorner()" aria-label="Primary">
       <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
         <svg class="stax-ic stax-ic--reaper" aria-hidden="true"><use href="#stax-reaper"/></svg>
         <span>Stax</span>
       </button>
       <button class="stax-dock-btn" :class="{ active: surf() === 'work' }" @click="goSurface('work')" aria-label="Work">
-        <svg class="stax-ic" aria-hidden="true"><use href="#ic-work"/></svg>
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span>
         <span class="stax-dock-badge" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span>
         <span>Work</span>
       </button>
       <button class="stax-dock-btn" :class="{ active: surf() === 'boards' }" @click="goSurface('boards')" aria-label="Boards">
-        <svg class="stax-ic" aria-hidden="true"><use href="#ic-boards"/></svg>
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
         <span>Boards</span>
       </button>
       <button class="stax-dock-btn" :class="{ active: surf() === 'leads' }" @click="goSurface('leads')" aria-label="Leads">
-        <svg class="stax-ic" aria-hidden="true"><use href="#ic-leads"/></svg>
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
         <span>Leads</span>
-      </button>
-      <button class="stax-dock-btn" :class="{ active: surf() === 'channels' }" @click="$store.app.staxAgent(); goSurface('channels')" aria-label="Channels">
-        <svg class="stax-ic" aria-hidden="true"><use href="#ic-channels"/></svg>
-        <span>Channels</span>
       </button>
   </nav>
 
@@ -6336,7 +6180,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 <button class="stax-menu-btn sd-toggle" x-cloak :class="{ 'is-open': $store.app.sideOpen }" @click="$store.app.sideOpen = !$store.app.sideOpen" aria-expanded="true" aria-controls="stax-side" aria-label="Menu" title="Menu">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
-<aside class="stax-side" id="stax-side" :class="{ open: $store.app.sideOpen }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
+<aside class="stax-side" id="stax-side" :class="{ open: $store.app.sideOpen, 'sd-continues': more }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
   <!-- 1. Wordmark + shop -->
   <header class="sd-head" :class="{ 'is-scrolled': scrolled }">
     <span class="sd-mark" aria-hidden="true"><svg class="sd-ico"><use href="#stax-reaper"/></svg></span>
@@ -6346,7 +6190,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </div>
   </header>
 
-  <div class="sd-body" @scroll.passive="scrolled = $el.scrollTop > 2">
+  <div class="sd-body" @scroll.passive="scrolled = $el.scrollTop > 2; cue()">
     <!-- 2. Team: the shop's people. Stax's line reads the same state and
          expression as the Home status pill (staxStatus() in home.js). -->
     <section class="sd-group" aria-labelledby="sd-team">
@@ -6372,7 +6216,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     <nav class="sd-places" aria-label="Places">
       <div class="sd-sec" style="--sec: var(--sec-channels)">
         <button class="sd-sec-head" @click="toggle('channels')" :aria-expanded="open.channels" aria-controls="sd-sec-channels">
-          <svg class="sd-ico sd-sec-ico" aria-hidden="true"><use href="#ic-channels"/></svg>
+          <span class="sd-sec-ico stax-tile stax-tile--bubble" aria-hidden="true"></span>
           <span class="sd-sec-name">Channels</span>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.channels }" aria-hidden="true"><use href="#g-chev"/></svg>
         </button>
@@ -6382,23 +6226,22 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-studio)">
         <button class="sd-sec-head" @click="toggle('studio')" :aria-expanded="open.studio" aria-controls="sd-sec-studio">
-          <svg class="sd-ico sd-sec-ico" aria-hidden="true"><use href="#ic-studio"/></svg>
+          <span class="sd-sec-ico stax-tile stax-tile--frame-rose" aria-hidden="true"></span>
           <span class="sd-sec-name">Studio</span>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.studio }" aria-hidden="true"><use href="#g-chev"/></svg>
         </button>
         <div class="sd-sec-rows" id="sd-sec-studio" x-show="open.studio">
           <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><svg class="sd-ico" aria-hidden="true"><use href="#g-forms"/></svg><span>Forms</span></button>
-          <button class="sd-row" :class="{ 'is-here': page === 'boards' }" :aria-current="page === 'boards' ? 'page' : false" @click="goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#g-library"/></svg><span>Library</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'library' }" :aria-current="page === 'library' ? 'page' : false" @click="navigate('library')"><svg class="sd-ico" aria-hidden="true"><use href="#g-library"/></svg><span>Library</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><svg class="sd-ico" aria-hidden="true"><use href="#g-contacts"/></svg><span>Contacts</span></button>
-          <!-- Canvas: the artists' design studio. Its board lives under Boards,
-               which picks a board with its own local state only, so this row
-               opens the Boards page exactly as the dock does. -->
-          <button class="sd-row" @click="goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span></button>
+          <!-- Canvas (interim, Verdict 4 disposition 3): lands on Boards with
+               the Canvas board already open, until the Canvas surface ships. -->
+          <button class="sd-row" @click="$store.app.boardPick = 'designer'; goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span></button>
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-system)">
         <button class="sd-sec-head" @click="toggle('system')" :aria-expanded="open.system" aria-controls="sd-sec-system">
-          <svg class="sd-ico sd-sec-ico" aria-hidden="true"><use href="#ic-system"/></svg>
+          <span class="sd-sec-ico stax-tile stax-tile--toolbox" aria-hidden="true"></span>
           <span class="sd-sec-name">System</span>
           <svg class="sd-ico sd-chev" :class="{ 'is-open': open.system }" aria-hidden="true"><use href="#g-chev"/></svg>
         </button>
@@ -6485,7 +6328,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <button class="stax-chip" @click="view = 'list'; disconnectWs()">&larr; All chats</button>
       <span style="font-weight:700;font-size:14px" x-text="chatAgent ? $store.app.displayName(chatAgent) : ''"></span>
       <span class="badge" :class="wsState === 'live' ? 'badge-success' : 'badge-muted'" x-text="wsState === 'live' ? 'Live' : (wsState === 'connecting' ? 'Joining' : 'Relay')"></span>
-      <button class="stax-chip" style="margin-left:auto" @click="openInChannels()">Open in Channels</button>
+      <button class="stax-chip" style="margin-left:auto" @click="openInChannels()">Open full chat</button>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border)">
       <template x-for="s in chatSessions" :key="s.session_id">
@@ -6531,7 +6374,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">This chat</div>
       <div class="text-sm"><span style="font-weight:600" x-text="chatAgent ? chatAgent.name : ''"></span></div>
       <div class="text-sm text-dim" x-text="chatSessions.length + ' conversation(s) - ' + messages.length + ' messages showing'"></div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="openInChannels()">Open in Channels</button>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="openInChannels()">Open full chat</button>
     </div>
     <div class="card">
       <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">Coming up</div>
@@ -6569,7 +6412,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
     <span>Preview</span>
   </button>
-  <button class="stax-dock-btn" @click="navigate('boards')" aria-label="Back to Studio">
+  <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
     <span>Done</span>
   </button>
@@ -6585,11 +6428,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
     <span>Inbox</span>
   </button>
-  <button class="stax-dock-btn" @click="navigate('contacts')" aria-label="Contacts">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    <span>Contacts</span>
-  </button>
-  <button class="stax-dock-btn" @click="$store.app.staxAgent(); navigate('chat')" aria-label="Back to Channels">
+  <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
     <span>Done</span>
   </button>
