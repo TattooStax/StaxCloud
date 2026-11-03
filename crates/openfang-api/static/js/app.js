@@ -820,6 +820,7 @@ function staxDrawer() {
     chatLimit: 5,
     busy: false,
     scrolled: false,
+    _dragOpened: false,
 
     initDrawer() {
       var self = this;
@@ -827,9 +828,192 @@ function staxDrawer() {
       // stale value lingers on owners' phones.
       try { localStorage.removeItem('stax-drawer-open'); } catch(e) { /* ignore */ }
       this.$watch('$store.app.sideOpen', function(isOpen) {
+        if (isOpen) self.placeHeld();
+        self.handOffFocus(isOpen);
         if (!isOpen) return;
-        self.collapseAll();
+        if (!self._dragOpened) self.collapseAll();
+        self._dragOpened = false;
         self.loadChats();
+      });
+      this.initGestures();
+    },
+
+    // The menu button held above the open card sits exactly where the page's
+    // own menu button is, so a second tap in the same spot closes the card.
+    // When that spot would land on the card's wordmark (a mid-width desktop
+    // window), it takes the header's leading slot instead (the CSS default).
+    placeHeld() {
+      var held = document.querySelector('.sd-toggle');
+      if (!held) return;
+      held.style.left = '';
+      held.style.top = '';
+      var page = Array.prototype.find.call(document.querySelectorAll('.stax-menu-btn'), function(b) {
+        return b !== held && b.offsetParent !== null;
+      });
+      var brand = this.$el.querySelector('.sd-brand');
+      if (!page || !brand) return;
+      var r = page.getBoundingClientRect();
+      var brandRight = brand.getBoundingClientRect().right - this.$el.getBoundingClientRect().left;
+      if (r.left <= 12 || r.left >= brandRight + 8) {
+        held.style.left = Math.round(r.left) + 'px';
+        held.style.top = Math.round(r.top) + 'px';
+      }
+    },
+
+    // Keyboard users toggle with the same button: opening from a page's menu
+    // button moves focus to the one held above the card; closing from it
+    // hands focus back to the page's visible menu button.
+    handOffFocus(isOpen) {
+      var active = document.activeElement;
+      var held = document.querySelector('.sd-toggle');
+      if (!held || !active) return;
+      if (isOpen && active.classList && active.classList.contains('stax-menu-btn') && active !== held) {
+        requestAnimationFrame(function() { held.focus({ preventScroll: true }); });
+      } else if (!isOpen && active === held) {
+        var page = Array.prototype.find.call(document.querySelectorAll('.stax-menu-btn'), function(b) {
+          return b !== held && b.offsetParent !== null;
+        });
+        if (page) page.focus({ preventScroll: true }); else held.blur();
+      }
+    },
+
+    // ── Gestures (Round 3) ────────────────────────────────────────────────
+    // Pointer Events drive the card; only transform (card) and opacity
+    // (dimmed page, held menu button) change while a finger is down.
+    //  - Closed: a drag that starts within EDGE px of the left screen edge
+    //    and moves mostly sideways pulls the card out under the finger.
+    //  - Open: a sideways drag on the card or the dimmed page pushes it back.
+    //  - Release: a flick decides; otherwise past THRESHOLD of the card's
+    //    width finishes the move, short of it snaps back.
+    // Vertical drags are let go at the first decisive move, so scrolling is
+    // never taken over; drags starting outside the edge zone on the page are
+    // never claimed. With reduced motion asked for, none of this runs: the
+    // menu button, the dimmed page and Esc still toggle.
+    initGestures() {
+      var self = this;
+      var aside = this.$el;
+      var store = Alpine.store('app');
+      var scrim = document.querySelector('.sd-scrim');
+      var held = document.querySelector('.sd-toggle');
+      if (!aside || !scrim || !window.PointerEvent) return;
+      var reduce = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+      var EDGE = 24, SLOP = 10, THRESHOLD = 0.4, FLICK = 0.3; // FLICK in px/ms
+      var g = null;   // the gesture in progress
+      var raf = 0;
+
+      function clamp(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+      function layers() { return held ? [aside, scrim, held] : [aside, scrim]; }
+      function paint() {
+        raf = 0;
+        if (!g || !g.engaged) return;
+        aside.style.transform = 'translate3d(' + ((g.p - 1) * g.w).toFixed(1) + 'px,0,0)';
+        scrim.style.opacity = g.p.toFixed(3);
+        if (held) held.style.opacity = g.p.toFixed(3);
+      }
+      function clear() {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        layers().forEach(function(el) {
+          el.classList.remove('is-dragging');
+          el.style.transform = '';
+          el.style.opacity = '';
+        });
+        document.body.classList.remove('sd-dragging');
+      }
+      function isTextField(t) {
+        return !!(t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));
+      }
+      function blocked() {
+        return store.staxCard || store.r4Open || store.showAuthPrompt;
+      }
+      // Speed over the last ~100ms of movement, in px/ms. A finger that
+      // rested before lifting has no speed left.
+      function velocity(samples, upAt) {
+        var last = samples[samples.length - 1];
+        if (upAt - last[0] > 120) return 0;
+        var first = last;
+        for (var i = samples.length - 2; i >= 0; i--) {
+          if (last[0] - samples[i][0] > 100) break;
+          first = samples[i];
+        }
+        var dt = last[0] - first[0];
+        return dt > 0 ? (last[1] - first[1]) / dt : 0;
+      }
+      // A drag that ends over a row must not also press it.
+      function swallowNextClick() {
+        var kill = function(ev) { ev.stopPropagation(); ev.preventDefault(); done(); };
+        var done = function() { window.removeEventListener('click', kill, true); };
+        window.addEventListener('click', kill, true);
+        setTimeout(done, 400);
+      }
+      function settle(open) {
+        clear();
+        if (open && !store.sideOpen) self._dragOpened = true;
+        store.sideOpen = open;
+      }
+
+      window.addEventListener('pointerdown', function(e) {
+        if (g || reduce.matches || !e.isPrimary) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        var mode;
+        if (!store.sideOpen) {
+          if (e.clientX > EDGE || blocked() || isTextField(e.target)) return;
+          mode = 'open';
+        } else {
+          if (!(aside.contains(e.target) || e.target === scrim)) return;
+          if (isTextField(e.target)) return;
+          mode = 'close';
+        }
+        g = { mode: mode, id: e.pointerId, x0: e.clientX, y0: e.clientY, engaged: false,
+              p: mode === 'open' ? 0 : 1, w: aside.getBoundingClientRect().width || 1,
+              samples: [[e.timeStamp, e.clientX]] };
+      }, { passive: true });
+
+      window.addEventListener('pointermove', function(e) {
+        if (!g || e.pointerId !== g.id) return;
+        var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+        if (!g.engaged) {
+          if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+          var sideways = Math.abs(dx) > Math.abs(dy) * 1.2;
+          var inward = g.mode === 'open' ? dx > 0 : dx < 0;
+          if (!sideways || !inward) { g = null; return; }   // a scroll, or the wrong way: let it be
+          g.engaged = true;
+          if (g.mode === 'open') { self.collapseAll(); self.placeHeld(); }  // the card arrives as it always opens
+          layers().forEach(function(el) { el.classList.add('is-dragging'); });
+          document.body.classList.add('sd-dragging');
+        }
+        g.p = clamp(g.mode === 'open' ? dx / g.w : 1 + dx / g.w);
+        g.samples.push([e.timeStamp, e.clientX]);
+        if (g.samples.length > 12) g.samples.shift();
+        if (!raf) raf = requestAnimationFrame(paint);
+      }, { passive: true });
+
+      function release(e, cancelled) {
+        if (!g || e.pointerId !== g.id) return;
+        var was = g; g = null;
+        if (!was.engaged) return;
+        if (cancelled) { settle(was.mode === 'close'); return; }
+        var v = velocity(was.samples, e.timeStamp);
+        var open;
+        if (v > FLICK) open = true;
+        else if (v < -FLICK) open = false;
+        else open = was.mode === 'open' ? was.p >= THRESHOLD : (1 - was.p) < THRESHOLD;
+        settle(open);
+        swallowNextClick();
+      }
+      window.addEventListener('pointerup', function(e) { release(e, false); }, { passive: true });
+      window.addEventListener('pointercancel', function(e) { release(e, true); }, { passive: true });
+
+      // Once a sideways drag is claimed, keep the browser from starting its
+      // own pan for that touch (which would cancel the pointer stream).
+      // Nothing is prevented before the claim, so vertical scrolling and
+      // every other touch run natively.
+      document.addEventListener('touchmove', function(e) {
+        if (g && g.engaged && e.cancelable) e.preventDefault();
+      }, { passive: false });
+
+      // Anything else that opens or closes the card mid-drag wins.
+      this.$watch('$store.app.sideOpen', function() {
+        if (g && g.engaged) { g = null; clear(); }
       });
     },
 

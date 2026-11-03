@@ -35,7 +35,6 @@
     <symbol id="g-signout" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 14 V30"/><path d="M22.5 20.5 A15 15 0 1 0 41.5 20.5"/></g></symbol>
     <symbol id="g-chev" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"><path d="M27 20 L39 32 L27 44"/></g></symbol>
     <symbol id="g-plus" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4.2"><path d="M32 18 V46 M18 32 H46"/></g></symbol>
-    <symbol id="g-close" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"><path d="M20 20 L44 44 M44 20 L20 44"/></g></symbol>
   </defs>
 </svg>
 
@@ -207,7 +206,7 @@
          this bar carries no title of its own. -->
     <div class="stax-chips" x-cloak x-show="page !== 'chat' || surf() === 'channels'">
       <div class="stax-chips-row">
-        <button class="stax-menu-btn" @click="$store.app.sideOpen = true" aria-label="Open menu" title="Menu">
+        <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
         <div class="stax-pills" x-show="page !== 'chat' || surf() === 'channels'">
@@ -670,7 +669,7 @@
       <div class="home" x-data="homePage" :class="{ 'home--first': homeFirstOpen && !homeEngaged }">
         <div class="home-inner" x-data="chatPage" x-init="homePinStax($data)">
           <header class="home-head">
-            <button class="stax-menu-btn" x-show="surf() !== 'channels'" @click="$store.app.sideOpen = true" aria-label="Open menu" title="Menu">
+            <button class="stax-menu-btn" x-show="surf() !== 'channels'" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <button class="home-id" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
@@ -6316,12 +6315,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 </div>
 
 <!-- Toast notification container -->
-<!-- Side card — opened from the shell bar's menu button. One composition:
+<!-- Side card — the menu button toggles it; it also follows a drag from the
+     left screen edge, and a leftward drag on the card or the dimmed page
+     closes it (gestures in staxDrawer().initGestures, app.js). One composition:
      wordmark, the team as people, the app's places, Stax conversations,
      owner block — one scroll. Every row is a projection of real state and opens an
      existing page key; navigating anywhere closes the drawer (navigate()). -->
-<div class="stax-side-backdrop" x-show="$store.app.sideOpen" x-cloak @click="$store.app.sideOpen = false"></div>
-<aside class="stax-side" :class="{ open: $store.app.sideOpen }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
+<div class="stax-side-backdrop sd-scrim" x-cloak :class="{ 'is-open': $store.app.sideOpen }" @click="$store.app.sideOpen = false"></div>
+<!-- The menu button, held above the open card at the spot it was tapped,
+     so the same three lines close what they opened. -->
+<button class="stax-menu-btn sd-toggle" x-cloak :class="{ 'is-open': $store.app.sideOpen }" @click="$store.app.sideOpen = !$store.app.sideOpen" aria-expanded="true" aria-controls="stax-side" aria-label="Menu" title="Menu">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
+<aside class="stax-side" id="stax-side" :class="{ open: $store.app.sideOpen }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
   <!-- 1. Wordmark + shop -->
   <header class="sd-head" :class="{ 'is-scrolled': scrolled }">
     <span class="sd-mark" aria-hidden="true"><svg class="sd-ico"><use href="#sd-mark"/></svg></span>
@@ -6329,7 +6335,6 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div class="sd-wordmark">StaxCloud</div>
       <div class="sd-shop">Fargo Tattoo</div>
     </div>
-    <button class="sd-close" @click="$store.app.sideOpen = false" aria-label="Close menu"><svg class="sd-ico"><use href="#g-close"/></svg></button>
   </header>
 
   <div class="sd-body" @scroll.passive="scrolled = $el.scrollTop > 2">
