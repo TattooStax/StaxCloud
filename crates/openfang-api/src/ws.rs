@@ -1029,19 +1029,13 @@ async fn handle_command(
             }
         },
         "stop" => {
-            // If this agent is owned by an active hand instance, deactivate the
-            // hand entirely so the user can re-activate it (issue #1164).
+            // Hand-owned agent: leave the lifecycle untouched (Build T0 / A0).
             if let Some(instance) = state.kernel.hand_registry.find_by_agent(agent_id) {
-                match state.kernel.deactivate_hand(instance.instance_id) {
-                    Ok(()) => serde_json::json!({
-                        "type": "command_result",
-                        "command": cmd,
-                        "message": format!("Hand '{}' deactivated.", instance.hand_id),
-                    }),
-                    Err(e) => {
-                        serde_json::json!({"type": "error", "content": format!("Stop failed: {e}")})
-                    }
-                }
+                serde_json::json!({
+                    "type": "command_result",
+                    "command": cmd,
+                    "message": format!("Hand '{}' left active; the in-flight turn will complete.", instance.hand_id),
+                })
             } else {
                 match state.kernel.stop_agent_run(agent_id) {
                     Ok(true) => {

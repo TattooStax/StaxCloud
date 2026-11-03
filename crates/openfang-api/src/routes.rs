@@ -7290,9 +7290,10 @@ pub async fn compact_session(
 
 /// POST /api/agents/{id}/stop — Cancel an agent's current LLM run.
 ///
-/// If the agent is owned by an active hand instance, the hand instance is
-/// also deactivated. Otherwise the hand stays registered as `Active` and the
-/// user cannot re-activate it via the wizard (issue #1164).
+/// Hand-owned agents: Stop never touches the lifecycle (no hand deactivation,
+/// no agent deletion, no run abort). The in-flight turn completes and the
+/// client settles to the record. Lifecycle changes live only behind the
+/// explicit hands API (`DELETE /api/hands/instances/{id}`).
 pub async fn stop_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -7307,30 +7308,18 @@ pub async fn stop_agent(
         }
     };
 
-    // If this agent is the agent of an active hand instance, deactivate the
-    // hand entirely — which also kills the agent and cancels the run. This
-    // matches what users expect when they click Stop on a hand-owned agent.
+    // Hand-owned agent: leave the lifecycle untouched (Build T0 / A0).
     if let Some(instance) = state.kernel.hand_registry.find_by_agent(agent_id) {
-        match state.kernel.deactivate_hand(instance.instance_id) {
-            Ok(()) => {
-                return (
-                    StatusCode::OK,
-                    Json(serde_json::json!({
-                        "status": "ok",
-                        "message": "Hand deactivated",
-                        "hand_deactivated": true,
-                        "hand_id": instance.hand_id,
-                        "instance_id": instance.instance_id,
-                    })),
-                );
-            }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": format!("{e}")})),
-                );
-            }
-        }
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": "Hand-owned agent: lifecycle unchanged; in-flight turn will complete",
+                "hand_deactivated": false,
+                "hand_id": instance.hand_id,
+                "instance_id": instance.instance_id,
+            })),
+        );
     }
 
     match state.kernel.stop_agent_run(agent_id) {
