@@ -336,6 +336,22 @@
 .app-layout.focus-mode .main-content { max-width: 100%; margin-left: 0; }
 .app-layout.focus-mode .mobile-menu-btn { display: none !important; }
 
+/* ── Icon family tokens (the one sprite in index_body.html) ──────────
+   Flash palette: an ink line, a paper light, and our hues as fills.
+   Custom properties inherit into <use> clones, so each theme sets its
+   own ink: dark ink on light, a cream line on dark. */
+:root, [data-theme="light"] {
+  --ic-ink: #221f1b; --ic-paper: #fbf4e3;
+  --ic-teal: #3a9a8f; --ic-blue: #5d88b0; --ic-pink: #c27a8f; --ic-crimson: #b04a5c;
+  --ic-slate: #7a8797; --ic-gold: #e3ac45; --ic-gold-deep: #c48a2c;
+}
+[data-theme="dark"] {
+  --ic-ink: #efe6d3; --ic-paper: #2a2520;
+  --ic-teal: #4fb3a6; --ic-blue: #6f9bc4; --ic-pink: #cf8aa0; --ic-crimson: #c95f71;
+  --ic-slate: #8996a8; --ic-gold: #e6b552; --ic-gold-deep: #c99436;
+}
+.stax-ic { display: block; flex: none; }
+
 /* ── R1: StaxCloud dock shell ─────────────────────────── */
 .app-layout { flex-direction: column; }
 .sidebar, .sidebar-overlay { display: none !important; }
@@ -344,6 +360,13 @@
 .stax-dock-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 6px 2px; background: none; border: none; color: var(--text-dim); font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; cursor: pointer; position: relative; }
 .stax-dock-btn svg { width: 22px; height: 22px; }
 .stax-dock-btn.active { color: var(--accent); }
+/* Primary dock: the colorful family marks. The active tab gets a tinted
+   pill behind its mark; the padding is always there so nothing shifts. */
+.stax-dock-btn .stax-ic { width: 26px; height: 26px; padding: 3px 15px; box-sizing: content-box; border-radius: 999px; transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+.stax-dock-btn.active .stax-ic { background: var(--accent-glow); }
+.stax-dock-btn.active span:last-child { font-weight: 700; }
+.stax-dock-btn:active .stax-ic { transform: scale(0.94); }
+.stax-dock-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 12px; }
 .stax-dock-badge { position: absolute; top: 5px; right: calc(50% - 21px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .stax-chips { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding: 8px 16px; overflow-x: auto; scrollbar-width: none; }
 .stax-chips::-webkit-scrollbar { display: none; }
@@ -380,10 +403,6 @@
 .stax-side {
   --sec-channels: #3f6486; --sec-studio: #885264; --sec-system: #576373;
   --sec-studio-2: #a0566b; --sec-studio-3: #6f4357;
-  /* App-row tile faces. On light they are the section accents themselves;
-     Canvas and Connections take one more step in their section's family. */
-  --tile-channels: var(--sec-channels); --tile-studio: var(--sec-studio); --tile-studio-2: var(--sec-studio-2); --tile-studio-3: var(--sec-studio-3); --tile-studio-4: #7d4f78;
-  --tile-system: var(--sec-system); --tile-system-2: #4f6670;
   --sd-hover: color-mix(in srgb, var(--text) 5%, transparent);
   --sd-press: color-mix(in srgb, var(--text) 9%, transparent);
   font-family: var(--font-sans);
@@ -391,9 +410,6 @@
 [data-theme="dark"] .stax-side {
   --sec-channels: #7fa3c4; --sec-studio: #c98ea1; --sec-system: #9aa6b6;
   --sec-studio-2: #d79aac; --sec-studio-3: #b9849a;
-  /* Tile faces on the dark card: mid-tones of the same accents */
-  --tile-channels: #4d7599; --tile-studio: #9a5f73; --tile-studio-2: #b06d83; --tile-studio-3: #80506a; --tile-studio-4: #885c84;
-  --tile-system: #67768a; --tile-system-2: #5b7480;
 }
 .stax-side ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .sd-ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -440,7 +456,7 @@ button.sd-person:active { background: var(--sd-press); }
 .sd-sec + .sd-sec { margin-top: 2px; }
 .sd-sec-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 8px; border: none; background: none; border-radius: 10px; cursor: pointer; text-align: left; }
 .sd-sec-head:hover { background: var(--sd-hover); }
-.sd-sec-ico { width: 18px; height: 18px; color: var(--sec); }
+.sd-sec-ico { width: 24px; height: 24px; margin-left: -2px; }
 .sd-sec-name { flex: 1; font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
 [data-theme="dark"] .sd-sec-name { color: var(--text-dim); }
 .sd-chev { width: 16px; height: 16px; color: var(--text-muted); transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -472,34 +488,16 @@ button.sd-person:active { background: var(--sd-press); }
 .sd-more:hover { text-decoration: underline; text-underline-offset: 3px; }
 .sd-empty { margin: 2px 0 0; padding: 6px 10px 6px 36px; font-size: 13.5px; color: var(--text-dim); line-height: 1.45; }
 
-/* App rows carry their icon on a tile face: the removed Shortcuts strip's
-   colors and corner treatment (radius ~30% of the face), at row scale. */
+/* App rows stay quiet: one-tone family glyphs, no tile faces. Color lives
+   one level up, on the section heads and the dock. */
 .sd-sec-rows .sd-row { min-height: 46px; }
-.sd-chip { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; background: var(--tile); color: #fff; box-shadow: 0 2px 6px -1px color-mix(in srgb, var(--tile) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.12); }
-[data-theme="dark"] .sd-chip { box-shadow: 0 2px 7px -1px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.2); }
-.sd-row .sd-chip .sd-ico { width: 17px; height: 17px; stroke-width: 1.9; color: #fff; }
-.sd-chip[data-tile="channels"] { --tile: var(--tile-channels); }
-.sd-chip[data-tile="studio"] { --tile: var(--tile-studio); }
-.sd-chip[data-tile="studio-2"] { --tile: var(--tile-studio-2); }
-.sd-chip[data-tile="studio-3"] { --tile: var(--tile-studio-3); }
-.sd-chip[data-tile="studio-4"] { --tile: var(--tile-studio-4); }
-.sd-chip[data-tile="system"] { --tile: var(--tile-system); }
-.sd-chip[data-tile="system-2"] { --tile: var(--tile-system-2); }
-.sd-row:active .sd-chip { transform: scale(0.94); }
-/* The one authored moment: a section's tiles rise in as it is opened. */
-.sd-sec-rows .sd-chip { animation: sd-chip-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) backwards; transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
-.sd-sec-rows .sd-row:nth-child(2) .sd-chip { animation-delay: 0.03s; }
-.sd-sec-rows .sd-row:nth-child(3) .sd-chip { animation-delay: 0.06s; }
-.sd-sec-rows .sd-row:nth-child(4) .sd-chip { animation-delay: 0.09s; }
-@keyframes sd-chip-in { from { transform: translateY(5px) scale(0.9); opacity: 0.35; } }
 
 /* Owner: the last block of the one scroll, closing at Sign out */
 .sd-owner { margin-top: 10px; border-top: 1px solid var(--border-subtle, var(--border)); }
 .sd-row--foot { padding-left: 10px; font-size: 14.5px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .stax-side, .stax-r4, .sd-chev, .sd-chip { transition: none; }
-  .sd-sec-rows .sd-chip { animation: none; }
+  .stax-side, .stax-r4, .sd-chev, .stax-ic { transition: none; }
 }
 
 .side-session { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--text); min-height: 44px; }
