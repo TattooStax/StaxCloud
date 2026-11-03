@@ -1,6 +1,36 @@
 // OpenFang Chat Page — Agent chat with markdown + streaming
 'use strict';
 
+// A tool call the model wrote out as text was never run: not a message.
+function isToolCallText(t) {
+  t = String(t || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  if (!/^[[{]/.test(t)) return false;
+  try { var o = JSON.parse(t); } catch(e) { return false; }
+  if (Array.isArray(o)) o = o[0];
+  return !!(o && typeof o.name === 'string' && (o.parameters || o.arguments || o.input));
+}
+
+// Turns of the stored record: an owner turn with no worded reply before the
+// next is `unfinished`; kernel prompts, the tick's exchange, text tool calls
+// and the silent marker are `machine` rows, left out without losing a turn.
+function markTurns(rows) {
+  var turn = null, tick = false;
+  function close() { if (turn && !turn.answered) turn.unfinished = true; }
+  rows.forEach(function(r) {
+    var t = (r.text || '').trim();
+    if (r.role === 'user') {
+      if (/^\[AUTONOMOUS TICK\]/.test(t)) { close(); turn = null; tick = true; r.machine = true; }
+      else if (/^\[System:/.test(t)) r.machine = true;
+      else { close(); turn = r; tick = false; }
+      return;
+    }
+    var silent = t === '[no reply needed]';
+    if (tick || silent || isToolCallText(t)) r.machine = true;
+    if (!turn) return;
+    if (silent || (!r.machine && (t || r.tools.some(function(x) { return x._imageUrls; })))) turn.answered = true;
+  });
+  close();
+}
 function chatPage() {
   var msgId = 0;
   return {
@@ -15,8 +45,8 @@ function chatPage() {
     slashFilter: '',
     slashIdx: 0,
     attachments: [],
+    _shown: {},          // photos shown with a stored turn this visit (turn-scoped)
     dragOver: false,
-    contextPressure: 'low', // green/yellow/orange/red indicator
     _typingTimeout: null,
     // Multi-session state
     sessions: [],
@@ -75,19 +105,6 @@ function chatPage() {
       this.tipTimer = setInterval(function() {
         self.tipIndex = (self.tipIndex + 1) % self.tips.length;
       }, 30000);
-    },
-
-    // Backward compat helper
-    get thinkingEnabled() { return this.thinkingMode !== 'off'; },
-
-    // Context pressure dot color
-    get contextDotColor() {
-      switch (this.contextPressure) {
-        case 'critical': return '#ef4444';
-        case 'high': return '#f97316';
-        case 'medium': return '#eab308';
-        default: return '#22c55e';
-      }
     },
 
     get modelDisplayName() {
@@ -418,15 +435,11 @@ function chatPage() {
       return lines.join('\n');
     },
 
-    // Clear any stuck typing indicator after 120s
+    // A turn quiet for 120s is settled against the record
     _resetTypingTimeout: function() {
       var self = this;
       if (self._typingTimeout) clearTimeout(self._typingTimeout);
-      self._typingTimeout = setTimeout(function() {
-        // Auto-clear stuck typing indicators
-        self.messages = self.messages.filter(function(m) { return !m.thinking; });
-        self.sending = false;
-      }, 120000);
+      self._typingTimeout = setTimeout(function() { self._settle('fail'); }, 120000);
     },
 
     _clearTypingTimeout: function() {
@@ -648,43 +661,100 @@ function chatPage() {
       });
     },
 
-    async loadSession(agentId) {
+    // The thread is the stored session, whole and in order; `after` (rows
+    // still in flight) goes below it. Returns the rows, or null if unread.
+    async loadSession(agentId, after) {
       var self = this;
       try {
         var data = await OpenFangAPI.get('/api/agents/' + agentId + '/session');
-        if (data.messages && data.messages.length) {
-          // Defense-in-depth (#935): never render system-role messages in the
-          // conversation history view, even if the backend somehow returns
-          // one. The server already filters these out by default, but we
-          // guard here too so a regression cannot leak the system prompt.
-          var visible = data.messages.filter(function(m) {
-            return m && m.role !== 'System' && m.role !== 'system';
+        if (self.currentAgent && self.currentAgent.id !== agentId) return null;
+        // #935: never render system-role rows, even if the backend sends one
+        var rows = (data.messages || []).filter(function(m) {
+          return m && m.role !== 'System' && m.role !== 'system';
+        }).map(function(m) {
+          var text = self.sanitizeToolText(typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+          var tools = (m.tools || []).map(function(t, idx) {
+            var tool = { id: (t.name || 'tool') + '-hist-' + idx, name: t.name || 'unknown', running: false,
+              expanded: true, input: t.input || '', result: t.result || '', is_error: !!t.is_error };
+            try { var r = JSON.parse(tool.result); if (r.image_urls && r.image_urls.length && !tool.is_error) tool._imageUrls = r.image_urls; } catch(e) { /* not JSON */ }
+            return tool;
           });
-          self.messages = visible.map(function(m) {
-            var role = m.role === 'User' ? 'user' : (m.role === 'System' ? 'system' : 'agent');
-            var text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            // Sanitize any raw function-call text from history
-            text = self.sanitizeToolText(text);
-            // Build tool cards from historical tool data
-            var tools = (m.tools || []).map(function(t, idx) {
-              return {
-                id: (t.name || 'tool') + '-hist-' + idx,
-                name: t.name || 'unknown',
-                running: false,
-                expanded: true,
-                input: t.input || '',
-                result: t.result || '',
-                is_error: !!t.is_error
-              };
-            });
-            var images = (m.images || []).map(function(img) {
-              return { file_id: img.file_id, filename: img.filename || 'image' };
-            });
-            return { id: ++msgId, role: role, text: text, meta: '', tools: tools, images: images };
+          var images = (m.images || []).map(function(img) {
+            return { file_id: img.file_id, filename: img.filename || 'image' };
           });
-          self.$nextTick(function() { self.scrollToBottom(); });
+          return { id: ++msgId, role: m.role === 'User' ? 'user' : 'agent', text: text, meta: '', tools: tools, images: images };
+        });
+        // This visit's photos go back on their own turns, latest send on the latest row
+        var left = {};
+        for (var k in self._shown) left[k] = self._shown[k].slice();
+        rows.slice().reverse().forEach(function(r) {
+          var s = r.role === 'user' && !r.images.length && left[r.text] && left[r.text].pop();
+          if (s) { r.images = s.images; r.unseen = s.unseen; }
+        });
+        markTurns(rows);
+        self._storedCount = data.raw_message_count != null ? data.raw_message_count : (data.message_count || 0);
+        if (rows.length || after) self.messages = rows.concat(after || []);
+        self.$nextTick(function() { self.scrollToBottom(); });
+        return rows;
+      } catch(e) { return null; }
+    },
+
+    // Rebuild from the record; a turn in flight settles only if it is stored.
+    rehydrate() {
+      if (!this.currentAgent) return;
+      if (this.sending) this._settle('check');
+      else this.loadSession(this.currentAgent.id);
+    },
+
+    // A turn ended ('end' | 'fail') or may have ('check'): the placeholders
+    // give way to the record; a send it doesn't hold is shown as not saved.
+    async _settle(how) {
+      var turn = this._turn, agent = this.currentAgent;
+      if (this._settling || !agent || (!turn && this.sending)) return;
+      this._settling = true;
+      this._clearTypingTimeout();
+      // A cancelled run can still be finishing its save.
+      if (how === 'fail') await new Promise(function(r) { setTimeout(r, 600); });
+      if (this._turn !== turn) { this._settling = false; return; }
+      var before = this._storedCount, live = this.messages;
+      // Below the record: queued sends, and on a repeat end signal the note
+      var below = live.filter(function(m) { return m.interrupted && !turn; }).concat(this.messageQueue.map(function(q) {
+        return { id: ++msgId, role: 'user', text: q.text, meta: '', tools: [], images: q.images || [], pending: true };
+      }));
+      var rows = await this.loadSession(agent.id, below);
+      var users = (rows || []).filter(function(r) { return r.role === 'user' && !r.machine; });
+      var last = users[users.length - 1];
+      function holds(text) { return !!(last && last.text.indexOf(text.trim()) === 0); }
+      var kept = !!(turn && this._storedCount !== before && holds(turn.text));
+      if (how === 'check' && !(kept && !last.unfinished)) {
+        if (rows) { this.messages = live; this._storedCount = before; }
+        this._settling = false;
+        return;
+      }
+      this._turn = null;
+      if (rows) this.messages = this.messages.filter(function(m) { return !(m.interrupted && holds(m.turnText)); });
+      if (kept && turn.images.length) {
+        var shown = { images: turn.images, unseen: !!turn.unseen }, row = this.messages.find(function(m) { return m.id === last.id; });
+        (this._shown[last.text] = this._shown[last.text] || []).push(shown);
+        Object.assign(row, shown);
+      }
+      if (turn && !kept) {
+        var words = turn.text.replace(/\n?\[File: [^\]\n]*\]/g, '').trim(), back = rows && words && !this.inputText;
+        if (!rows) this.messages = live.filter(function(m) { return !m.thinking && !m.streaming; });
+        this.messages.push({ id: ++msgId, role: 'system', interrupted: true, turnText: turn.text, meta: '', tools: [], text: rows
+          ? (this._stopped ? 'Stopped before I finished' : 'That one didn\u2019t go through') + ', so it isn\u2019t saved.' + (back ? ' Your words are back in the box.' : '') + (turn.images.length ? ' Add the photo again when you send it.' : '')
+          : 'I couldn\u2019t check whether that one was saved. I\u2019ll look again when the connection is back.' });
+        if (back) {
+          this.inputText = words;
+          this.$nextTick(function() { var ta = document.getElementById('msg-input'); if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 150) + 'px'; } });
         }
-      } catch(e) { /* silent */ }
+      }
+      this.sending = this._stopped = false;
+      this.tokenCount = 0;
+      this._settling = false;
+      this.scrollToBottom();
+      var self = this;
+      setTimeout(function() { self._processQueue(); }, 300);
     },
 
     // Multi-session: load session list for current agent
@@ -739,6 +809,8 @@ function chatPage() {
       OpenFangAPI.wsConnect(agentId, {
         onOpen: function() {
           Alpine.store('app').wsConnected = true;
+          // (Re)connected, e.g. after sign-in or a dropped line: read the record
+          self.rehydrate();
         },
         onMessage: function(data) { self.handleWsMessage(data); },
         onClose: function() {
@@ -918,15 +990,6 @@ function chatPage() {
                 lastMsg3.tools[ri].running = false;
                 lastMsg3.tools[ri].result = data.result || '';
                 lastMsg3.tools[ri].is_error = !!data.is_error;
-                // Extract image URLs from image_generate or browser_screenshot results
-                if ((data.tool === 'image_generate' || data.tool === 'browser_screenshot') && !data.is_error) {
-                  try {
-                    var parsed = JSON.parse(data.result);
-                    if (parsed.image_urls && parsed.image_urls.length) {
-                      lastMsg3.tools[ri]._imageUrls = parsed.image_urls;
-                    }
-                  } catch(e) { /* not JSON */ }
-                }
                 // Extract audio file path from text_to_speech results
                 if (data.tool === 'text_to_speech' && !data.is_error) {
                   try {
@@ -946,75 +1009,16 @@ function chatPage() {
           break;
 
         case 'response':
-          this._clearTypingTimeout();
-          // Update context pressure from response
-          if (data.context_pressure) {
-            this.contextPressure = data.context_pressure;
-          }
-          // Collect streamed text before removing streaming messages
-          var streamedText = '';
-          var streamedTools = [];
-          this.messages.forEach(function(m) {
-            if (m.streaming && !m.thinking && m.role === 'agent') {
-              streamedText += m.text || '';
-              streamedTools = streamedTools.concat(m.tools || []);
-            }
-          });
-          streamedTools.forEach(function(t) {
-            t.running = false;
-            // Text-detected tool calls (model leaked as text) — mark as not executed
-            if (t.id && t.id.indexOf('-txt-') !== -1 && !t.result) {
-              t.result = 'Model attempted this call as text (not executed via tool system)';
-              t.is_error = true;
-            }
-          });
-          this.messages = this.messages.filter(function(m) { return !m.thinking && !m.streaming; });
-          var meta = (data.input_tokens || 0) + ' in / ' + (data.output_tokens || 0) + ' out';
-          if (data.cost_usd != null) meta += ' | $' + data.cost_usd.toFixed(4);
-          if (data.iterations) meta += ' | ' + data.iterations + ' iter';
-          if (data.fallback_model) meta += ' | fallback: ' + data.fallback_model;
-          // Use server response if non-empty, otherwise preserve accumulated streamed text
-          var finalText = (data.content && data.content.trim()) ? data.content : streamedText;
-          // Strip raw function-call JSON that some models leak as text
-          finalText = this.sanitizeToolText(finalText);
-          // If text is empty but tools ran, show a summary
-          if (!finalText.trim() && streamedTools.length) {
-            finalText = '';
-          }
-          this.messages.push({ id: ++msgId, role: 'agent', text: finalText, meta: meta, tools: streamedTools, ts: Date.now() });
-          this.sending = false;
-          this.tokenCount = 0;
-          this.scrollToBottom();
-          var self3 = this;
-          this.$nextTick(function() {
-            var el = document.getElementById('msg-input'); if (el) el.focus();
-            self3._processQueue();
-          });
+          this._settle('end');
           break;
 
         case 'silent_complete':
           // Agent intentionally chose not to reply (NO_REPLY)
-          this._clearTypingTimeout();
-          this.messages = this.messages.filter(function(m) { return !m.thinking && !m.streaming; });
-          this.sending = false;
-          this.tokenCount = 0;
-          // No message bubble added — the agent was silent
-          var selfSilent = this;
-          this.$nextTick(function() { selfSilent._processQueue(); });
+          this._settle('end');
           break;
 
         case 'error':
-          this._clearTypingTimeout();
-          this.messages = this.messages.filter(function(m) { return !m.thinking && !m.streaming; });
-          this.messages.push({ id: ++msgId, role: 'system', text: 'Error: ' + data.content, meta: '', tools: [], ts: Date.now() });
-          this.sending = false;
-          this.tokenCount = 0;
-          this.scrollToBottom();
-          var self2 = this;
-          this.$nextTick(function() {
-            var el = document.getElementById('msg-input'); if (el) el.focus();
-            self2._processQueue();
-          });
+          this._settle('fail');
           break;
 
         case 'agents_updated':
@@ -1025,10 +1029,8 @@ function chatPage() {
           break;
 
         case 'command_result':
-          // Update context pressure if included in command result
-          if (data.context_pressure) {
-            this.contextPressure = data.context_pressure;
-          }
+          // The model could not open this turn's photo: say so under the turn
+          if (this._turn && /^\*\*Vision not supported/.test(data.message || '')) { this._turn.unseen = true; break; }
           this.messages.push({ id: ++msgId, role: 'system', text: data.message || 'Command executed.', meta: '', tools: [] });
           this.scrollToBottom();
           break;
@@ -1130,8 +1132,8 @@ function chatPage() {
       // Collect image references for inline rendering
       var msgImages = uploadedFiles.filter(function(f) { return f.content_type && f.content_type.startsWith('image/'); });
 
-      // Always show user message immediately
-      this.messages.push({ id: ++msgId, role: 'user', text: finalText, meta: '', tools: [], images: msgImages, ts: Date.now() });
+      // A placeholder until _settle reads the record back
+      this.messages.push({ id: ++msgId, role: 'user', text: finalText, meta: '', tools: [], images: msgImages, pending: true });
       this.scrollToBottom();
       localStorage.setItem('of-first-msg', 'true');
 
@@ -1166,12 +1168,14 @@ function chatPage() {
 
     async _sendPayload(finalText, uploadedFiles, msgImages) {
       this.sending = true;
+      this._turn = { text: finalText, images: msgImages || [] };
 
       // Try WebSocket first
       var wsPayload = { type: 'message', content: finalText };
       if (uploadedFiles && uploadedFiles.length) wsPayload.attachments = uploadedFiles;
       if (OpenFangAPI.wsSend(wsPayload)) {
-        this.messages.push({ id: ++msgId, role: 'agent', text: '', meta: '', thinking: true, streaming: true, tools: [], ts: Date.now() });
+        this.messages.push({ id: ++msgId, role: 'agent', text: '', meta: '', thinking: true, streaming: true, tools: [] });
+        this._resetTypingTimeout();
         this.scrollToBottom();
         return;
       }
@@ -1181,42 +1185,23 @@ function chatPage() {
       if (!OpenFangAPI.isWsConnected()) {
         OpenFangToast.info(t('chat.using_http_mode'));
       }
-      this.messages.push({ id: ++msgId, role: 'agent', text: '', meta: '', thinking: true, tools: [], ts: Date.now() });
+      this.messages.push({ id: ++msgId, role: 'agent', text: '', meta: '', thinking: true, tools: [] });
       this.scrollToBottom();
 
-      try {
-        var httpBody = { message: finalText };
-        if (uploadedFiles && uploadedFiles.length) httpBody.attachments = uploadedFiles;
-        var res = await OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/message', httpBody);
-        this.messages = this.messages.filter(function(m) { return !m.thinking; });
-        var httpMeta = (res.input_tokens || 0) + ' in / ' + (res.output_tokens || 0) + ' out';
-        if (res.cost_usd != null) httpMeta += ' | $' + res.cost_usd.toFixed(4);
-        if (res.iterations) httpMeta += ' | ' + res.iterations + ' iter';
-        this.messages.push({ id: ++msgId, role: 'agent', text: res.response, meta: httpMeta, tools: [], ts: Date.now() });
-      } catch(e) {
-        this.messages = this.messages.filter(function(m) { return !m.thinking; });
-        this.messages.push({ id: ++msgId, role: 'system', text: 'Error: ' + e.message, meta: '', tools: [], ts: Date.now() });
-      }
-      this.sending = false;
-      this.scrollToBottom();
-      // Process next queued message
-      var self = this;
-      this.$nextTick(function() {
-        var el = document.getElementById('msg-input'); if (el) el.focus();
-        self._processQueue();
-      });
+      var httpBody = { message: finalText };
+      if (uploadedFiles && uploadedFiles.length) httpBody.attachments = uploadedFiles;
+      var ok = await OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/message', httpBody).then(function() { return true; }, function() { return false; });
+      this._settle(ok ? 'end' : 'fail');
     },
 
-    // Stop the current agent run
+    // Stop the current run, then show what the record kept
     stopAgent: function() {
       if (!this.currentAgent) return;
       var self = this;
-      OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/stop', {}).then(function(res) {
-        self.messages.push({ id: ++msgId, role: 'system', text: res.message || 'Run cancelled', meta: '', tools: [], ts: Date.now() });
-        self.sending = false;
-        self.scrollToBottom();
-        self.$nextTick(function() { self._processQueue(); });
-      }).catch(function(e) { OpenFangToast.error('Stop failed: ' + e.message); });
+      this._stopped = true;
+      OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/stop', {}).then(function() {
+        self._settle('fail');
+      }).catch(function() { self._stopped = false; OpenFangToast.error('Couldn\u2019t stop that. Try again in a moment.'); });
     },
 
     killAgent() {
@@ -1277,8 +1262,9 @@ function chatPage() {
       var el = document.getElementById('messages');
       if (el) self.$nextTick(function() {
         el.scrollTop = el.scrollHeight;
-        // Debounce LaTeX rendering to avoid running on every streaming token
+        // Debounce LaTeX; never on Home, where "$25, $50" are prices, not math
         if (self._latexTimer) clearTimeout(self._latexTimer);
+        if (el.classList.contains('home-scroll')) return;
         self._latexTimer = setTimeout(function() { renderLatex(el); }, 150);
       });
     },

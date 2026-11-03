@@ -58,6 +58,16 @@ function homePinStax(chat) {
     chat.loadSession(s.id);
     chat.loadSessions(s.id);
   });
+  // Back from the background (TWA, tab, restored page): rebuild from the record
+  window._homeChat = chat;
+  if (!window._homeWake) {
+    window._homeWake = function(e) {
+      var c = window._homeChat;
+      if (c && c.$el.isConnected && document.visibilityState === 'visible' && (e.type !== 'pageshow' || e.persisted)) c.rehydrate();
+    };
+    document.addEventListener('visibilitychange', window._homeWake);
+    window.addEventListener('pageshow', window._homeWake);
+  }
 }
 
 // "Start a fresh conversation" on the Stax card: the same sessions API the
@@ -164,10 +174,18 @@ function homePage() {
     // message, and neither is a note the system injected into the user side
     // ("[System: ...]"). "Working on it" belongs to the in-flight turn only.
     homeShowMsg(m) {
-      if (!m) return false;
+      if (!m || m.machine) return false;
       if (m.role === 'user') return !/^\[System:/.test(m.text || '');
       if (m.role !== 'agent' || m.thinking || m.streaming) return true;
       return !!(m.text && m.text.trim()) || (m.tools || []).some(function(t) { return t._imageUrls && t._imageUrls.length; });
+    },
+
+    // Under an owner turn: no stored reply, or a named photo not kept
+    homeAside(m) {
+      var gone = !(m.images && m.images.length) && /\[File: [^\]\n]+\]/.test(m.text || '');
+      return [gone ? 'The photo went with that message only. It isn\u2019t kept in the chat.' : '',
+        m.unseen ? 'I couldn\u2019t open this photo, so my reply doesn\u2019t cover it.' : '',
+        m.unfinished ? 'I haven\u2019t finished this one.' : ''].join(' ').trim();
     },
 
     homeIsFailure(text) {
