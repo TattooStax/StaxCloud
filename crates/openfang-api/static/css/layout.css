@@ -5,9 +5,14 @@
    processes the nested x-data scopes for nav sections. */
 [x-cloak] { display: none !important; }
 
+/* The shell fills the visible viewport (dvh), not the largest one (vh): in a
+   phone browser with its own toolbar, 100vh runs under the toolbar, which
+   hid every dock and let a focused field scroll the whole shell (carrying
+   the menu button off its spot). In the TWA and on desktop the two agree. */
 .app-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -120,6 +125,8 @@
 .app-layout.focus-mode .main-content { max-width: 100%; margin-left: 0; }
 
 .stax-ic { display: block; flex: none; }
+/* Work cards: a long unbroken string (a link) wraps inside its card. */
+.approval-card { min-width: 0; overflow-wrap: anywhere; }
 /* Traditional tiles: the outer level (dock, drawer section heads, a
    surface's page mark). Raster art, its image set per tile in
    brand/tiles-128.css. */

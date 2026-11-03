@@ -205,6 +205,13 @@ document.addEventListener('alpine:init', function() {
       } catch(e) { this.morningBrief = null; }
     },
 
+    // Record text for display: a missing value renders as nothing, never as
+    // its template token ("Draft reply to Marta (<slug>)" -> "Draft reply to Marta").
+    plain(t) {
+      return String(t || '').replace(/\s*\(\s*(?:<[a-z_-]+>|\{\{?\s*[a-z_-]+\s*\}?\})\s*\)/gi, '')
+        .replace(/<[a-z_-]+>|\{\{\s*[a-z_-]+\s*\}\}/gi, '').replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+    },
+
     isCrew(a) { return !!a && this.crewNames.indexOf(a.name) >= 0; },
     displayName(a) {
       if (!a) return '';

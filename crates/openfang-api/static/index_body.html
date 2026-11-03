@@ -140,7 +140,7 @@
               <div style="display:flex;flex-direction:column;gap:10px">
                 <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                   <div class="card approval-card pending">
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
                     <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
                     <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                       <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
@@ -1012,7 +1012,7 @@
             <div style="display:flex;flex-direction:column;gap:10px">
               <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                 <div class="card approval-card pending">
-                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
                   <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
                   <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                     <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
@@ -1515,7 +1515,7 @@
                       <span class="badge" :class="{ 'badge-warn': a.status === 'pending', 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status === 'pending' ? 'Waiting for you' : a.status"></span>
                       <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                     </div>
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="a.description"></div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
                     <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first &middot; <span x-text="a.action"></span></div>
                     <template x-if="a.status === 'pending'">
                       <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
@@ -6165,6 +6165,47 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <span>Done</span>
     </button>
   </nav>
+
+  <!-- R7: Forms module dock — inside Forms, the dock belongs to the module -->
+  <nav class="stax-dock" x-cloak x-show="page === 'forms'" aria-label="Forms module">
+    <button class="stax-dock-btn" @click="$store.app.formsAgent()" aria-label="Forms agent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Agent</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+      <span>My Forms</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'subs' }" @click="$store.app.formsTab = 'subs'" aria-label="Submissions">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span>Submissions</span>
+      <span class="stax-dock-badge" x-show="$store.app.formsNewCount > 0" x-text="$store.app.formsNewCount"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>Preview</span>
+    </button>
+    <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <span>Done</span>
+    </button>
+  </nav>
+
+  <!-- R9: Texts module dock -->
+  <nav class="stax-dock" x-cloak x-show="page === 'sms'" aria-label="Texts module">
+    <button class="stax-dock-btn" @click="$store.app.smsAgent()" aria-label="Texts agent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Agent</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.smsTab === 'inbox' }" @click="$store.app.smsTab = 'inbox'" aria-label="Inbox">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span>Inbox</span>
+    </button>
+    <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <span>Done</span>
+    </button>
+  </nav>
 </div>
 
 <!-- Toast notification container -->
@@ -6357,7 +6398,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Needs you</div>
       <template x-for="a in $store.app.pendingApprovals.slice(0, 5)" :key="a.id">
         <div style="border-top:1px solid var(--border);padding:10px 0">
-          <div style="font-size:14px;font-weight:600;line-height:1.4" x-text="a.description"></div>
+          <div style="font-size:14px;font-weight:600;line-height:1.4" x-text="$store.app.plain(a.description)"></div>
           <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
           <div class="approval-actions" style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
@@ -6392,47 +6433,6 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </div>
   </div>
 </aside>
-
-<!-- R7: Forms module dock — inside Forms, the dock belongs to the module -->
-<nav class="stax-dock" x-cloak x-show="page === 'forms'" aria-label="Forms module">
-  <button class="stax-dock-btn" @click="$store.app.formsAgent()" aria-label="Forms agent">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <span>Agent</span>
-  </button>
-  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
-    <span>My Forms</span>
-  </button>
-  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'subs' }" @click="$store.app.formsTab = 'subs'" aria-label="Submissions">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-    <span>Submissions</span>
-    <span class="stax-dock-badge" x-show="$store.app.formsNewCount > 0" x-text="$store.app.formsNewCount"></span>
-  </button>
-  <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-    <span>Preview</span>
-  </button>
-  <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-    <span>Done</span>
-  </button>
-</nav>
-
-<!-- R9: Texts module dock -->
-<nav class="stax-dock" x-cloak x-show="page === 'sms'" aria-label="Texts module">
-  <button class="stax-dock-btn" @click="$store.app.smsAgent()" aria-label="Texts agent">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <span>Agent</span>
-  </button>
-  <button class="stax-dock-btn" :class="{ active: $store.app.smsTab === 'inbox' }" @click="$store.app.smsTab = 'inbox'" aria-label="Inbox">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-    <span>Inbox</span>
-  </button>
-  <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-    <span>Done</span>
-  </button>
-</nav>
 
 <div id="toast-container" class="toast-container" aria-live="polite"></div>
 

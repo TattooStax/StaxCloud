@@ -639,11 +639,12 @@ function chatPage() {
         });
         localStorage.setItem('of-chat-tips-seen', 'true');
       }
-      // Focus input after agent selection
+      // Focus input after agent selection, except on touch screens, where it
+      // would throw the keyboard over the page on arrival.
       var self = this;
       this.$nextTick(function() {
         var el = document.getElementById('msg-input');
-        if (el) el.focus();
+        if (el && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) el.focus();
       });
     },
 

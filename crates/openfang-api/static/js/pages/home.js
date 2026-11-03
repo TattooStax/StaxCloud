@@ -23,14 +23,6 @@ function homePinStax(chat) {
     var s = findStaxAgent();
     if (s && (!chat.currentAgent || chat.currentAgent.id !== s.id)) {
       chat.selectAgent(s);
-      // selectAgent focuses the composer; on touch screens that would throw
-      // the keyboard over the home screen on arrival.
-      chat.$nextTick(function() {
-        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-          var el = document.getElementById('msg-input');
-          if (el) el.blur();
-        }
-      });
     }
   }
   pick();
