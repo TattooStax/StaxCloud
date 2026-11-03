@@ -1,0 +1,21 @@
+{
+  "name": "OpenFang Agent OS",
+  "short_name": "OpenFang",
+  "description": "Open-source Agent Operating System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0c0e",
+  "theme_color": "#146e68",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "logo-repo.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    }
+  ]
+}

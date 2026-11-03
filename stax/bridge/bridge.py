@@ -139,6 +139,38 @@ def find_msg(detail, mid=None, body=None):
     outs = [m for m in msgs if m.get("direction") == "out" and m.get("body") == body]
     return outs[-1] if outs else None
 
+def verify_approval(v):
+    """Enforced approval gate: an outbox record is sendable only if it names
+    an approval that the Fang approvals API confirms, right now, as approved.
+    kv is writable by every agent holding memory_store, so the record's own
+    shape is not proof of anything — the live API answer is the proof.
+    Returns (ok, reason)."""
+    aid = str(v.get("approval_id") or "").strip()
+    if not aid:
+        return False, "missing approval_id"
+    try:
+        data = fang("GET", "/api/approvals")
+    except Exception as e:
+        return False, "approvals API unreachable: " + str(e)[:120]
+    ap_list = data if isinstance(data, list) else data.get("approvals", [])
+    for a in ap_list:
+        if isinstance(a, dict) and a.get("id") == aid:
+            st = a.get("status")
+            if st == "approved":
+                return True, ""
+            return False, f"approval {aid} has status {st!r}, not 'approved'"
+    return False, f"approval {aid} not found in the approvals list"
+
+def refuse(key, v, enc, reason):
+    # Terminal on purpose: the outbox loop only acts on queued/sending/sent,
+    # so a refused record is never retried. Logged loudly — a refusal means
+    # someone or something wrote an outbox record without a real approval.
+    v["status"] = "refused"
+    v["refusal_reason"] = reason
+    v["refused_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    fang("PUT", enc, {"value": v})
+    log(f"outbox {key}: REFUSED by approval gate — {reason}")
+
 def outbox(state):
     data = fang("GET", "/api/memory/agents/x/kv")
     pairs = data.get("kv_pairs", [])
@@ -157,6 +189,13 @@ def outbox(state):
         status = v.get("status")
         enc = "/api/memory/agents/x/kv/" + urllib.parse.quote(key, safe="")
         if status in ("queued", "sending"):
+            if status == "queued":
+                # Gate BEFORE the write-ahead: an unverified record must
+                # never reach 'sending', let alone StaxCloud.
+                ok, reason = verify_approval(v)
+                if not ok:
+                    refuse(key, v, enc, reason)
+                    acted += 1; continue
             num = digits(v.get("to", ""))
             tid = by_num.get(num)
             if not tid:
@@ -176,6 +215,14 @@ def outbox(state):
             detail = stax("GET", f"/api/sms/threads/{tid}")
             msg = find_msg(detail, mid=v.get("provider_mid"), body=v.get("body", ""))
             if msg is None:
+                if status == "sending":
+                    # A crashed attempt left no StaxCloud message behind, so
+                    # creating one now is a fresh send — the gate applies
+                    # again before anything is created.
+                    ok, reason = verify_approval(v)
+                    if not ok:
+                        refuse(key, v, enc, reason)
+                        acted += 1; continue
                 try:
                     created = stax("POST", f"/api/sms/threads/{tid}/messages", {"body": v.get("body", "")})
                 except Exception as e:

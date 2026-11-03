@@ -118,7 +118,13 @@ for pair in kv.get("kv_pairs", []):
                 if isinstance(existing_out, dict) and existing_out.get("value") is not None:
                     print(datetime.datetime.now().isoformat(), "sms outbox already exists, not rewritten:", key)
                 else:
+                    # Carry the approval id with the outbox record: the
+                    # bridge verifies that decision live against the
+                    # approvals API before sending, because the outbox
+                    # record's own shape is not proof of approval — any
+                    # kv writer could forge one.
                     out = {"to": v.get("to", ""), "body": v.get("body", ""), "thread": v.get("thread", ""),
+                           "approval_id": v.get("approval_id", ""),
                            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "status": "queued"}
                     req("PUT", f"/api/memory/agents/{forms_id}/kv/{enc_o}", {"value": out})
                     print(datetime.datetime.now().isoformat(), "sms reply approved -> outbox:", key)
