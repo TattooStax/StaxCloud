@@ -8,11 +8,15 @@
 /* The shell fills the visible viewport (dvh), not the largest one (vh): in a
    phone browser with its own toolbar, 100vh runs under the toolbar, which
    hid every dock and let a focused field scroll the whole shell (carrying
-   the menu button off its spot). In the TWA and on desktop the two agree. */
+   the menu button off its spot). In the TWA and on desktop the two agree.
+   With viewport-fit=cover the system bars report their size through env():
+   the shell clears the top inset here, and every dock (.stax-dock, its last
+   child) clears the bottom one, so each reads 0 where there is no bar. */
 .app-layout {
   display: flex;
   height: 100vh;
   height: 100dvh;
+  padding-top: env(safe-area-inset-top);
   overflow: hidden;
 }
 
