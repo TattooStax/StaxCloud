@@ -1,4 +1,4 @@
-# StaxCloud reskin of OpenFang
+# StaxCloud
 
 This fork (branch `stax-ux`, pinned from upstream v0.6.9, tag `stax-base-0.6.9`)
 reskins OpenFang's UX into StaxCloud — a proactive business system for
