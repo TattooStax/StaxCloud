@@ -767,7 +767,7 @@ def _op_profile_update(ctx, args):
     patch = args.get("patch", {})
     allowed = {"display_name", "styles", "specialties", "style_note",
                "approved_library", "allow_customer_designs",
-               "versions_per_request"}
+               "versions_per_request", "style_presets"}
     unknown = set(patch) - allowed
     if unknown:
         raise ValueError(f"profile patch fields not allowed: {sorted(unknown)}")
@@ -2070,12 +2070,332 @@ def _op_export_brushset(ctx, args):
             "record": rec}
 
 
+# ---------------------------------------------------------------------
+# Generation leg — the host's model call (Canvas surface wiring,
+# 2026-11-04). The package core plans and processes pixels
+# deterministically and never calls a model (PLAN §6 boundary); that
+# call is host wiring and lives here. gen.design takes a request from
+# intake to built, validated, exported design documents — one per
+# planned version — and gen.redesign adds one more version within
+# the owner's cap. The model sees the client's reference image FIRST
+# (reference-anchored: composition and element counts preserved;
+# only the rendering changes) plus the selected style preset's
+# exemplars. Each design record carries its provenance (model,
+# prompt, seed) and the call's metered cost when the provider
+# reports one — an unmetered call records null, never an estimate.
+# ---------------------------------------------------------------------
+
+GEN_MODEL = os.environ.get("DESIGNER_GEN_MODEL", "google/gemini-2.5-flash-image")
+GEN_API = "https://openrouter.ai/api/v1/chat/completions"
+REDESIGN_CAP = 3  # owner law: at most 3 redesigns per design client
+_CLOSED_STATES = ("artist_approved", "artist_rejected",
+                  "sent_to_customer", "customer_approved",
+                  "stencil_ready")
+
+
+def _gen_api_key() -> str:
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if key:
+        return key.strip()
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("OPENROUTER_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    raise RuntimeError("generation is not wired: no OPENROUTER_API_KEY "
+                       "in the environment or the sidecar env file")
+
+
+def _gen_call(prompt: str, images: list[bytes]):
+    """One reference-anchored generation call. Returns (png bytes,
+    metered cost dict or None). Raises on failure; the job record
+    carries the error verbatim."""
+    content = [{"type": "text", "text": prompt}]
+    for blob in images:
+        content.append({"type": "image_url", "image_url": {
+            "url": "data:image/png;base64,"
+                   + base64.b64encode(blob).decode()}})
+    body = {"model": GEN_MODEL, "modalities": ["image", "text"],
+            "messages": [{"role": "user", "content": content}]}
+    req = urllib.request.Request(
+        GEN_API, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Authorization", "Bearer " + _gen_api_key())
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        data = json.loads(resp.read())
+    msg = (data.get("choices") or [{}])[0].get("message") or {}
+    raw = None
+    for img in msg.get("images") or []:
+        url = (img.get("image_url") or {}).get("url", "")
+        if isinstance(url, str) and url.startswith("data:image"):
+            raw = base64.b64decode(url.split(",", 1)[1])
+            break
+    if raw is None:
+        for part in msg.get("content") or []:
+            if isinstance(part, dict):
+                url = ((part.get("image_url") or {}).get("url")
+                       or part.get("url") or "")
+                if isinstance(url, str) and url.startswith("data:image"):
+                    raw = base64.b64decode(url.split(",", 1)[1])
+                    break
+    if raw is None:
+        raise RuntimeError(
+            f"generation model {GEN_MODEL} returned no image")
+    usage = data.get("usage") or {}
+    cost = None
+    if isinstance(usage.get("cost"), (int, float)):
+        cost = {"amount": usage["cost"], "currency": "USD",
+                "source": "openrouter usage"}
+    return raw, cost
+
+
+def _gen_reference_bytes(ctx, ref: str) -> bytes:
+    """The client's reference image: a file-store ref, or an upload
+    id from the dashboard's upload route (served back by the daemon
+    on the same box)."""
+    if not ref:
+        raise RuntimeError("this design has no reference image")
+    if ref.startswith("file:"):
+        return ctx["files"].get_bytes(ref)
+    file_id = ref.split(":", 1)[1] if ref.startswith("upload:") else ref
+    transport = ctx["transport"]
+    api = getattr(transport, "api", None)
+    if api is None:
+        raise RuntimeError("generation needs the live daemon transport "
+                           "to fetch the reference upload")
+    r = urllib.request.Request(f"{api}/api/uploads/{file_id}")
+    r.add_header("Authorization", "Bearer " + transport._tok())
+    with urllib.request.urlopen(r, timeout=60) as resp:
+        return resp.read()
+
+
+def _gen_exemplar_bytes(preset_key) -> list[bytes]:
+    """The selected preset's exemplar images (style examples for the
+    model call), resolved against the sidecar's own tree first."""
+    if not preset_key:
+        return []
+    from studio_design.styles import get_style_preset
+    preset = get_style_preset(preset_key)
+    roots = [os.path.dirname(os.path.abspath(__file__)),
+             os.path.expanduser("~/openfang-play"), os.getcwd()]
+    out = []
+    for rel in preset.get("exemplars", [])[:3]:
+        for root in roots:
+            path = os.path.join(root, rel)
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    out.append(f.read())
+                break
+    return out
+
+
+def _gen_attach_preview(ctx, record) -> None:
+    """A web-sized preview rides the design record itself, so the
+    Canvas surface renders the design from the same store it reads
+    everything else from — rendered from the stored bundle's own
+    preview export, never redrawn. A failure here never fails the
+    build; the record simply carries no preview."""
+    from io import BytesIO
+    try:
+        png = ctx["files"].get_bytes(
+            f"file:designs/{record['id']}/preview.png")
+        img = Image.open(BytesIO(png)).convert("RGB")
+        img.thumbnail((560, 560))
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=82)
+        record["preview_b64"] = base64.b64encode(buf.getvalue()).decode()
+        record["preview_mime"] = "image/jpeg"
+    except Exception:
+        record["preview_b64"] = None
+
+
+def _gen_build_version(ctx, req, version: dict, idx: int,
+                       reference_png: bytes, exemplars: list[bytes]):
+    """Generate one version's element and run it through the package
+    pipeline (matte -> line/shading split -> validate -> export),
+    then stamp the design record with its surface fields."""
+    prompt = version["prompt"] + (
+        " Redraw the FIRST attached image as this design: preserve "
+        "its composition, pose, and exact element counts; change "
+        "only the rendering. Any further attached images are style "
+        "examples of the artist's finished work.")
+    images = [reference_png] + [e for e in exemplars
+                                if e != reference_png]
+    raw, cost = _gen_call(prompt, images)
+    raw_ref = f"file:elements/{req.request_id}-v{idx + 1}-raw.png"
+    ctx["files"].put_bytes(raw_ref, raw)
+    doc_id = (f"design-{req.request_id}" if idx == 0
+              else f"design-{req.request_id}-v{idx + 1}")
+    size = req.size_mm or [100, 100]
+    _op_doc_build(ctx, {"doc_id": doc_id,
+                        "element": {"kind": "file", "ref": raw_ref},
+                        "width_mm": float(size[0]),
+                        "height_mm": float(size[1]),
+                        "artist_id": req.artist_id,
+                        "title": req.prompt_text[:60]})
+    check = _op_doc_validate(ctx, {"design_id": doc_id})
+    if not check["valid"]:
+        raise RuntimeError(f"generated design {doc_id} failed "
+                           f"validation: {check['errors']}")
+    _op_doc_export(ctx, {"design_id": doc_id})
+    record = ctx["transport"].get(f"design/{doc_id}")
+    record["request_id"] = req.request_id
+    record["version"] = idx + 1
+    record["gen"] = {"model": GEN_MODEL, "prompt": prompt,
+                     "negative_prompt": version.get("negative_prompt"),
+                     "seed": version.get("seed"),
+                     "reference_ref": req.reference_ref,
+                     "raw_ref": raw_ref, "cost": cost}
+    _gen_attach_preview(ctx, record)
+    _save_design_record(ctx["transport"], record)
+    return doc_id, cost
+
+
+def _op_gen_design(ctx, args):
+    """intake -> route (artist chosen on the surface) -> plan (the
+    artist's versions-per-request and style preset) -> generate and
+    build every planned version. The request lands at 'planned'
+    with its designs stored; approval runs through the standing
+    request.submit + Needs-you gate, untouched."""
+    from studio_design.generate import plan_versions
+    transport = ctx["transport"]
+    flow = _flow(ctx)
+    store = _store(ctx)
+    req_id = args["request_id"]
+    req = flow.requests.get(req_id)
+    if req is None:
+        req = flow.intake("widget", "owner", args["brief"],
+                          placement=args.get("placement"),
+                          size_mm=args.get("size_mm"),
+                          reference_ref=args.get("reference_ref"),
+                          request_id=req_id)
+        _save_request(transport, req)
+    if req.status == "received":
+        result = flow.route(req_id,
+                            chosen_artist_id=args["artist_id"])
+        _save_request(transport, req)
+        if not result.get("routed"):
+            raise RuntimeError(result.get("reason")
+                               or "the request could not be routed")
+    if req.status != "routed":
+        raise RuntimeError(
+            f"request is {req.status}, not routed — generation runs "
+            f"once, from a fresh request; start a new design instead")
+    preset = args.get("style_preset")
+    if preset is None:
+        presets = (store.get(req.artist_id) or {}).get(
+            "style_presets") or []
+        preset = presets[0] if presets else None
+    plan = plan_versions({"subject": req.prompt_text,
+                          "placement": req.placement or "",
+                          "size_mm": req.size_mm,
+                          "artist_id": req.artist_id,
+                          "style_preset": preset}, store)
+    versions = plan["versions"]
+    if not versions:
+        raise RuntimeError("no versions could be planned for this "
+                           "request")
+    reference_png = _gen_reference_bytes(
+        ctx, args.get("reference_ref") or req.reference_ref)
+    ctx["files"].put_bytes(f"file:elements/{req_id}-reference.png",
+                           reference_png)
+    exemplars = _gen_exemplar_bytes(preset)
+    planned = copy.deepcopy(versions)
+    for v in planned:
+        refs = list(v.get("reference_ids", []))
+        if req.reference_ref and req.reference_ref not in refs:
+            refs.append(req.reference_ref)
+        v["reference_ids"] = refs
+    req.round = 1
+    req.versions = planned
+    req.plans.append({"round": 1, "versions": copy.deepcopy(planned),
+                      "feedback": None})
+    if req.style_anchor_prompt is None and planned:
+        req.style_anchor_prompt = planned[0]["prompt"]
+    req._transition("planned")
+    _save_request(transport, req)
+    design_ids, total = [], None
+    for i, v in enumerate(planned):
+        doc_id, cost = _gen_build_version(ctx, req, v, i,
+                                          reference_png, exemplars)
+        design_ids.append(doc_id)
+        if cost:
+            total = (total or 0.0) + cost["amount"]
+    return {"request_id": req_id, "design_ids": design_ids,
+            "versions": len(design_ids), "model": GEN_MODEL,
+            "cost": ({"amount": total, "currency": "USD",
+                      "source": "openrouter usage"}
+                     if total is not None else None)}
+
+
+def _op_gen_redesign(ctx, args):
+    """One more version of an open design, in the same style, with
+    the owner's note folded in. Closed designs (approved, rejected,
+    sent) refuse — a new design is the honest path — and the
+    owner's cap of 3 redesigns per design is enforced from the job
+    ledger."""
+    transport = ctx["transport"]
+    flow = _flow(ctx)
+    req = flow.get(args["request_id"])
+    if req.status in _CLOSED_STATES:
+        raise RuntimeError(
+            f"this design is {req.status.replace('_', ' ')} — start "
+            f"a new design to change it")
+    done = 0
+    for job_id in _index_ids(transport, JOB_INDEX, "jobs"):
+        job = transport.get(f"designjob/{job_id}")
+        if (isinstance(job, dict) and job.get("op") == "gen.redesign"
+                and (job.get("args") or {}).get("request_id")
+                == req.request_id and job.get("status") == "done"):
+            done += 1
+    if done >= REDESIGN_CAP:
+        raise RuntimeError(f"redesign limit reached "
+                           f"({REDESIGN_CAP} per design)")
+    existing = 0
+    for key, value in transport.list_pairs():
+        if not key.startswith("design/") or key == "design/index":
+            continue
+        rec = value
+        if isinstance(rec, str):
+            try:
+                rec = json.loads(rec)
+            except Exception:
+                continue
+        if isinstance(rec, dict) and rec.get("request_id") \
+                == req.request_id:
+            existing += 1
+    note = (args.get("note") or "").strip()
+    anchor = req.style_anchor_prompt or (
+        req.versions[0]["prompt"] if req.versions else req.prompt_text)
+    version = {"prompt": anchor + (
+        f" Revision — fold this feedback into the SAME style, do "
+        f"not add detail: {note}" if note else
+        " Revision — a fresh take in the SAME style."),
+        "negative_prompt": (req.versions[0].get("negative_prompt")
+                            if req.versions else None),
+        "seed": None}
+    reference_png = _gen_reference_bytes(ctx, req.reference_ref)
+    presets = (_store(ctx).get(req.artist_id) or {}).get(
+        "style_presets") or []
+    doc_id, cost = _gen_build_version(
+        ctx, req, version, existing, reference_png,
+        _gen_exemplar_bytes(presets[0] if presets else None))
+    return {"request_id": req.request_id, "design_id": doc_id,
+            "version": existing + 1, "redesigns_used": done + 1,
+            "model": GEN_MODEL, "cost": cost}
+
+
 JOB_OPS = {
     "profile.seed": _op_profile_seed,
     "profile.get": _op_profile_get,
     "profile.update": _op_profile_update,
     "route_request": _op_route_request,
     "plan_versions": _op_plan_versions,
+    "gen.design": _op_gen_design,
+    "gen.redesign": _op_gen_redesign,
     "request.intake": _op_request_intake,
     "request.evaluate": _op_request_evaluate,
     "request.route": _op_request_route,
