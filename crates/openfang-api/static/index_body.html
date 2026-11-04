@@ -5258,7 +5258,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </template>
 
     <template x-if="page === 'boards'">
-      <div x-data="boardsPage" x-init="loadData()">
+      <div x-data="boardsPage" x-init="loadData()" class="board-page">
         <div class="page-header">
           <h2>Boards</h2>
           <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>

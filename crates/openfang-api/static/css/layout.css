@@ -133,6 +133,7 @@
 .approval-card { min-width: 0; overflow-wrap: anywhere; }
 .board-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .board-stats .card { text-align: center; padding: 14px 10px; }
+.board-page .btn, .board-page .stax-chip { min-height: var(--hit-min); }
 /* Traditional tiles: the outer level (dock, drawer section heads, a
    surface's page mark). Raster art, its image set per tile in
    brand/tiles-128.css. */
