@@ -148,7 +148,7 @@
 .cv-row.is-on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cv-layer-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 56px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.cv-context { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.cv-context { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; min-height: var(--hit-min); width: 100%; text-align: left; }
 .cv-stage { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 @media (max-width: 640px) { .cv-input { font-size: 16px; } }
 
@@ -533,3 +533,35 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
   .sys-seg button { min-width: 0; padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .sys-seg button { transition: none; } }
+
+/* Attach menu: the composer's "+" listing — the same labeled
+   destinations everywhere the composer appears (Home, Canvas):
+   Camera · Photos · Videos · Files. */
+.home-compose-box { position: relative; }
+.attach-menu { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 65; min-width: 248px; display: flex; flex-direction: column; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 14px 34px rgba(0,0,0,.28); }
+.attach-menu > button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-height: 48px; padding: 8px 12px; background: none; border: none; border-radius: 10px; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
+.attach-menu > button:active { background: var(--surface-2); transform: scale(.98); }
+.attach-menu-sub { font-size: 12.5px; font-weight: 400; color: var(--text-dim); }
+
+/* Canvas panels: sheets over the bench (the canvas stays). The
+   module's panel primitive — bottom-anchored to the shell column,
+   stopping above the dock so the dock stays live. */
+.cv-scrim { position: fixed; left: 0; right: 0; top: 0; bottom: calc(var(--dock-height) + env(safe-area-inset-bottom)); background: rgba(10,8,6,.38); z-index: 58; }
+.cv-sheet { position: fixed; left: 50%; transform: translateX(-50%); width: 100%; max-width: 920px; bottom: calc(var(--dock-height) + env(safe-area-inset-bottom)); max-height: 64dvh; overflow-y: auto; background: var(--surface); border-top: 1px solid var(--border); border-radius: 18px 18px 0 0; box-shadow: 0 -14px 34px rgba(0,0,0,.30); padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); z-index: 59; }
+.cv-sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+
+/* Canvas gallery grid */
+.cv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cv-gcard { display: flex; flex-direction: column; text-align: left; padding: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text); font: inherit; cursor: pointer; }
+.cv-gcard:active { transform: scale(.98); }
+.cv-gcard img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-2); }
+.cv-gcard-brief { padding: 10px 12px 2px; font-size: 14px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cv-gcard-meta { padding: 0 12px 10px; font-size: 12.5px; color: var(--text-dim); }
+
+/* Canvas composer thread (compact; the full thread lives in the
+   chat — here the last few turns ride with the bench) */
+.cv-thread { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.cv-msg { max-width: 94%; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); }
+.cv-msg--you { align-self: flex-end; border: 1px solid var(--border); border-right: 3px solid var(--accent); }
+.cv-msg-who { display: block; font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 2px; }
+.cv-msg-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; line-height: 1.45; }

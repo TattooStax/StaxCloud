@@ -1294,7 +1294,7 @@ function chatPage() {
         var typeOk = allowed.indexOf(file.type) !== -1;
         if (!typeOk) {
           var ext = file.name.lastIndexOf('.') !== -1 ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
-          typeOk = allowedExts.indexOf(ext) !== -1 || file.type.startsWith('image/');
+          typeOk = allowedExts.indexOf(ext) !== -1 || file.type.startsWith('image/') || file.type.startsWith('video/');
         }
         if (!typeOk) {
           OpenFangToast.warn('File type not supported: ' + file.name);

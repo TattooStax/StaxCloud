@@ -156,6 +156,16 @@ document.addEventListener('alpine:init', function() {
     boardPick: '',
     smsTab: 'inbox',
     canvasTab: 'canvas',
+    canvasPanel: '',
+    canvasTopNonce: 0,
+    canvasGo(tab) {
+      if (this.canvasTab === tab) { this.canvasTopNonce++; return; }
+      this.canvasTab = tab;
+    },
+    canvasPanelToggle(panel) {
+      if (this.canvasTab !== 'canvas') this.canvasTab = 'canvas';
+      this.canvasPanel = (this.canvasPanel === panel) ? '' : panel;
+    },
     // Canvas working state (open design, drafts, per-tab scroll),
     // bound by the canvas page so it survives leaving the module.
     canvasCv: null,
