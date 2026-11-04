@@ -92,13 +92,27 @@ function canvasPage() {
       var jobs = (this.$store.app.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
       return jobs.length ? jobs[0].agent_id : '';
     },
+    // The kv lives behind the per-agent route (the only one the
+    // daemon serves); the id segment names the designer, resolved
+    // once and cached. There is no global /api/memory/kv route.
+    _cvIdPromise: null,
+    cvResolveDesignerId() {
+      if (this.cvAgentId) return Promise.resolve(this.cvAgentId);
+      if (this._cvIdPromise) return this._cvIdPromise;
+      var self = this;
+      this._cvIdPromise = OpenFangAPI.get('/api/agents').then(function(list) {
+        var found = (list || []).filter(function(a) { return a.name === 'designer'; })[0];
+        if (found) { self.cvAgentId = found.id; return found.id; }
+        var jobs = (self.$store.app.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
+        if (jobs.length) { self.cvAgentId = jobs[0].agent_id; return self.cvAgentId; }
+        return '';
+      }).catch(function() { self._cvIdPromise = null; return ''; });
+      return this._cvIdPromise;
+    },
     async cvKvPut(key, value) {
-      var r = await fetch('/api/memory/kv/' + encodeURIComponent(key), {
-        method: 'PUT', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: value })
-      });
-      if (!r.ok) throw new Error('save failed (' + r.status + ')');
+      var id = await this.cvResolveDesignerId();
+      if (!id) throw new Error('save failed (the design helper is not set up)');
+      await OpenFangAPI.put('/api/memory/agents/' + id + '/kv/' + encodeURIComponent(key), { value: value });
     },
     async cvQueue(op, args) {
       var id = 'job-' + Math.random().toString(36).slice(2, 10);
@@ -742,17 +756,15 @@ function canvasPage() {
     async loadData() {
       var self = this;
       if (this.$store.app.page !== 'canvas') return;
-      if (!this.cvAgentId) {
-        OpenFangAPI.get('/api/agents').then(function(list) {
-          var found = (list || []).filter(function(a) { return a.name === 'designer'; })[0];
-          if (found) { self.cvAgentId = found.id; self.cvLoadThread(); }
-        }).catch(function() { /* the jobs scan stays as a fallback */ });
-      }
+      var id = await this.cvResolveDesignerId();
+      if (id) this.cvLoadThread();
       try {
-        var all = await OpenFangAPI.get('/api/memory/kv');
+        if (!id) throw new Error('the design helper is not set up');
+        var all = await OpenFangAPI.get('/api/memory/agents/' + id + '/kv');
         var map = {};
-        (all.pairs || []).forEach(function(p) { map[p.key] = p.value; });
+        (all.kv_pairs || []).forEach(function(p) { map[p.key] = p.value; });
         this.cvKv = map;
+        this.cvErr = '';
         this.cvSyncArtistDraft();
         var cards = this.cvCards();
         Object.keys(cards).forEach(function(rid) {
@@ -772,7 +784,12 @@ function canvasPage() {
           this.cv.sel[this.cvOpen.request_id] = this.cv.openId;
         }
         if (this.cvJobs.some(function(j) { return j.status === 'queued'; })) this.cvArmPoll();
-      } catch (e) { /* the last good read stays on screen */ }
+      } catch (e) {
+        // The last good read stays on screen; with no good read yet,
+        // land on the truthful empty state plus the error line
+        // instead of an 'Opening your bench' that never resolves.
+        if (!this.cvKv) { this.cvKv = {}; this.cvErr = 'Your bench couldn\'t load just now - reopen Canvas in a moment.'; }
+      }
     }
   };
 }

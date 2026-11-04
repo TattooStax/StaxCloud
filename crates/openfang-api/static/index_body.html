@@ -5547,59 +5547,58 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   </div>
                 </div>
               </div>
-
-              <!-- The composer: the same component as Home's — same
-                   attach menu, same send path — pointed at the
-                   designer, carrying where the artist is. -->
-              <div class="card">
-                <div class="text-sm" style="font-weight:600">Tell Stax</div>
-                <p class="text-sm text-dim" style="margin:4px 0 10px">Stax works on the design that&rsquo;s open and can see where you are in Canvas — ask for a change right here.</p>
-                <div class="cv-thread" x-show="cvThread.length || cvThreadBusy" x-cloak>
-                  <template x-for="(m, mi) in cvThread" :key="mi">
-                    <div class="cv-msg" :class="m.role === 'user' ? 'cv-msg--you' : 'cv-msg--stax'">
-                      <span class="cv-msg-who" x-text="m.role === 'user' ? 'You' : 'Stax'"></span>
-                      <span class="cv-msg-text" x-text="m.text"></span>
-                    </div>
-                  </template>
-                  <p class="text-sm text-dim" style="margin:6px 0 0" x-show="cvThreadBusy">Stax is working on it…</p>
-                </div>
-                <div class="home-attach" x-show="cvAtts.length" x-cloak>
-                  <div class="home-attach-row">
-                    <template x-for="(att, aidx) in cvAtts" :key="aidx">
-                      <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading, 'home-attach-chip--file': !att.preview }">
-                        <img x-show="att.preview" :src="att.preview" :alt="att.file.name">
-                        <span class="home-attach-name" x-show="!att.preview" x-text="att.file.name"></span>
-                        <button @click="cvRemoveAtt(aidx)" :aria-label="'Remove ' + att.file.name">&times;</button>
-                      </span>
-                    </template>
-                  </div>
-                  <p class="home-attach-note">Photos and files go with this message only. They aren&rsquo;t kept in the chat.</p>
-                </div>
-                <div class="home-compose-box" x-data="{ attOpen: false }">
-                  <button class="home-attach-btn" @click="attOpen = !attOpen" :aria-expanded="attOpen" aria-label="Attach a photo, video or file" title="Attach">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                  </button>
-                  <div class="attach-menu" x-show="attOpen" x-cloak @click.outside="attOpen = false">
-                    <button @click="attOpen = false; $refs.cvCam.click()"><span>Camera</span><span class="attach-menu-sub">Take a photo</span></button>
-                    <button @click="attOpen = false; $refs.cvPhotos.click()"><span>Photos</span><span class="attach-menu-sub">From your photo library</span></button>
-                    <button @click="attOpen = false; $refs.cvVideos.click()"><span>Videos</span><span class="attach-menu-sub">From your video library</span></button>
-                    <button @click="attOpen = false; $refs.cvFile.click()"><span>Files</span><span class="attach-menu-sub">Browse files</span></button>
-                  </div>
-                  <input type="file" x-ref="cvCam" accept="image/*" capture="environment" hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
-                  <input type="file" x-ref="cvPhotos" accept="image/*" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
-                  <input type="file" x-ref="cvVideos" accept="video/*" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
-                  <input type="file" x-ref="cvFile" accept="image/*,video/*,.txt,.pdf,.md,.json,.csv" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
-                  <textarea rows="1" placeholder="Tell Stax what to change" aria-label="Tell Stax what to change" x-model="cv.msgDraft"
-                            @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); cvSendMsg();}"
-                            @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>
-                  <button class="home-send" @click="cvSendMsg()" :disabled="(!(cv.msgDraft || '').trim() && !cvAtts.length) || cvThreadBusy || !cvDesignerId()" aria-label="Send to Stax">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
-                  </button>
-                </div>
-                <p class="text-sm text-dim" style="margin:8px 0 0" x-show="!cvDesignerId()">The design helper isn&rsquo;t set up right now.</p>
-              </div>
             </div>
           </template>
+            <!-- The composer: the same component as Home's — same
+                 attach menu, same send path — pointed at the
+                 designer, carrying where the artist is. -->
+            <div class="card">
+              <div class="text-sm" style="font-weight:600">Tell Stax</div>
+              <p class="text-sm text-dim" style="margin:4px 0 10px">Stax can see where you are in Canvas, and works on the design that&rsquo;s open — ask for a change right here.</p>
+              <div class="cv-thread" x-show="cvThread.length || cvThreadBusy" x-cloak>
+                <template x-for="(m, mi) in cvThread" :key="mi">
+                  <div class="cv-msg" :class="m.role === 'user' ? 'cv-msg--you' : 'cv-msg--stax'">
+                    <span class="cv-msg-who" x-text="m.role === 'user' ? 'You' : 'Stax'"></span>
+                    <span class="cv-msg-text" x-text="m.text"></span>
+                  </div>
+                </template>
+                <p class="text-sm text-dim" style="margin:6px 0 0" x-show="cvThreadBusy">Stax is working on it…</p>
+              </div>
+              <div class="home-attach" x-show="cvAtts.length" x-cloak>
+                <div class="home-attach-row">
+                  <template x-for="(att, aidx) in cvAtts" :key="aidx">
+                    <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading, 'home-attach-chip--file': !att.preview }">
+                      <img x-show="att.preview" :src="att.preview" :alt="att.file.name">
+                      <span class="home-attach-name" x-show="!att.preview" x-text="att.file.name"></span>
+                      <button @click="cvRemoveAtt(aidx)" :aria-label="'Remove ' + att.file.name">&times;</button>
+                    </span>
+                  </template>
+                </div>
+                <p class="home-attach-note">Photos and files go with this message only. They aren&rsquo;t kept in the chat.</p>
+              </div>
+              <div class="home-compose-box" x-data="{ attOpen: false }">
+                <button class="home-attach-btn" @click="attOpen = !attOpen" :aria-expanded="attOpen" aria-label="Attach a photo, video or file" title="Attach">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <div class="attach-menu" x-show="attOpen" x-cloak @click.outside="attOpen = false">
+                  <button @click="attOpen = false; $refs.cvCam.click()"><span>Camera</span><span class="attach-menu-sub">Take a photo</span></button>
+                  <button @click="attOpen = false; $refs.cvPhotos.click()"><span>Photos</span><span class="attach-menu-sub">From your photo library</span></button>
+                  <button @click="attOpen = false; $refs.cvVideos.click()"><span>Videos</span><span class="attach-menu-sub">From your video library</span></button>
+                  <button @click="attOpen = false; $refs.cvFile.click()"><span>Files</span><span class="attach-menu-sub">Browse files</span></button>
+                </div>
+                <input type="file" x-ref="cvCam" accept="image/*" capture="environment" hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
+                <input type="file" x-ref="cvPhotos" accept="image/*" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
+                <input type="file" x-ref="cvVideos" accept="video/*" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
+                <input type="file" x-ref="cvFile" accept="image/*,video/*,.txt,.pdf,.md,.json,.csv" multiple hidden @change="cvAddFiles($event.target.files); $event.target.value = ''">
+                <textarea rows="1" placeholder="Tell Stax what to change" aria-label="Tell Stax what to change" x-model="cv.msgDraft"
+                          @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); cvSendMsg();}"
+                          @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>
+                <button class="home-send" @click="cvSendMsg()" :disabled="(!(cv.msgDraft || '').trim() && !cvAtts.length) || cvThreadBusy || !cvDesignerId()" aria-label="Send to Stax">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+                </button>
+              </div>
+              <p class="text-sm text-dim" style="margin:8px 0 0" x-show="!cvDesignerId()">The design helper isn&rsquo;t set up right now.</p>
+            </div>
           </div>
 
           <!-- Gallery: every design + start a new one (a page-

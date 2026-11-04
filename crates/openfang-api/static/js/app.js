@@ -178,6 +178,7 @@ document.addEventListener('alpine:init', function() {
     crewNames: ['stax', 'forms', 'sms', 'surface-builder', 'deep-work'],
     formsNewCount: 0,
     lastPendingApprovalSignature: '',
+    notifiedApprovals: {},
     pendingAgent: null,
     focusMode: localStorage.getItem('openfang-focus') === 'true',
     showOnboarding: false,
@@ -256,6 +257,17 @@ document.addEventListener('alpine:init', function() {
       return roles[a.name] || a.model_name || '';
     },
 
+    // What a pending approval is *about*, stable across the
+    // re-holds that re-mint its approval id: agent + tool + the
+    // approval's own arguments. The toast de-dupes on this, so one
+    // waiting item notifies once no matter how often its hold is
+    // re-carried under a fresh id.
+    approvalItemKey(a) {
+      var about = '';
+      try { about = JSON.stringify(a.args || a.payload || a.details || ''); } catch(e) { about = ''; }
+      return (a.agent_id || '') + '|' + (a.tool_name || a.tool || '') + '|' + about;
+    },
+
     async refreshApprovals() {
       try {
         var data = await OpenFangAPI.get('/api/approvals');
@@ -265,14 +277,26 @@ document.addEventListener('alpine:init', function() {
           .map(function(a) { return a.id; })
           .sort()
           .join(',');
-        if (pending.length > 0 && signature !== this.lastPendingApprovalSignature && location.hash !== '#approvals' && typeof OpenFangToast !== 'undefined') {
-          OpenFangToast.warn('Something is waiting for you in Work.');
+        var notified = this.notifiedApprovals || {};
+        var nowKeys = {};
+        var fresh = 0;
+        for (var i = 0; i < pending.length; i++) {
+          var key = this.approvalItemKey(pending[i]);
+          nowKeys[key] = true;
+          if (!notified[key]) fresh++;
         }
+        // Record the notify state BEFORE anything else runs, so a
+        // failure further down can never re-arm a toast for an item
+        // that already announced itself.
+        this.notifiedApprovals = nowKeys;
         this.pendingApprovalCount = pending.length;
         this.pendingApprovals = pending;
+        this.lastPendingApprovalSignature = signature;
+        if (fresh > 0 && location.hash !== '#approvals' && typeof OpenFangToast !== 'undefined') {
+          OpenFangToast.warn('Something is waiting for you in Work.');
+        }
         this.loadSetup();
         this.loadMorningBrief();
-        this.lastPendingApprovalSignature = signature;
       } catch(e) { /* silent */ }
     },
 
