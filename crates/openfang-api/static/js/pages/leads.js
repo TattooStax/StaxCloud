@@ -37,6 +37,7 @@ function leadsPage() {
     loading: true,
     error: '',
     artistFilter: 'all',
+    shownCounts: {},
     stages: ['Opportunities'].concat(STAGES),
     openStages: { 'Opportunities': true, 'New': true, 'Talking': true, 'Waiting on an artist': true, 'Booked': true, 'Gone quiet': false, 'Not a fit': false },
 
@@ -137,11 +138,27 @@ function leadsPage() {
       return out;
     },
 
+    // Density: a section shows the first PAGE cards; the rest wait behind
+    // the section's "Show more". Keyed by stage name only — whatever
+    // categories the records carry, the cap behaves the same.
+    shownCount(stage) {
+      return this.shownCounts[stage] || 10;
+    },
+
+    moreCount(stage) {
+      return Math.max(0, this.stageCount(stage) - this.shownCount(stage));
+    },
+
+    showMore(stage) {
+      this.shownCounts[stage] = this.shownCount(stage) + 10;
+    },
+
     byStage(stage) {
       var self = this;
       return this.leads
         .filter(function(l) { return l._stage === stage && self.matchesArtist(l); })
-        .sort(function(a, b) { return (b._seen || '').localeCompare(a._seen || ''); });
+        .sort(function(a, b) { return (b._seen || '').localeCompare(a._seen || ''); })
+        .slice(0, this.shownCount(stage));
     },
 
     stageCount(stage) {

@@ -10,6 +10,7 @@ function contactsPage() {
     loadError: '',
     query: '',
     artistFilter: 'all',
+    visibleCount: 60,
     selectedKey: '',
     noteText: '',
     savingNote: false,
@@ -104,6 +105,22 @@ function contactsPage() {
     get selected() {
       var k = this.selectedKey;
       return this.contacts.find(function(c) { return c.key === k; }) || null;
+    },
+
+    // Density: the directory renders in pages behind "Show more" instead
+    // of every row at once.
+    get visible() {
+      return this.filtered.slice(0, this.visibleCount);
+    },
+
+    // The detail view shows where a person came in; records carry form
+    // slugs, which are not owner language. Prettify for display only —
+    // the record itself is untouched.
+    viaLabel(sf) {
+      if (!sf) return '';
+      if (sf === 'manual') return 'Added by hand';
+      var s = String(sf).replace(/-\d+$/, '').replace(/-/g, ' ');
+      return s.charAt(0).toUpperCase() + s.slice(1);
     },
 
     digits(s) { return (s || '').replace(/\D/g, ''); },

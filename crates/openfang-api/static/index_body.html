@@ -4853,9 +4853,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <div x-show="!loading && !error && leads.length > 0">
             <p class="leads-summary" x-text="summaryLine()"></p>
             <div class="artist-seg" role="group" aria-label="Filter leads by artist">
-              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'">All · <span x-text="artistCount('all')"></span></button>
-              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'">Shawn · <span x-text="artistCount('shawn')"></span></button>
-              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'">Leni · <span x-text="artistCount('leni')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'; shownCounts = {}">All · <span x-text="artistCount('all')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'; shownCounts = {}">Shawn · <span x-text="artistCount('shawn')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'; shownCounts = {}">Leni · <span x-text="artistCount('leni')"></span></button>
             </div>
             <template x-for="stage in stages" :key="stage">
               <section class="lead-stage">
@@ -4881,6 +4881,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                         <p class="lead-next" x-text="lead._next"></p>
                       </article>
                     </template>
+                    <button class="btn btn-ghost lead-more" x-show="moreCount(stage) > 0" @click="showMore(stage)">Show more · <span x-text="moreCount(stage)"></span> more</button>
                   </div>
                   <p class="lead-stage-empty" x-show="stageCount(stage) === 0">No leads here right now.</p>
                 </div>
@@ -4913,19 +4914,28 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <div class="card" x-show="showNew" style="margin-bottom:14px">
               <div style="font-weight:600;margin-bottom:10px">New contact</div>
               <div style="display:flex;flex-direction:column;gap:10px">
-                <input class="input" style="width:100%" placeholder="Name" x-model="newName">
-                <input class="input" style="width:100%" placeholder="Email" type="email" x-model="newEmail">
-                <input class="input" style="width:100%" placeholder="Phone" type="tel" x-model="newPhone">
+                <div>
+                  <label class="stax-field-label" for="nc-name">Name</label>
+                  <input id="nc-name" class="form-input" style="width:100%" placeholder="Name" x-model="newName">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-email">Email</label>
+                  <input id="nc-email" class="form-input" style="width:100%" placeholder="Email" type="email" x-model="newEmail">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-phone">Phone</label>
+                  <input id="nc-phone" class="form-input" style="width:100%" placeholder="Phone" type="tel" x-model="newPhone">
+                </div>
               </div>
               <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>
             </div>
 
             <div class="artist-seg" role="group" aria-label="Filter contacts by artist" x-show="!selected">
-              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'">All · <span x-text="artistCount('all')"></span></button>
-              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'">Shawn · <span x-text="artistCount('shawn')"></span></button>
-              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'">Leni · <span x-text="artistCount('leni')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'; visibleCount = 60">All · <span x-text="artistCount('all')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'; visibleCount = 60">Shawn · <span x-text="artistCount('shawn')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'; visibleCount = 60">Leni · <span x-text="artistCount('leni')"></span></button>
             </div>
-            <input class="input" style="width:100%;margin-bottom:14px" placeholder="Search name, email, or phone" x-model="query">
+            <input class="form-input" style="width:100%;margin-bottom:14px" placeholder="Search name, email, or phone" aria-label="Search contacts" x-model="query" @input="visibleCount = 60">
             <div x-show="filtered.length === 0" class="empty-state">
               <h4>No contacts here</h4>
               <p class="hint" x-show="artistFilter === 'all' && !query">People who send a form land here automatically. You can also add someone yourself.</p>
@@ -4933,18 +4943,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
 
             <div class="stax-brief-list" x-show="!selected">
-              <template x-for="c in filtered" :key="c.key">
+              <template x-for="c in visible" :key="c.key">
                 <button class="stax-brief-row" @click="selectedKey = c.key">
                   <span class="stax-side-avatar" x-text="initials(c.name)"></span>
-                  <span style="flex:1;min-width:0">
-                    <span style="display:block;font-weight:600;font-size:14px" x-text="c.name"></span>
-                    <span style="display:block" class="text-xs text-dim" x-text="c.email || c.phone"></span>
+                  <span style="flex:1;min-width:0;text-align:left">
+                    <span style="display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" x-text="c.name"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="text-xs text-dim" x-text="c.email || c.phone"></span>
                   </span>
                   <span class="text-xs text-dim" x-show="kindLabel(c)" x-text="kindLabel(c)"></span>
                   <span class="text-xs text-dim" x-show="subsOf(c).length" x-text="subsOf(c).length + ' form(s)'"></span>
                 </button>
               </template>
             </div>
+            <button class="btn btn-ghost" style="width:100%;margin-top:10px" x-show="!selected && filtered.length > visibleCount" @click="visibleCount += 60">Show more · <span x-text="filtered.length - visibleCount"></span> more</button>
 
             <div x-show="selected">
               <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px">&larr; All contacts</button>
@@ -4960,7 +4971,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <div class="text-sm" x-show="selected && selected.email">Email: <span x-text="selected ? selected.email : ''"></span></div>
                   <div class="text-sm" x-show="selected && selected.phone">Phone: <span x-text="selected ? selected.phone : ''"></span></div>
                   <div class="text-sm" x-show="selected && kindLabel(selected)">Kind: <span x-text="selected ? kindLabel(selected) : ''"></span></div>
-                  <div class="text-sm" x-show="selected && selected.source_form">Came in via: <span x-text="selected ? selected.source_form : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.source_form">Came in via: <span x-text="selected ? viaLabel(selected.source_form) : ''"></span></div>
                   <div class="text-sm" x-show="selected && selected.last_seen">Last seen: <span x-text="selected ? fmtDate(selected.last_seen) : ''"></span></div>
                 </div>
                 <div style="margin-top:16px">
@@ -4988,7 +4999,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                     </template>
                     <div x-show="selected && selected.notes.length === 0" class="text-sm text-dim">No notes yet.</div>
                   </div>
-                  <textarea class="input" style="width:100%" rows="3" placeholder="Add a note - healed well, prefers Leni, allergic to latex..." x-model="noteText"></textarea>
+                  <label class="stax-field-label" for="cn-note">Add a note</label>
+                  <textarea id="cn-note" class="form-textarea" style="width:100%" rows="3" placeholder="Healed well, prefers Leni, allergic to latex..." x-model="noteText"></textarea>
                   <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="addNote()" :disabled="savingNote">Save note</button>
                 </div>
               </div>
