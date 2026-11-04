@@ -175,7 +175,7 @@
                     </template>
                   </div>
                 </template>
-                <div x-show="comingUp.length === 0" class="text-sm text-dim">Nothing scheduled. Ask a helper to set something up and it will land here.</div>
+                <div x-show="comingUp.length === 0" class="text-sm text-dim">Nothing scheduled. Ask Stax to set something up and it will land here.</div>
                 <button class="btn btn-ghost btn-sm" style="margin-top:10px" @click="navigate('scheduler')">Open Scheduled</button>
               </div>
             </div>
@@ -4933,7 +4933,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <div x-show="done && profile" class="card">
             <div style="font-weight:700;font-size:15px;margin-bottom:6px">Your crew is set</div>
             <p class="text-sm text-dim" style="margin:0 0 6px">Business: <span x-text="profile ? bizLabel(profile.business) : ''"></span></p>
-            <p class="text-sm text-dim" style="margin:0 0 12px">See the "Your crew" board in the Studio tab for the full picture. Want it different? Just tell Stax in Chat — or run setup again.</p>
+            <p class="text-sm text-dim" style="margin:0 0 12px">The &ldquo;Your crew&rdquo; board in Boards has the full picture. Want it different? Just tell Stax — or run setup again.</p>
             <button class="btn btn-ghost btn-sm" @click="done = false; step = 0">Run setup again</button>
           </div>
 
@@ -5271,7 +5271,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
           <!-- Board list -->
           <div x-show="!loading && !loadError && !current">
-            <p class="text-sm text-dim" style="margin:2px 0 16px">Boards live here. Ask Stax — "make me a board for walk-ins" — and it shows up, kept current by your team.</p>
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Live dashboards your team keeps for you. Want a new one? Ask Stax in your conversation.</p>
             <div x-show="surfaces.length === 0" class="empty-state">
               <h4>No boards yet</h4>
               <p class="hint">Your shop's dashboards land here — try asking Stax for an SEO board.</p>
@@ -5291,7 +5291,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
               <button class="stax-chip" @click="current = null">&larr; All boards</button>
               <span style="font-size:17px;font-weight:700" x-text="currentSurface ? currentSurface.title : ''"></span>
-              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger,#e5534b)" @click="deleteSurface(current)">Delete board</button>
+              <span class="text-xs text-dim" style="margin-left:auto" x-text="currentSurface ? currentSurface.fresh : ''"></span>
             </div>
             <template x-for="(b, bi) in (currentSurface ? currentSurface.blocks : [])" :key="bi">
               <div style="margin-bottom:14px">
@@ -5339,7 +5339,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <div x-show="['heading','text','stats','list','kvlist'].indexOf(b.type) === -1" class="text-xs text-dim">A newer kind of block — update StaxCloud to view it.</div>
               </div>
             </template>
-            <p class="text-xs text-dim" style="margin-top:6px">Want changes? Ask Stax — boards are kept by your team, not by hand.</p>
+            <p class="text-xs text-dim" style="margin-top:6px">Want a change? Ask Stax.</p>
           </div>
         </div>
       </div>

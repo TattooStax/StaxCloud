@@ -1237,19 +1237,6 @@ function boardsPage() {
         else rows.push({ key: k, title: name || o.status, sub: name && typeof o.status === 'string' ? o.status.replace(/_/g, ' ') : '' });
       });
       return { rows: rows, count: bare ? bare + ' ' + (rows.length ? 'more ' : '') + noun + ' stored' : '', empty: 'No ' + noun + ' yet — new ' + noun + ' land here.' };
-    },
-
-    async deleteSurface(slug) {
-      var self = this;
-      OpenFangToast.confirm('Delete board', 'Remove this board from Studio? The record is deleted for good.', async function() {
-        try {
-          var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
-          await OpenFangAPI.del('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('surface/' + slug));
-          OpenFangToast.success('Board deleted');
-          self.current = null;
-          await self.loadData();
-        } catch(e) { OpenFangToast.error(e.message); }
-      });
     }
   };
 }
