@@ -52,17 +52,29 @@ import urllib.request, urllib.error, urllib.parse
 
 
 def daemon(key, method, path, body=None):
-    r = urllib.request.Request(PUBLIC + path, method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": "Bearer " + key,
-                 "Content-Type": "application/json",
-                 "User-Agent": "curl/8.5.0"})
+    # Transport is curl, not urllib: urllib through this VM's egress
+    # proxy cuts large chunked responses mid-stream (IncompleteRead on
+    # the 64 KB kv dump, verified 2026-11-04); curl pulls it cleanly.
+    args = ["curl", "-s", "-X", method,
+            "-H", "Authorization: Bearer " + key,
+            "-H", "Content-Type: application/json",
+            "-H", "User-Agent: curl/8.5.0",
+            "-w", "\n%{http_code}"]
+    if body is not None:
+        args += ["--data-binary", json.dumps(body)]
+    args.append(PUBLIC + path)
+    out = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    raw = out.stdout or ""
+    nl = raw.rfind("\n")
     try:
-        with urllib.request.urlopen(r, timeout=30) as resp:
-            raw = resp.read().decode()
-            return resp.status, (json.loads(raw) if raw else {})
-    except urllib.error.HTTPError as e:
-        return e.code, {}
+        code = int(raw[nl + 1:].strip())
+        payload = raw[:nl]
+    except Exception:
+        return 0, {}
+    try:
+        return code, (json.loads(payload) if payload.strip() else {})
+    except Exception:
+        return code, {}
 
 
 def kv_get(key, seg, k):
