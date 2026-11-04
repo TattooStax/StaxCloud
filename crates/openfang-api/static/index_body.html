@@ -28,6 +28,8 @@
 
     <!-- Inner tier: subtle, one tone -->
     <symbol id="g-inbox" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="19" width="36" height="26" rx="4"/><path d="M15.5 22.5 L32 35 L48.5 22.5"/></g></symbol>
+    <symbol id="g-team" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="15" width="27" height="20" rx="5"/><path d="M22 35 V43 L31 35"/><path d="M40 22 H45.5 A4.5 4.5 0 0 1 50 26.5 V37 A4.5 4.5 0 0 1 45.5 41.5 H43"/></g></symbol>
+    <symbol id="g-mail" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="18" width="40" height="28" rx="4"/><path d="M14.5 21.5 L32 35.5 L49.5 21.5"/></g></symbol>
     <symbol id="g-forms" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="18" y="16" width="28" height="34" rx="4"/><rect x="26" y="12" width="12" height="8" rx="2.5" fill="currentColor"/><path d="M24 28 H40 M24 34 H40 M24 40 H34"/></g></symbol>
     <symbol id="g-library" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 22 C18 18 24 15 32 15 C40 15 46 18 46 22 V43 C46 47 40 50 32 50 C24 50 18 47 18 43 Z"/><path d="M18 22 C18 26 24 29 32 29 C40 29 46 26 46 22"/><path d="M18 33 C18 37 24 40 32 40 C40 40 46 37 46 33"/></g></symbol>
     <symbol id="g-contacts" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="25" cy="25" r="6" fill="currentColor"/><path d="M14 47 C14 39.5 19 35 25 35 C31 35 36 39.5 36 47"/><circle cx="41.5" cy="27" r="5" fill="currentColor"/><path d="M38 36.5 C43 36.5 47.5 40 48.5 45.5"/></g></symbol>
@@ -5520,6 +5522,154 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
+    <!-- Page: Team (Channels module) -->
+    <template x-if="page === 'team'">
+      <div x-data="teamPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Team</h2>
+          <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh team channel">Refresh</button>
+        </div>
+        <div class="page-body">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px" role="list" aria-label="Team members">
+            <template x-for="p in people" :key="p.name">
+              <span style="display:inline-flex;align-items:center;gap:8px" role="listitem">
+                <span class="stax-side-avatar" aria-hidden="true">
+                  <svg x-show="p.name === 'Stax'" style="width:20px;height:20px"><use href="#stax-reaper"/></svg>
+                  <span x-show="p.name !== 'Stax'" x-text="initials(p.name)"></span>
+                </span>
+                <span><span style="display:block;font-weight:600;font-size:14px" x-text="p.name"></span><span style="display:block" class="text-xs text-dim" x-text="p.role"></span></span>
+              </span>
+            </template>
+          </div>
+
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading the team channel...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load the team channel</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError">
+            <div x-show="messages.length === 0" class="empty-state">
+              <h4>No team messages yet</h4>
+              <p class="hint">The first note posted here starts the channel.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px" aria-live="polite">
+              <template x-for="m in messages" :key="m.key">
+                <div :style="isOwn(m) ? 'align-self:flex-end;background:var(--user-bubble, #e6f2f0)' : 'align-self:flex-start;background:var(--surface)'" style="max-width:82%;border:1px solid var(--border);border-radius:14px;padding:9px 13px">
+                  <div style="display:flex;gap:8px;align-items:baseline">
+                    <span style="font-weight:700;font-size:13px" x-text="m.author"></span>
+                    <span class="text-xs text-dim" x-text="fmtTs(m.ts)"></span>
+                  </div>
+                  <div class="text-sm" style="white-space:pre-wrap;word-break:break-word;margin-top:2px" x-text="m.body"></div>
+                </div>
+              </template>
+            </div>
+            <div style="margin-top:16px">
+              <label class="text-xs text-dim" for="team-compose">Message the team</label>
+              <textarea id="team-compose" class="input" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
+              <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="post()" :disabled="posting || !draft.trim()" aria-label="Post message to the team">Post</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Email (Channels module) -->
+    <template x-if="page === 'email'">
+      <div x-data="emailPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Email</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh mail">Refresh</button>
+            <button class="btn btn-primary btn-sm" style="min-height:44px" @click="startCompose()" aria-label="Write a new email">New email</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <p class="text-xs text-dim" style="margin-bottom:12px" x-show="status">
+            <span x-text="status ? status.address : ''"></span>
+            <span x-show="status && status.last_run"> · checked <span x-text="fmtTs(status.last_run)"></span></span>
+            <span x-show="unreadCount"> · <span x-text="unreadCount"></span> unread</span>
+          </p>
+
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading mail...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load mail</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError && !composing && !selected">
+            <div x-show="mails.length === 0" class="empty-state">
+              <h4>No mail yet</h4>
+              <p class="hint">Mail to support@staxcloud.ai lands here.</p>
+            </div>
+            <div class="stax-brief-list">
+              <template x-for="m in mails" :key="m.key">
+                <button class="stax-brief-row" @click="selectedKey = m.key" :aria-label="'Open email from ' + (m.from_name || m.from) + ': ' + m.subject">
+                  <span class="stax-side-avatar" x-text="(m.from_name || m.from || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
+                  <span style="flex:1;min-width:0;text-align:left">
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" :style="m.unread ? 'font-weight:700;font-size:14px' : 'font-weight:600;font-size:14px'" x-text="m.from_name || m.from"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" :style="m.unread ? 'font-weight:600' : ''" class="text-xs" x-text="m.subject"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="text-xs text-dim" x-text="m.snippet"></span>
+                  </span>
+                  <span x-show="m.unread" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent)" role="img" aria-label="Unread"></span>
+                  <span class="text-xs text-dim" x-text="fmtTs(m.ts)"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <div x-show="!loading && !loadError && selected && !composing">
+            <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px;min-height:44px">&larr; All mail</button>
+            <div class="card" x-show="selected">
+              <div style="font-weight:700;font-size:16px" x-text="selected ? selected.subject : ''"></div>
+              <div class="text-xs text-dim" style="margin-top:4px">
+                From <span x-text="selected ? (selected.from_name ? selected.from_name + ' <' + selected.from + '>' : selected.from) : ''"></span>
+                · <span x-text="selected ? fmtTs(selected.ts) : ''"></span>
+              </div>
+              <div class="text-sm" style="white-space:pre-wrap;word-break:break-word;margin-top:14px;line-height:1.55" x-text="selected ? selected.text : ''"></div>
+              <button class="btn btn-primary" style="margin-top:14px;min-height:44px" @click="startReply()">Reply</button>
+            </div>
+          </div>
+
+          <div x-show="!loading && !loadError && composing">
+            <button class="btn btn-ghost btn-sm" @click="cancelCompose()" style="margin-bottom:10px;min-height:44px">&larr; Back</button>
+            <div class="card">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div>
+                  <label class="text-xs text-dim" for="email-to">To</label>
+                  <input id="email-to" class="input" style="width:100%;margin-top:4px;min-height:44px" type="email" autocomplete="off" placeholder="name@example.com" x-model="to">
+                </div>
+                <div>
+                  <label class="text-xs text-dim" for="email-subject">Subject</label>
+                  <input id="email-subject" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" x-model="subject">
+                </div>
+                <div>
+                  <label class="text-xs text-dim" for="email-body">Message</label>
+                  <textarea id="email-body" class="input" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <button class="btn btn-primary" style="min-height:44px" @click="holdSend()" :disabled="holding || !to.trim() || !body.trim()" aria-label="Hold this email for approval">Hold for approval</button>
+                  <span class="text-xs text-dim">It waits in Needs you; nothing sends until you approve it there.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div x-show="!loading && !loadError && outbox.length" style="margin-top:16px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px">Outbox</div>
+            <template x-for="o in outbox" :key="o.key">
+              <div class="text-sm" style="display:flex;gap:8px;align-items:baseline">
+                <span class="badge" :class="o.status === 'sent' ? 'badge-success' : (o.status === 'failed' || o.status === 'refused' ? 'badge-dim' : 'badge-warn')" style="font-size:10px" x-text="o.status"></span>
+                <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" x-text="o.subject + ' — ' + o.to"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- Page: Comms -->
     <template x-if="page === 'comms'">
       <div x-data="commsPage" x-init="loadData()" @page-leave.window="stopSSE()">
@@ -6289,6 +6439,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
         </button>
         <div class="sd-sec-rows" id="sd-sec-channels" x-show="open.channels">
           <button class="sd-row" :class="{ 'is-here': page === 'sms' }" :aria-current="page === 'sms' ? 'page' : false" @click="$store.app.smsTab = 'inbox'; navigate('sms')"><svg class="sd-ico" aria-hidden="true"><use href="#g-inbox"/></svg><span>Inbox</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'team' }" :aria-current="page === 'team' ? 'page' : false" @click="navigate('team')"><svg class="sd-ico" aria-hidden="true"><use href="#g-team"/></svg><span>Team</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'email' }" :aria-current="page === 'email' ? 'page' : false" @click="navigate('email')"><svg class="sd-ico" aria-hidden="true"><use href="#g-mail"/></svg><span>Email</span></button>
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-studio)">
