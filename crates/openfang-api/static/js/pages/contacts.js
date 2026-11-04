@@ -9,6 +9,7 @@ function contactsPage() {
     loading: true,
     loadError: '',
     query: '',
+    artistFilter: 'all',
     selectedKey: '',
     noteText: '',
     savingNote: false,
@@ -39,6 +40,8 @@ function contactsPage() {
               email: v.email || '',
               phone: v.phone || '',
               entity_id: v.entity_id || '',
+              artist: v.artist || '',
+              artists: Array.isArray(v.artists) ? v.artists : [],
               source_form: v.source_form || v.source || '',
               first_seen: v.first_seen || v.date || '',
               last_seen: v.last_seen || '',
@@ -60,10 +63,28 @@ function contactsPage() {
       this.loading = false;
     },
 
-    get filtered() {
-      var q = (this.query || '').trim().toLowerCase();
-      if (!q) return this.contacts;
+    matchesArtist(c) {
+      if (this.artistFilter === 'all') return true;
+      var set = Array.isArray(c.artists) ? c.artists.slice() : [];
+      if (c.artist && set.indexOf(c.artist) < 0) set.push(c.artist);
+      return set.indexOf(this.artistFilter) >= 0;
+    },
+
+    artistCount(a) {
+      if (a === 'all') return this.contacts.length;
       return this.contacts.filter(function(c) {
+        var set = Array.isArray(c.artists) ? c.artists.slice() : [];
+        if (c.artist && set.indexOf(c.artist) < 0) set.push(c.artist);
+        return set.indexOf(a) >= 0;
+      }).length;
+    },
+
+    get filtered() {
+      var self = this;
+      var list = this.contacts.filter(function(c) { return self.matchesArtist(c); });
+      var q = (this.query || '').trim().toLowerCase();
+      if (!q) return list;
+      return list.filter(function(c) {
         return c.name.toLowerCase().indexOf(q) >= 0 || c.email.toLowerCase().indexOf(q) >= 0 || c.phone.indexOf(q) >= 0;
       });
     },

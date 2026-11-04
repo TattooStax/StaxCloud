@@ -4831,6 +4831,66 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
+    <!-- Page: Leads (pipeline) -->
+    <template x-if="page === 'leads'">
+      <div x-data="leadsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Leads</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading leads...</div>
+          <div x-show="!loading && error" class="error-state">
+            <h3 style="color:var(--error)">Could not load leads</h3>
+            <p class="text-xs text-dim" x-text="error"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+          <div x-show="!loading && !error && leads.length === 0" class="empty-state">
+            <p>No leads yet. New inquiries and form replies land here.</p>
+          </div>
+          <div x-show="!loading && !error && leads.length > 0">
+            <p class="leads-summary" x-text="summaryLine()"></p>
+            <div class="artist-seg" role="group" aria-label="Filter leads by artist">
+              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'">All · <span x-text="artistCount('all')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'">Shawn · <span x-text="artistCount('shawn')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'">Leni · <span x-text="artistCount('leni')"></span></button>
+            </div>
+            <template x-for="stage in stages" :key="stage">
+              <section class="lead-stage">
+                <button class="lead-stage-head" :aria-expanded="openStages[stage]" @click="openStages[stage] = !openStages[stage]">
+                  <span x-text="stage"></span>
+                  <span class="lead-stage-count" x-text="stageCount(stage)"></span>
+                  <svg class="lead-stage-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+                </button>
+                <div x-show="openStages[stage]">
+                  <div class="lead-list" x-show="stageCount(stage) > 0">
+                    <template x-for="lead in byStage(stage)" :key="lead._key">
+                      <article class="lead-card">
+                        <div class="lead-card-top">
+                          <span class="lead-name" x-text="lead.name"></span>
+                          <span class="lead-temp" :data-temp="lead._temp" x-text="lead._temp"></span>
+                        </div>
+                        <p class="lead-idea" x-show="lead._idea" x-text="'&ldquo;' + lead._idea + '&rdquo;'"></p>
+                        <div class="lead-meta">
+                          <span x-text="lead._artistLabel"></span>
+                          <span aria-hidden="true">·</span>
+                          <span>Last contact <span x-text="lead._lastLabel"></span></span>
+                        </div>
+                        <p class="lead-next" x-text="lead._next"></p>
+                      </article>
+                    </template>
+                  </div>
+                  <p class="lead-stage-empty" x-show="stageCount(stage) === 0">No leads here right now.</p>
+                </div>
+              </section>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- Page: Contacts (R8) -->
     <template x-if="page === 'contacts'">
       <div x-data="contactsPage" x-init="loadData()">
@@ -4860,10 +4920,16 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>
             </div>
 
+            <div class="artist-seg" role="group" aria-label="Filter contacts by artist" x-show="!selected">
+              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'">All · <span x-text="artistCount('all')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'">Shawn · <span x-text="artistCount('shawn')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'">Leni · <span x-text="artistCount('leni')"></span></button>
+            </div>
             <input class="input" style="width:100%;margin-bottom:14px" placeholder="Search name, email, or phone" x-model="query">
             <div x-show="filtered.length === 0" class="empty-state">
-              <h4>No contacts yet</h4>
-              <p class="hint">People who send a form land here automatically. You can also add someone yourself.</p>
+              <h4>No contacts here</h4>
+              <p class="hint" x-show="artistFilter === 'all' && !query">People who send a form land here automatically. You can also add someone yourself.</p>
+              <p class="hint" x-show="artistFilter !== 'all' || query">No one matches this filter. Try All, or clear the search.</p>
             </div>
 
             <div class="stax-brief-list" x-show="!selected">

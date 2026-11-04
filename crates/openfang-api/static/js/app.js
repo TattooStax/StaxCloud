@@ -424,8 +424,8 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { chat: 'home', sms: 'texts', approvals: 'work', contacts: 'leads', boards: 'boards', forms: 'studio', library: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
-    surfaceHome: { home: 'chat', work: 'approvals', boards: 'boards', leads: 'contacts', system: 'settings', advanced: 'advanced' },
+    surfaceOf: { chat: 'home', sms: 'texts', approvals: 'work', leads: 'leads', contacts: 'studio', boards: 'boards', forms: 'studio', library: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
+    surfaceHome: { home: 'chat', work: 'approvals', boards: 'boards', leads: 'leads', system: 'settings', advanced: 'advanced' },
     // Pages demoted to System > Advanced. Their page keys are unchanged;
     // only their URL hash carries an advanced/ prefix, so a stale bare
     // bookmark (#agents, #scheduler, ...) lands on home instead.
