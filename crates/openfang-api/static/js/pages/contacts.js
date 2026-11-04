@@ -54,7 +54,7 @@ function contactsPage() {
               raw: v
             });
           } else if (pr.key.indexOf('formsub/') === 0) {
-            subs.push({ key: pr.key, form: v.form || '', ts: v.ts || '', data: v.data || {}, processed: !!v.processed });
+            subs.push({ key: pr.key, form: v.form || '', ts: v.ts || '', data: v.data || {}, processed: !!v.processed, contact: v.contact || '' });
           }
         });
         contacts.sort(function(a, b) { return a.name.localeCompare(b.name); });
@@ -144,6 +144,12 @@ function contactsPage() {
       var email = (c.email || '').toLowerCase();
       var phone = this.digits(c.phone);
       return this.subs.filter(function(s) {
+        // Submissions name their contact directly (contact/<key>) —
+        // the answers themselves are keyed by field id, so the
+        // semantic email/phone match below can only ever be a
+        // fallback for records written without the pointer.
+        if (s.contact && c.key && s.contact === c.key) return true;
+        if (s.contact && email && s.contact.toLowerCase() === 'contact/' + email) return true;
         var e = (s.data.email || '').toLowerCase();
         var p = self.digits(s.data.phone);
         return (email && e === email) || (phone && p && p === phone);
