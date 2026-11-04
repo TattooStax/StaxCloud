@@ -18,6 +18,7 @@
   --text: #1b1a17;
   --text-secondary: #3f3c36;
   --text-dim: #55524b;
+  --people-sub: #66625a;
   --text-muted: #8a867c;
 
   /* Brand — Orange accent */
@@ -113,6 +114,7 @@
   --text: #e8e4dc;
   --text-secondary: #cac5ba;
   --text-dim: #9a9aa0;
+  --people-sub: #8f8c86;
   --text-muted: #6f6f76;
   --text-on-accent: #FFFFFF;
   --accent: #5cbcae;

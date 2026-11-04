@@ -1,5 +1,10 @@
 /* OpenFang Components — Premium design system */
 
+/* Base control safety (V4 adoption A): a control whose component class
+   is ever lost falls back to the surface, never to a native white box. */
+button, input, select, textarea { font: inherit; }
+button { background: none; border: none; color: inherit; cursor: pointer; }
+
 /* Buttons */
 .btn {
   min-height: 44px;

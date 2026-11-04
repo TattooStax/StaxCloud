@@ -571,6 +571,30 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .stax-brief-row:active { background: color-mix(in srgb, var(--text) 9%, transparent); }
 .stax-brief-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .stax-side-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface3); color: var(--text-dim); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; }
+
+/* People directory (V4 adoption B/E/G/H): one row grammar for the
+   Contacts directory — full-width hairline rows on the surface, no
+   card, no avatar in the row (the avatar lives in the detail header),
+   a forms-count pill as the only trailing meta. */
+.people-list { background: var(--surface); border: 0; border-radius: 0; overflow: hidden; }
+.people-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 57px; padding: 10px 12px; background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.people-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.people-row:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.people-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.people-copy { flex: 1; min-width: 0; }
+.people-name { display: block; font-size: 13px; font-weight: 600; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.people-sub { display: block; font-size: 11px; line-height: 1.5; color: var(--people-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.people-meta { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); font-size: 11px; font-weight: 600; }
+.list-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.list-search { flex: 1; min-width: 0; min-height: 44px; padding: 9px 12px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; }
+.list-search:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); outline: none; }
+.people-state { padding: 20px; color: var(--text-dim); font-size: 13px; }
+.people-empty { text-align: center; padding: 40px 20px; }
+.people-empty h4 { margin: 0 0 6px; font-size: 15px; }
+.people-empty .hint { color: var(--text-dim); font-size: 11px; margin: 0; }
+.people-error { margin: 10px 12px; padding: 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); background: color-mix(in srgb, var(--error) 6%, transparent); }
+.people-error-msg { font-size: 12px; font-weight: 700; color: var(--error); margin: 0; }
+.people-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--text-on-accent); font-size: 20px; font-weight: 700; }
 .stax-field-label { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
 /* Attach menu: the composer's "+" listing — the same labeled
    destinations everywhere the composer appears (Home, Canvas):
