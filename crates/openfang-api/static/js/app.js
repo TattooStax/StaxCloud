@@ -1307,7 +1307,16 @@ function boardsPage() {
       return a ? a.name : id;
     },
     cvFirstName(id) { return this.cvArtistName(id).split(' ')[0]; },
-    cvPlainErr(e) { return String(e || '').replace(/^[A-Za-z]*Error:\s*/, ''); },
+    cvPlainErr(e) {
+      var raw = String(e || '').replace(/^[A-Za-z]*Error:\s*/, '');
+      // Technical failures (imports, file paths, module names) are
+      // machinery, not owner language: show the plain version and
+      // keep the detail on the job record where it belongs.
+      if (/(\/[\w.-]+)+\//.test(raw) || /import|module|traceback/i.test(raw)) {
+        return 'This design did not finish \u2014 the design tools hit a snag. You can try again.';
+      }
+      return raw;
+    },
     cvCards() {
       var self = this;
       var designs = this.cvRecs('design/', true);

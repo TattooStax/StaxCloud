@@ -5367,7 +5367,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                     <template x-for="card in cvCards()" :key="card.id">
                       <div class="card" style="padding:0;overflow:hidden">
                         <button @click="cv.open[card.id] = !cv.open[card.id]" :aria-expanded="!!cv.open[card.id]" style="display:block;width:100%;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit">
-                          <img x-show="card.sel && card.sel.v.preview_b64" :src="card.sel && card.sel.v.preview_b64 ? 'data:' + (card.sel.v.preview_mime || 'image/jpeg') + ';base64,' + card.sel.v.preview_b64 : ''" :alt="card.brief" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#fff">
+                          <img x-show="card.sel && card.sel.v.preview_b64" :src="card.sel && card.sel.v.preview_b64 ? 'data:' + (card.sel.v.preview_mime || 'image/jpeg') + ';base64,' + card.sel.v.preview_b64 : ''" :alt="card.brief" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff">
                           <span style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px">
                             <span style="min-width:0">
                               <span class="text-sm" style="font-weight:600;display:block" x-text="card.brief"></span>
