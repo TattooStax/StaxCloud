@@ -56,7 +56,14 @@ function approvalsPage() {
     },
 
     get decidedList() {
-      return this.dedupe(this.approvals.filter(function(a) { return a.status !== 'pending'; }));
+      // An item still live in Needs you is not also Finished: its
+      // expired earlier carries are the same item, superseded.
+      var live = {};
+      this.pendingList.forEach(function(a) { live[this.fingerprint(a)] = true; }, this);
+      var rest = this.approvals.filter(function(a) {
+        return a.status !== 'pending' && !live[this.fingerprint(a)];
+      }, this);
+      return this.dedupe(rest);
     },
 
     // What would actually happen, in plain lines: the summary when it
