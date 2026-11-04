@@ -2225,18 +2225,31 @@ impl OpenFangKernel {
                 .flatten()
                 .and_then(|v| v.as_str().map(String::from));
 
-            let peer_agents: Vec<(String, String, String)> = self
-                .registry
-                .list()
-                .iter()
-                .map(|a| {
-                    (
-                        a.name.clone(),
-                        format!("{:?}", a.state),
-                        a.manifest.model.model.clone(),
-                    )
-                })
-                .collect();
+            // Consult 9 wiring exception: for the owner-facing role the
+            // registry is never listed — the roster cannot leak into the
+            // prompt if it is never loaded. prompt_builder suppresses the
+            // section for this role as well; this keeps the data out
+            // entirely.
+            let owner_facing = manifest
+                .metadata
+                .get("owner_facing")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let peer_agents: Vec<(String, String, String)> = if owner_facing {
+                Vec::new()
+            } else {
+                self.registry
+                    .list()
+                    .iter()
+                    .map(|a| {
+                        (
+                            a.name.clone(),
+                            format!("{:?}", a.state),
+                            a.manifest.model.model.clone(),
+                        )
+                    })
+                    .collect()
+            };
 
             let prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
                 agent_name: manifest.name.clone(),
@@ -2279,6 +2292,7 @@ impl OpenFangKernel {
                     .get("is_subagent")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false),
+                owner_facing,
                 is_autonomous: manifest.autonomous.is_some(),
                 agents_md: manifest
                     .state_dir
@@ -2808,18 +2822,31 @@ impl OpenFangKernel {
                 .flatten()
                 .and_then(|v| v.as_str().map(String::from));
 
-            let peer_agents: Vec<(String, String, String)> = self
-                .registry
-                .list()
-                .iter()
-                .map(|a| {
-                    (
-                        a.name.clone(),
-                        format!("{:?}", a.state),
-                        a.manifest.model.model.clone(),
-                    )
-                })
-                .collect();
+            // Consult 9 wiring exception: for the owner-facing role the
+            // registry is never listed — the roster cannot leak into the
+            // prompt if it is never loaded. prompt_builder suppresses the
+            // section for this role as well; this keeps the data out
+            // entirely.
+            let owner_facing = manifest
+                .metadata
+                .get("owner_facing")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let peer_agents: Vec<(String, String, String)> = if owner_facing {
+                Vec::new()
+            } else {
+                self.registry
+                    .list()
+                    .iter()
+                    .map(|a| {
+                        (
+                            a.name.clone(),
+                            format!("{:?}", a.state),
+                            a.manifest.model.model.clone(),
+                        )
+                    })
+                    .collect()
+            };
 
             let prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
                 agent_name: manifest.name.clone(),
@@ -2862,6 +2889,7 @@ impl OpenFangKernel {
                     .get("is_subagent")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false),
+                owner_facing,
                 is_autonomous: manifest.autonomous.is_some(),
                 agents_md: manifest
                     .state_dir
@@ -3936,6 +3964,11 @@ impl OpenFangKernel {
             manifest
                 .metadata
                 .insert("vision".to_string(), serde_json::Value::Bool(true));
+        }
+        if def.agent.owner_facing {
+            manifest
+                .metadata
+                .insert("owner_facing".to_string(), serde_json::Value::Bool(true));
         }
 
         // Inject skill content into system prompt

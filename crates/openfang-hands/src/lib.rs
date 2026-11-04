@@ -302,6 +302,13 @@ pub struct HandAgentConfig {
     /// this is true AND the model supports vision. Default off.
     #[serde(default)]
     pub vision: bool,
+    /// Explicit opt-in: this hand is the owner-facing lead — the one agent
+    /// the owner talks to. At prompt assembly the kernel withholds the peer
+    /// roster (and never fetches the registry for this role) so no agent
+    /// counts, states, or model slugs can reach its prompt. Named wiring
+    /// exception: Director Consult 9 (2026-11-04), audit F-2. Default off.
+    #[serde(default)]
+    pub owner_facing: bool,
 }
 
 fn default_module() -> String {

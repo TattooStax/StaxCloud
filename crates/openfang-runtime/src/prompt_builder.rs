@@ -55,6 +55,14 @@ pub struct PromptContext {
     pub heartbeat_md: Option<String>,
     /// Peer agents visible to this agent: (name, state, model).
     pub peer_agents: Vec<(String, String, String)>,
+    /// Owner-facing role (the lead the owner talks to). When true, the
+    /// peer roster section is suppressed entirely: agent counts, states,
+    /// and model slugs are machinery that must never enter this agent's
+    /// prompt. Named wiring exception: Director Consult 9 (2026-11-04),
+    /// audit F-2. The kernel also skips the registry fetch for this role,
+    /// so `peer_agents` is normally empty — this gate is the choke point
+    /// that holds even if a caller populates the list anyway.
+    pub owner_facing: bool,
     /// Current date/time string for temporal awareness.
     pub current_date: Option<String>,
     /// Sender identity (e.g. WhatsApp phone number, Telegram user ID).
@@ -168,9 +176,14 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
         }
     }
 
-    // Section 9.5 — Peer Agent Awareness (skip for subagents)
+    // Section 9.5 — Peer Agent Awareness (skip for subagents, and for the
+    // owner-facing role per the Consult 9 wiring exception)
     if !ctx.is_subagent && !ctx.peer_agents.is_empty() {
-        sections.push(build_peer_agents_section(&ctx.agent_name, &ctx.peer_agents));
+        let peer_section =
+            build_peer_agents_section(&ctx.agent_name, &ctx.peer_agents, ctx.owner_facing);
+        if !peer_section.is_empty() {
+            sections.push(peer_section);
+        }
     }
 
     // Section 10 — Safety & Oversight (skip for subagents)
@@ -461,7 +474,17 @@ fn build_sender_section(sender_name: Option<&str>, sender_id: Option<&str>) -> O
     }
 }
 
-fn build_peer_agents_section(self_name: &str, peers: &[(String, String, String)]) -> String {
+fn build_peer_agents_section(
+    self_name: &str,
+    peers: &[(String, String, String)],
+    owner_facing: bool,
+) -> String {
+    // Consult 9 wiring exception: the owner-facing lead never receives the
+    // roster — no section, no agent_send/agent_list advertisement. This is
+    // the shared choke point both kernel turn sites assemble through.
+    if owner_facing {
+        return String::new();
+    }
     let mut out = String::from(
         "## Peer Agents\n\
          You are part of a multi-agent system. These agents are running alongside you:\n",
@@ -727,6 +750,33 @@ mod tests {
         assert!(prompt.contains("## Your Tools"));
         assert!(prompt.contains("## Operational Guidelines"));
         assert!(prompt.contains("## Memory"));
+    }
+
+    // Consult 9 (audit F-2) regression: the owner-facing role's assembled
+    // prompt must contain no peer roster and no model slug, even when the
+    // caller populated the peer list. A non-owner-facing prompt built from
+    // the same context must still carry the section verbatim — the
+    // exception is role-scoped, never global.
+    #[test]
+    fn test_owner_facing_prompt_omits_peer_roster_and_model_slug() {
+        let slug = "meta-llama/llama-3.3-70b-instruct";
+        let mut ctx = basic_ctx();
+        ctx.peer_agents = vec![
+            ("stax".to_string(), "Running".to_string(), slug.to_string()),
+            ("forms".to_string(), "Running".to_string(), slug.to_string()),
+        ];
+
+        let control = build_system_prompt(&ctx);
+        assert!(control.contains("## Peer Agents"));
+        assert!(control.contains(slug));
+
+        ctx.owner_facing = true;
+        let prompt = build_system_prompt(&ctx);
+        assert!(!prompt.contains("## Peer Agents"));
+        assert!(!prompt.contains(slug));
+        assert!(!prompt.contains("agent_send"));
+        // The agent's own name and role stay — only machinery is withheld.
+        assert!(prompt.contains("You are Researcher"));
     }
 
     #[test]
