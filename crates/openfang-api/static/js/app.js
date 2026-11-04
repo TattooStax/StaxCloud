@@ -259,13 +259,17 @@ document.addEventListener('alpine:init', function() {
 
     // What a pending approval is *about*, stable across the
     // re-holds that re-mint its approval id: agent + tool + the
-    // approval's own arguments. The toast de-dupes on this, so one
-    // waiting item notifies once no matter how often its hold is
-    // re-carried under a fresh id.
+    // approval's description/summary + its arguments. The drafts
+    // phase builds the description from the held draft record
+    // itself (recipient + text for a reply draft), so a re-carry
+    // under a fresh approval id reproduces the identical key. The
+    // toast de-dupes on this, so one waiting item notifies once no
+    // matter how often its hold is re-carried.
     approvalItemKey(a) {
       var about = '';
       try { about = JSON.stringify(a.args || a.payload || a.details || ''); } catch(e) { about = ''; }
-      return (a.agent_id || '') + '|' + (a.tool_name || a.tool || '') + '|' + about;
+      return (a.agent_id || '') + '|' + (a.tool_name || a.tool || '') + '|' +
+        (a.description || '') + '|' + (a.action_summary || '') + '|' + about;
     },
 
     async refreshApprovals() {
@@ -278,17 +282,35 @@ document.addEventListener('alpine:init', function() {
           .sort()
           .join(',');
         var notified = this.notifiedApprovals || {};
-        var nowKeys = {};
+        var now = Date.now();
         var fresh = 0;
         for (var i = 0; i < pending.length; i++) {
           var key = this.approvalItemKey(pending[i]);
-          nowKeys[key] = true;
           if (!notified[key]) fresh++;
+          notified[key] = now;
+        }
+        // Fingerprints are RETAINED while an item is out of the
+        // pending set: an approval that expires is re-carried by the
+        // drafts phase under a fresh id with an identical payload,
+        // and forgetting the fingerprint at that expiry gap would
+        // re-fire the toast for the same waiting item every cycle.
+        // Entries age out after a day, so a genuinely new identical
+        // item a day later still announces; the map is capped so a
+        // long session cannot grow it without bound.
+        var cutoff = now - 24 * 60 * 60 * 1000;
+        var keys = Object.keys(notified);
+        for (var j = 0; j < keys.length; j++) {
+          if (!(notified[keys[j]] >= cutoff)) delete notified[keys[j]];
+        }
+        keys = Object.keys(notified);
+        if (keys.length > 200) {
+          keys.sort(function(x, y) { return notified[x] - notified[y]; });
+          for (var k = 0; k < keys.length - 200; k++) delete notified[keys[k]];
         }
         // Record the notify state BEFORE anything else runs, so a
         // failure further down can never re-arm a toast for an item
         // that already announced itself.
-        this.notifiedApprovals = nowKeys;
+        this.notifiedApprovals = notified;
         this.pendingApprovalCount = pending.length;
         this.pendingApprovals = pending;
         this.lastPendingApprovalSignature = signature;
