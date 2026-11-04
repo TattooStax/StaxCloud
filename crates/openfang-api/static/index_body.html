@@ -5556,12 +5556,14 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
             <div style="display:flex;flex-direction:column;gap:10px" aria-live="polite">
               <template x-for="m in messages" :key="m.key">
-                <div :style="isOwn(m) ? 'align-self:flex-end;background:var(--user-bubble, #e6f2f0)' : 'align-self:flex-start;background:var(--surface)'" style="max-width:82%;border:1px solid var(--border);border-radius:14px;padding:9px 13px">
-                  <div style="display:flex;gap:8px;align-items:baseline">
+                <div :style="isOwn(m) ? 'align-self:flex-end' : 'align-self:flex-start'" style="max-width:82%">
+                  <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:3px" :style="isOwn(m) ? 'flex-direction:row-reverse' : ''">
                     <span style="font-weight:700;font-size:13px" x-text="m.author"></span>
                     <span class="text-xs text-dim" x-text="fmtTs(m.ts)"></span>
                   </div>
-                  <div class="text-sm" style="white-space:pre-wrap;word-break:break-word;margin-top:2px" x-text="m.body"></div>
+                  <div :style="isOwn(m) ? 'background:var(--accent);color:#fff' : 'background:var(--surface-2)'" style="border-radius:14px;padding:9px 13px">
+                    <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
+                  </div>
                 </div>
               </template>
             </div>
