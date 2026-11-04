@@ -600,6 +600,6 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
    chat — here the last few turns ride with the bench) */
 .cv-thread { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .cv-msg { max-width: 94%; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); }
-.cv-msg--you { align-self: flex-end; border: 1px solid var(--border); border-right: 3px solid var(--accent); }
+.cv-msg--you { align-self: flex-end; border: 1px solid var(--border); }
 .cv-msg-who { display: block; font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 2px; }
 .cv-msg-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; line-height: 1.45; }
