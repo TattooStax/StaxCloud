@@ -39,6 +39,9 @@ function contactsPage() {
               name: v.name || '(no name)',
               email: v.email || '',
               phone: v.phone || '',
+              kind: v.kind || '',
+              stage: v.stage || '',
+              client_state: v.client_state || '',
               entity_id: v.entity_id || '',
               artist: v.artist || '',
               artists: Array.isArray(v.artists) ? v.artists : [],
@@ -68,6 +71,15 @@ function contactsPage() {
       var set = Array.isArray(c.artists) ? c.artists.slice() : [];
       if (c.artist && set.indexOf(c.artist) < 0) set.push(c.artist);
       return set.indexOf(this.artistFilter) >= 0;
+    },
+
+    // A person's kind, with their stage (leads) or state (clients)
+    // after it: "Client · Lapsed client", "Lead · Talking". Records
+    // born in Fang carry no kind yet and show nothing.
+    kindLabel(c) {
+      if (!c || !c.kind) return '';
+      var s = c.kind === 'Lead' ? c.stage : (c.kind === 'Client' ? c.client_state : '');
+      return (s && s !== c.kind) ? c.kind + ' · ' + s : c.kind;
     },
 
     artistCount(a) {

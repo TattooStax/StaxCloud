@@ -1,14 +1,16 @@
 // Leads page — the pipeline surface (Verdict 4 §2).
-// Reads contact records from the shared cabinet and groups them by stage.
-// Stage and temperature are record fields, set deterministically by the
-// import translator or by the sweeps; this page only presents them.
-// Temperatures: Ready · Interested · Just looking. Stages: New · Talking ·
-// Waiting on an artist · Booked · Resting. (Not a fit is a quiet terminal
-// record state and is never shown as a column.)
+// Reads contact records from the shared cabinet. A person's kind
+// (Client · Lead · Contact-only) is separate from their stage: Leads
+// lists the people whose kind is Lead, grouped by stage, plus clients
+// with open work cross-listed under Opportunities (their kind does not
+// change). Stage and temperature are record fields, set deterministically
+// by the import translator or by the sweeps; this page only presents them.
+// Temperatures: Ready · Interested · Just looking. Lead stages: New ·
+// Talking · Waiting on an artist · Booked · Gone quiet · Not a fit.
 'use strict';
 
 function leadsPage() {
-  var STAGES = ['New', 'Talking', 'Waiting on an artist', 'Booked', 'Resting'];
+  var STAGES = ['New', 'Talking', 'Waiting on an artist', 'Booked', 'Gone quiet', 'Not a fit'];
   var TEMPS = ['Ready', 'Interested', 'Just looking'];
 
   function artistsOf(c) {
@@ -35,8 +37,8 @@ function leadsPage() {
     loading: true,
     error: '',
     artistFilter: 'all',
-    stages: STAGES,
-    openStages: { 'New': true, 'Talking': true, 'Waiting on an artist': true, 'Booked': true, 'Resting': false },
+    stages: ['Opportunities'].concat(STAGES),
+    openStages: { 'Opportunities': true, 'New': true, 'Talking': true, 'Waiting on an artist': true, 'Booked': true, 'Gone quiet': false, 'Not a fit': false },
 
     async loadData() {
       this.loading = true;
@@ -62,13 +64,15 @@ function leadsPage() {
       this.loading = false;
     },
 
-    // A contact belongs to the pipeline when it carries a stage, or it
-    // arrived through a form, a booking, or an inquiry, or it came in
-    // with the StaxCloud import. Plain directory contacts (added by
-    // hand, or born from a text thread) stay in Contacts only.
+    // A contact belongs to the pipeline when its kind is Lead, or when
+    // it carries open work (an opportunity — clients cross-list here
+    // without becoming leads). Records with no kind yet (born in Fang,
+    // not imported) keep the older rule: a stage, or an arrival through
+    // a form, a booking, or an inquiry. Plain directory contacts stay
+    // in Contacts only.
     isLead(c) {
+      if (c.kind) return c.kind === 'Lead' || c.opportunity === true;
       if (c.stage) return true;
-      if (c.staxcloud) return true;
       return ['form', 'booking', 'inquiry'].indexOf(c.source) >= 0;
     },
 
@@ -109,13 +113,16 @@ function leadsPage() {
           return (who === 'Unassigned' ? 'Waiting on an artist' : 'Waiting on ' + who) + ' — their call.';
         }
         case 'Booked': return 'Work underway — nothing owed right now.';
-        case 'Resting': return 'Resting — it re-opens on its own if they write.';
+        case 'Gone quiet': return 'Went quiet — it re-opens on its own if they write.';
+        case 'Not a fit': return 'Not a fit — kept on the record, nothing owed.';
+        case 'Opportunities': return 'Work is open on a new piece.';
         default: return '';
       }
     },
 
     decorate(c) {
-      var stage = this.stageOf(c);
+      var stage = (c.opportunity === true && c.kind === 'Client')
+        ? 'Opportunities' : this.stageOf(c);
       var temp = this.tempOf(c);
       var out = {};
       for (var k in c) out[k] = c[k];
@@ -148,7 +155,11 @@ function leadsPage() {
     },
 
     summaryLine() {
-      return this.leads.length + (this.leads.length === 1 ? ' lead' : ' leads')
+      var opps = this.leads.filter(function(l) { return l.kind === 'Client'; }).length;
+      var n = this.leads.length - opps;
+      var s = n + (n === 1 ? ' lead' : ' leads');
+      if (opps) s += ' · ' + opps + (opps === 1 ? ' client with work open' : ' clients with work open');
+      return s
         + ' · ' + this.artistCount('shawn') + ' with Shawn'
         + ' · ' + this.artistCount('leni') + ' with Leni';
     }

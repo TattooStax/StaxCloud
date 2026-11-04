@@ -4940,6 +4940,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                     <span style="display:block;font-weight:600;font-size:14px" x-text="c.name"></span>
                     <span style="display:block" class="text-xs text-dim" x-text="c.email || c.phone"></span>
                   </span>
+                  <span class="text-xs text-dim" x-show="kindLabel(c)" x-text="kindLabel(c)"></span>
                   <span class="text-xs text-dim" x-show="subsOf(c).length" x-text="subsOf(c).length + ' form(s)'"></span>
                 </button>
               </template>
@@ -4958,6 +4959,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">
                   <div class="text-sm" x-show="selected && selected.email">Email: <span x-text="selected ? selected.email : ''"></span></div>
                   <div class="text-sm" x-show="selected && selected.phone">Phone: <span x-text="selected ? selected.phone : ''"></span></div>
+                  <div class="text-sm" x-show="selected && kindLabel(selected)">Kind: <span x-text="selected ? kindLabel(selected) : ''"></span></div>
                   <div class="text-sm" x-show="selected && selected.source_form">Came in via: <span x-text="selected ? selected.source_form : ''"></span></div>
                   <div class="text-sm" x-show="selected && selected.last_seen">Last seen: <span x-text="selected ? fmtDate(selected.last_seen) : ''"></span></div>
                 </div>
