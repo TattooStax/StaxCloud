@@ -1,5 +1,9 @@
 //! OpenFang CLI — command-line interface for the OpenFang Agent OS.
 //!
+//! V2 lane proof marker: this comment-only change was built and run on the
+//! V2 staging instance (port 4996) to prove the lanes are isolated — no
+//! behavior change (see evidence/v2-lane-setup-report.md).
+//!
 //! When a daemon is running (`openfang start`), the CLI talks to it over HTTP.
 //! Otherwise, commands boot an in-process kernel (single-shot mode).
 
