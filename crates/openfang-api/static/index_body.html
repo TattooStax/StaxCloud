@@ -646,25 +646,28 @@
             </div>
           </div>
 
-          <!-- Ask Stax. Photos ride the turn-scoped uploads route: they go with
-               one message and are not kept with the chat, and the note says so. -->
-          <div class="home-compose" @dragover.prevent @drop.prevent="addFiles(Array.from($event.dataTransfer.files).filter(f => /^image\//.test(f.type)))">
+          <!-- Ask Stax. Attachments ride the turn-scoped uploads route: they
+               go with one message and are not kept with the chat, and the
+               note under the chips says so. addFiles (chatPage) validates
+               type and size; photos preview as thumbnails, files by name. -->
+          <div class="home-compose" @dragover.prevent @drop.prevent="addFiles($event.dataTransfer.files)">
             <div class="home-attach" x-show="attachments.length" x-cloak>
               <div class="home-attach-row">
                 <template x-for="(att, aidx) in attachments" :key="aidx">
-                  <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading }">
-                    <img :src="att.preview" :alt="att.file.name">
+                  <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading, 'home-attach-chip--file': !att.preview }">
+                    <img x-show="att.preview" :src="att.preview" :alt="att.file.name">
+                    <span class="home-attach-name" x-show="!att.preview" x-text="att.file.name"></span>
                     <button @click="removeAttachment(aidx)" :aria-label="'Remove ' + att.file.name">&times;</button>
                   </span>
                 </template>
               </div>
-              <p class="home-attach-note">Photos go with this message only. They aren&rsquo;t kept in the chat.</p>
+              <p class="home-attach-note">Photos and files go with this message only. They aren&rsquo;t kept in the chat.</p>
             </div>
             <div class="home-compose-box">
-              <button class="home-attach-btn" @click="$refs.homeFile.click()" aria-label="Add a photo" title="Add a photo">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="9" cy="10.5" r="1.8"/><path d="m21 16-5-5-9 9"/></svg>
+              <button class="home-attach-btn" @click="$refs.homeFile.click()" aria-label="Attach a photo or file" title="Attach a photo or file">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               </button>
-              <input type="file" x-ref="homeFile" accept="image/*" multiple hidden @change="addFiles(Array.from($event.target.files).filter(f => /^image\//.test(f.type))); $event.target.value = ''">
+              <input type="file" x-ref="homeFile" accept="image/*,.txt,.pdf,.md,.json,.csv" multiple hidden @change="addFiles($event.target.files); $event.target.value = ''">
               <textarea id="msg-input" rows="1" placeholder="Ask Stax" aria-label="Ask Stax" x-model="inputText"
                         @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); if (inputText.trim() || attachments.length) { homeEngaged = true; sendMessage(); }}"
                         @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>

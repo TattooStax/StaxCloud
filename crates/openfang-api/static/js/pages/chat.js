@@ -832,7 +832,13 @@ function chatPage() {
         case 'message':
           if (data.content) {
             var meta = data.source === 'cron' ? '[Scheduled: ' + (data.job_name || data.job_id || '') + ']' : '';
-            this.messages.push({ id: ++msgId, role: 'user', text: data.content, meta: meta, tools: [], images: [], ts: Date.now() });
+            // A kernel self-prompt (the continuous-mode tick) is machinery,
+            // not conversation: flag the row and the turn it starts, the
+            // same classification markTurns gives stored rows, so Home
+            // never renders the exchange as bubbles.
+            var tickPush = /^\[AUTONOMOUS TICK\]/.test(String(data.content).trim());
+            if (tickPush) this._machineTurn = true;
+            this.messages.push({ id: ++msgId, role: 'user', text: data.content, meta: meta, tools: [], images: [], ts: Date.now(), machine: tickPush });
             this.scrollToBottom();
           }
           break;
@@ -841,7 +847,7 @@ function chatPage() {
         case 'thinking':
           if (!this.messages.length || !this.messages[this.messages.length - 1].thinking) {
             var thinkLabel = data.level ? 'Thinking (' + data.level + ')...' : 'Processing...';
-            this.messages.push({ id: ++msgId, role: 'agent', text: thinkLabel, meta: '', thinking: true, streaming: true, tools: [] });
+            this.messages.push({ id: ++msgId, role: 'agent', text: thinkLabel, meta: '', thinking: true, streaming: true, tools: [], machine: !!this._machineTurn });
             this.scrollToBottom();
             this._resetTypingTimeout();
           } else if (data.level) {
@@ -858,7 +864,7 @@ function chatPage() {
         case 'typing':
           if (data.state === 'start') {
             if (!this.messages.length || !this.messages[this.messages.length - 1].thinking) {
-              this.messages.push({ id: ++msgId, role: 'agent', text: 'Processing...', meta: '', thinking: true, streaming: true, tools: [] });
+              this.messages.push({ id: ++msgId, role: 'agent', text: 'Processing...', meta: '', thinking: true, streaming: true, tools: [], machine: !!this._machineTurn });
               this.scrollToBottom();
             }
             this._resetTypingTimeout();
@@ -949,7 +955,7 @@ function chatPage() {
             // trigger DOM updates from async WebSocket callbacks.
             this.messages.splice(lastIdx, 1, last);
           } else {
-            this.messages.push({ id: ++msgId, role: 'agent', text: data.content, meta: '', streaming: true, tools: [] });
+            this.messages.push({ id: ++msgId, role: 'agent', text: data.content, meta: '', streaming: true, tools: [], machine: !!this._machineTurn });
           }
           this.scrollToBottom();
           break;
@@ -1009,15 +1015,18 @@ function chatPage() {
           break;
 
         case 'response':
+          this._machineTurn = false;
           this._settle('end');
           break;
 
         case 'silent_complete':
           // Agent intentionally chose not to reply (NO_REPLY)
+          this._machineTurn = false;
           this._settle('end');
           break;
 
         case 'error':
+          this._machineTurn = false;
           this._settle('fail');
           break;
 

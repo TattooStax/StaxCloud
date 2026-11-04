@@ -172,10 +172,15 @@ function homePage() {
     // The thread shows conversation, not machinery. A finished agent turn
     // with no words (it only ran tools on the way to the answer) is not a
     // message, and neither is a note the system injected into the user side
-    // ("[System: ...]"). "Working on it" belongs to the in-flight turn only.
+    // ("[System: ...]"). The kernel's own check-in prompt ("[AUTONOMOUS
+    // TICK] ...", the exact shape background.rs injects) is machinery too:
+    // it is keyed on here directly, not only via the machine flag, so no
+    // delivery path can surface it as the owner's words. A message that
+    // merely mentions the phrase further in does not match the anchor.
+    // "Working on it" belongs to the in-flight turn only.
     homeShowMsg(m) {
       if (!m || m.machine) return false;
-      if (m.role === 'user') return !/^\[System:/.test(m.text || '');
+      if (m.role === 'user') return !/^\[System:/.test(m.text || '') && !/^\[AUTONOMOUS TICK\]/.test((m.text || '').trim());
       if (m.role !== 'agent' || m.thinking || m.streaming) return true;
       return !!(m.text && m.text.trim()) || (m.tools || []).some(function(t) { return t._imageUrls && t._imageUrls.length; });
     },
@@ -183,7 +188,7 @@ function homePage() {
     // Under an owner turn: no stored reply, or a named photo not kept
     homeAside(m) {
       var gone = !(m.images && m.images.length) && /\[File: [^\]\n]+\]/.test(m.text || '');
-      return [gone ? 'The photo went with that message only. It isn\u2019t kept in the chat.' : '',
+      return [gone ? 'It went with that message only. It isn\u2019t kept in the chat.' : '',
         m.unseen ? 'I couldn\u2019t open this photo, so my reply doesn\u2019t cover it.' : '',
         m.unfinished ? 'I haven\u2019t finished this one.' : ''].join(' ').trim();
     },
