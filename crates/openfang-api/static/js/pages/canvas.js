@@ -31,6 +31,7 @@ function canvasPage() {
     cvThread: [],
     cvThreadBusy: false,
     cvAtts: [],
+    cvAgentId: '',
     _cvPoll: null,
 
     init() {
@@ -84,6 +85,10 @@ function canvasPage() {
       return this.cvRecs('designjob/').slice().sort(function(a, b) { return String(b.ts || '').localeCompare(String(a.ts || '')); });
     },
     cvDesignerId() {
+      // The designer agent's own id, resolved from the agents list
+      // (the store's jobs slice is a 3-item widget read — not a
+      // directory). The jobs scan stays as a fallback.
+      if (this.cvAgentId) return this.cvAgentId;
       var jobs = (this.$store.app.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
       return jobs.length ? jobs[0].agent_id : '';
     },
@@ -728,6 +733,12 @@ function canvasPage() {
     async loadData() {
       var self = this;
       if (this.$store.app.page !== 'canvas') return;
+      if (!this.cvAgentId) {
+        OpenFangAPI.get('/api/agents').then(function(list) {
+          var found = (list || []).filter(function(a) { return a.name === 'designer'; })[0];
+          if (found) { self.cvAgentId = found.id; self.cvLoadThread(); }
+        }).catch(function() { /* the jobs scan stays as a fallback */ });
+      }
       try {
         var all = await OpenFangAPI.get('/api/memory/kv');
         var map = {};
