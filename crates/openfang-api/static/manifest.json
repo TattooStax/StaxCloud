@@ -1,7 +1,6 @@
 {
-  "name": "OpenFang Agent OS",
-  "short_name": "OpenFang",
-  "description": "Open-source Agent Operating System",
+  "name": "StaxCloud",
+  "short_name": "StaxCloud",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0c0c0e",

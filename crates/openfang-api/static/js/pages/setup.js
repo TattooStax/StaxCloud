@@ -1,7 +1,6 @@
 // StaxCloud first-run setup — a short conversation, not a settings maze.
 // Three plain questions; on finish it writes setup/profile, switches on the
 // playbooks that match the stated needs, and posts a "Your crew" board.
-// The full helper roster stays available — this only fits the starting crew.
 'use strict';
 
 function setupPage() {
@@ -57,27 +56,26 @@ function setupPage() {
         await OpenFangAPI.put('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('setup/profile'), { value: profile });
 
         // Switch on the playbooks that match the stated needs.
-        var crewNames = ['Stax (your lead)'];
+        var crew = [{ title: 'Stax', sub: 'Your lead' }];
         for (var i = 0; i < this.needOptions.length; i++) {
           var n = this.needOptions[i];
           if (this.needs.indexOf(n.id) < 0 || !n.hand) continue;
-          crewNames.push(n.crew);
+          crew.push({ title: n.crew, sub: n.label });
           try { await OpenFangAPI.post('/api/hands/' + n.hand + '/activate', {}); } catch(e) { /* already active is fine */ }
         }
 
-        // A board that says what got set up — projected from the real profile.
-        var needsLabels = this.needOptions.filter(function(n) { return self.needs.indexOf(n.id) >= 0; }).map(function(n) { return { title: n.label }; });
+        // The crew board, under glance law: the count is the list it heads.
         var board = {
           title: 'Your crew',
+          updated: profile.ts,
           blocks: [
-            { type: 'heading', text: 'Your crew' },
-            { type: 'text', text: 'Fitted to what you said you need. The full helper roster is still under Channels — this is just who starts on your team.' },
+            { type: 'text', text: 'Who works for your shop, fitted to what you said you need.' },
             { type: 'stats', items: [
-              { label: 'Business', value: (this.bizOptions.find(function(b) { return b.id === self.business; }) || {}).label || self.business },
-              { label: 'Brief', value: self.brief === 'morning' ? 'Each morning' : (self.brief === 'live' ? 'As things happen' : 'Morning + as it happens') },
-              { label: 'On your crew', value: String(crewNames.length) }
+              { label: 'On your crew', value: String(crew.length) },
+              { label: 'Brief', value: self.brief === 'morning' ? 'Each morning' : (self.brief === 'live' ? 'As things happen' : 'Morning + live') }
             ]},
-            { type: 'list', title: 'You asked for help with', items: needsLabels }
+            { type: 'list', title: 'On your crew', items: crew },
+            { type: 'list', title: 'Next actions', items: [{ title: 'Tell Stax what to start on first', sub: 'Stax, in your conversation' }] }
           ]
         };
         await OpenFangAPI.put('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('surface/crew'), { value: board });

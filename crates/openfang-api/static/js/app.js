@@ -215,6 +215,10 @@ document.addEventListener('alpine:init', function() {
       return String(t || '').replace(/\s*\(\s*(?:<[a-z_-]+>|\{\{?\s*[a-z_-]+\s*\}?\})\s*\)/gi, '')
         .replace(/<[a-z_-]+>|\{\{\s*[a-z_-]+\s*\}\}/gi, '').replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
     },
+    // Card copy with its links live: one line each, ellipsis end, full href.
+    plainLinked(t) {
+      return escapeHtml(this.plain(t)).replace(/https?:\/\/[^\s<"']*[^\s<"'.,;:!?)\]]/g, '<a class="link-url" href="$&" target="_blank" rel="noopener">$&</a>');
+    },
 
     // A plain short date for list rows ("Nov 2"); nothing when unknown.
     shortDate(ts) {
@@ -390,6 +394,8 @@ document.addEventListener('alpine:init', function() {
           // Fresh login always lands on home.
           window.location.hash = 'chat';
           this.refreshAgents();
+          // The thread read before sign-in was refused: read the record again
+          this.homeReload++;
         } else {
           OpenFangToast.error(result.error || 'Login failed');
         }
@@ -1146,6 +1152,20 @@ function staxDrawer() {
 
 
 // ── R6: Boards — generic renderer for kv-stored surface definitions ────────
+// Glance law (Round B): badges come from one closed set, anything else is
+// dropped; a stat value is a number or a short state, anything else is text.
+var BOARD_BADGES = { waiting: 'Waiting', doing: 'Doing', done: 'Done', 'needs you': 'Needs you' };
+function boardStatOk(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (/^[-+$€£]?\d[\d,.:]*\s?[%a-z]{0,3}$/i.test(s)) return true;
+  return !!s && s.length <= 24 && s.split(/\s+/).length <= 3 && !/[.!?;:]|\b(see|below|above|queue|list|tab|page)\b/i.test(s);
+}
+function boardAgo(ts) {
+  var t = ts ? Date.parse(ts) : NaN;
+  if (isNaN(t)) return '';
+  var m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  return 'updated ' + (m < 1 ? 'just now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago');
+}
 function boardsPage() {
   return {
     surfaces: [],
@@ -1168,7 +1188,17 @@ function boardsPage() {
             var v = pr.value;
             if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
             if (v && !v.deleted) {
-              list.push({ slug: pr.key.slice(8), title: v.title || pr.key.slice(8), blocks: Array.isArray(v.blocks) ? v.blocks : [] });
+              var blocks = Array.isArray(v.blocks) ? v.blocks : [], head = '';
+              blocks.some(function(b) {
+                return b && b.type === 'stats' && (b.items || []).some(function(it) {
+                  if (!it || !it.label || !boardStatOk(it.value)) return false;
+                  var val = String(it.value).trim();
+                  head = /^\d/.test(val) ? val + ' ' + it.label.charAt(0).toLowerCase() + it.label.slice(1) : it.label + ': ' + val;
+                  return true;
+                });
+              });
+              var fresh = boardAgo(v.updated || v.updated_at);
+              list.push({ slug: pr.key.slice(8), title: v.title || pr.key.slice(8), blocks: blocks, fresh: fresh, line: [head, fresh].filter(Boolean).join(' · ') });
             }
           }
         });
@@ -1193,32 +1223,22 @@ function boardsPage() {
       return this.surfaces.find(function(s) { return s.slug === c; }) || null;
     },
 
-    kvRows(prefix) {
-      if (!prefix) return [];
-      return this.kvAll.filter(function(pr) {
-        return pr.key && pr.key.indexOf(prefix) === 0 && pr.key.indexOf('surface/') !== 0;
-      }).map(function(pr) {
-        var v = pr.value;
-        var sub = '';
-        if (v && typeof v === 'object') {
-          sub = v.title || v.status || v.name || '';
-          if (!sub) { try { sub = JSON.stringify(v).slice(0, 90); } catch(e) {} }
-        } else { sub = String(v).slice(0, 90); }
-        return { key: pr.key.slice(prefix.length) || pr.key, sub: sub };
-      });
-    },
+    badge(b) { return BOARD_BADGES[String(b || '').trim().toLowerCase()] || ''; },
+    stats(b, ok) { return (b.items || []).filter(function(it) { return it && boardStatOk(it.value) === ok; }); },
 
-    async deleteSurface(slug) {
-      var self = this;
-      OpenFangToast.confirm('Delete board', 'Remove this board from Studio? The record is deleted for good.', async function() {
-        try {
-          var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
-          await OpenFangAPI.del('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('surface/' + slug));
-          OpenFangToast.success('Board deleted');
-          self.current = null;
-          await self.loadData();
-        } catch(e) { OpenFangToast.error(e.message); }
+    // A kvlist row is a record's own title/name/status. Records without one
+    // are counted on one line, never printed; a family's index is not a row.
+    kvView(b) {
+      var p = b.prefix, noun = String(b.title || 'records').toLowerCase(), rows = [], bare = 0;
+      this.kvAll.forEach(function(pr) {
+        var k = pr.key || '', v = pr.value;
+        if (!p || k.indexOf(p) !== 0 || k.indexOf('surface/') === 0 || /^(index|meta)$/.test(k.slice(p.length))) return;
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+        var o = v && typeof v === 'object' ? v : {}, name = o.title || o.name;
+        if (typeof (name || o.status) !== 'string') bare++;
+        else rows.push({ key: k, title: name || o.status, sub: name && typeof o.status === 'string' ? o.status.replace(/_/g, ' ') : '' });
       });
+      return { rows: rows, count: bare ? bare + ' ' + (rows.length ? 'more ' : '') + noun + ' stored' : '', empty: 'No ' + noun + ' yet — new ' + noun + ' land here.' };
     }
   };
 }

@@ -38,6 +38,7 @@ function chatPage() {
     messages: [],
     inputText: '',
     sending: false,
+    finishing: false,     // Stop was pressed on a crew turn: it completes, then settles
     messageQueue: [],    // Queue for messages sent while streaming
     thinkingMode: 'off', // 'off' | 'on' | 'stream'
     _wsAgent: null,
@@ -84,11 +85,10 @@ function chatPage() {
     get currentTip() {
       if (localStorage.getItem('of-tips-off') === 'true') return '';
       if (!this._tipsInitialized) {
-        var t = typeof window.t === 'function' ? window.t : function(s) { return s; };
         this.tips = [
-          t('tips.commands'),
-          t('tips.think'),
-          t('tips.focus'),
+          'Type / for commands',
+          '/think on for reasoning',
+          'Ctrl+Shift+F for focus mode',
           'Drag files to attach',
           '/model to switch models',
           '/context to check usage',
@@ -749,7 +749,7 @@ function chatPage() {
           this.$nextTick(function() { var ta = document.getElementById('msg-input'); if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 150) + 'px'; } });
         }
       }
-      this.sending = this._stopped = false;
+      this.sending = this._stopped = this.finishing = false;
       this.tokenCount = 0;
       this._settling = false;
       this.scrollToBottom();
@@ -1196,21 +1196,22 @@ function chatPage() {
     },
 
     // Stop the current run, then show what the record kept
+    // A crew agent's turn can't be cut off; it finishes and settles as usual.
     stopAgent: function() {
-      if (!this.currentAgent) return;
+      if (!this.currentAgent || this.finishing) return;
       var self = this;
       this._stopped = true;
-      OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/stop', {}).then(function() {
-        self._settle('fail');
+      OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/stop', {}).then(function(r) {
+        if (r && r.hand_deactivated === false) { self._stopped = false; self.finishing = self.sending; }
+        else self._settle('fail');
       }).catch(function() { self._stopped = false; OpenFangToast.error('Couldn\u2019t stop that. Try again in a moment.'); });
     },
 
     killAgent() {
       if (!this.currentAgent) return;
       var self = this;
-      var t = typeof window.t === 'function' ? window.t : function(s) { return s; };
       var name = this.currentAgent.name;
-      OpenFangToast.confirm(t('chat.stop_agent_title'), t('chat.stop_agent_confirm') + ' "' + name + '"?', async function() {
+      OpenFangToast.confirm('Delete helper', 'Delete "' + name + '"? It is removed from your helpers.', async function() {
         try {
           await OpenFangAPI.del('/api/agents/' + self.currentAgent.id);
           OpenFangAPI.wsDisconnect();
@@ -1218,10 +1219,10 @@ function chatPage() {
           self.currentAgent = null;
           self.messages = [];
           try { localStorage.removeItem('of-active-agent'); } catch(e) { /* ignore */ }
-          OpenFangToast.success(t('chat.agent_stopped') + ' "' + name + '"');
+          OpenFangToast.success('"' + name + '" deleted');
           Alpine.store('app').refreshAgents();
         } catch(e) {
-          OpenFangToast.error(t('chat.stop_agent_failed') + ': ' + e.message);
+          OpenFangToast.error('Could not delete: ' + e.message);
         }
       });
     },
