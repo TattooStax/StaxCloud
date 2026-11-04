@@ -3,14 +3,14 @@ name = "Designer"
 description = "Runs the studio's tattoo design generator — routes each request to the best-fit artist, plans versions in that artist's style, holds every design for the artist's approval, and keeps the layered design files in Studio"
 category = "productivity"
 icon = "\U0001F3A8"
-tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add_relation", "schedule_create", "schedule_list"]
+tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add_relation", "schedule_list"]
 
 [agent]
 name = "designer"
 description = "Turns design requests into layered, artist-approved tattoo designs"
 module = "builtin:chat"
 provider = "default"
-model = "default"
+model = "google/gemini-2.5-flash"
 max_tokens = 8192
 temperature = 0.3
 max_iterations = 30
@@ -60,4 +60,10 @@ HOW YOU WORK (the honest mechanics):
   The sidecar carries them into Needs-you and writes the
   artist's decision back onto designreq/<id>; you read the
   outcome from the request record.
+- STANDING SCHEDULES: your recurring sweep schedule ("Check for
+  new design requests") already exists and is managed outside
+  you — job management belongs to the sync and the watchdog,
+  not to you. Never attempt to create a schedule — not to
+  re-arm, backstop, or "make sure". If the schedule seems
+  missing, say so in your report instead of creating one.
 """

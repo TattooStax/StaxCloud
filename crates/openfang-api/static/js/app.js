@@ -152,9 +152,23 @@ document.addEventListener('alpine:init', function() {
     // A request drafted by an Ask Stax row, placed in the Home composer.
     askDraft: '',
     formsTab: 'forms',
-    // A board to open on arrival at Boards (the drawer's interim Canvas row).
+    // A board to open on arrival at Boards.
     boardPick: '',
     smsTab: 'inbox',
+    canvasTab: 'canvas',
+    canvasPanel: '',
+    canvasTopNonce: 0,
+    canvasGo(tab) {
+      if (this.canvasTab === tab) { this.canvasTopNonce++; return; }
+      this.canvasTab = tab;
+    },
+    canvasPanelToggle(panel) {
+      if (this.canvasTab !== 'canvas') this.canvasTab = 'canvas';
+      this.canvasPanel = (this.canvasPanel === panel) ? '' : panel;
+    },
+    // Canvas working state (open design, drafts, per-tab scroll),
+    // bound by the canvas page so it survives leaving the module.
+    canvasCv: null,
     setupDone: false,
     setupLoaded: false,
     ownerName: 'Shawn',
@@ -424,7 +438,7 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { chat: 'home', sms: 'texts', approvals: 'work', leads: 'leads', contacts: 'studio', boards: 'boards', forms: 'studio', library: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
+    surfaceOf: { chat: 'home', sms: 'texts', team: 'texts', email: 'texts', approvals: 'work', leads: 'leads', contacts: 'studio', boards: 'boards', forms: 'studio', library: 'studio', canvas: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
     surfaceHome: { home: 'chat', work: 'approvals', boards: 'boards', leads: 'leads', system: 'settings', advanced: 'advanced' },
     // Pages demoted to System > Advanced. Their page keys are unchanged;
     // only their URL hash carries an advanced/ prefix, so a stale bare
@@ -1204,6 +1218,14 @@ function boardsPage() {
         });
         list.sort(function(a, b) { return a.title.localeCompare(b.title); });
         this.surfaces = list;
+        // Boards' block set is closed: a block type this shell does
+        // not render is skipped silently on screen and logged here.
+        var knownBlocks = { heading: 1, text: 1, stats: 1, list: 1, kvlist: 1 };
+        list.forEach(function(sf) {
+          (sf.blocks || []).forEach(function(b) {
+            if (b && b.type && !knownBlocks[b.type]) console.warn('[boards] skipped a block this version does not render:', b.type);
+          });
+        });
         var store = Alpine.store('app');
         if (store.boardPick) {
           var pick = store.boardPick;
@@ -1239,7 +1261,7 @@ function boardsPage() {
         else rows.push({ key: k, title: name || o.status, sub: name && typeof o.status === 'string' ? o.status.replace(/_/g, ' ') : '' });
       });
       return { rows: rows, count: bare ? bare + ' ' + (rows.length ? 'more ' : '') + noun + ' stored' : '', empty: 'No ' + noun + ' yet — new ' + noun + ' land here.' };
-    }
+    },
   };
 }
 
