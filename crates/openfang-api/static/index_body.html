@@ -1568,7 +1568,7 @@
               <div style="margin-top:22px">
                 <button class="btn btn-ghost" style="width:100%;justify-content:space-between" @click="showCurrent = !showCurrent" :aria-expanded="showCurrent">
                   <span>Current work</span>
-                  <span class="text-xs text-dim" x-text="jobs.length + (jobs.length === 1 ? ' check running' : ' checks running')"></span>
+                  <span class="text-xs text-dim" x-text="jobs.length + (jobs.length === 1 ? ' scheduled check' : ' scheduled checks')"></span>
                 </button>
                 <div x-show="showCurrent" style="margin-top:10px">
                   <div x-show="jobs.length === 0" class="empty-state"><p class="hint">No scheduled checks right now.</p></div>

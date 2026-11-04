@@ -96,7 +96,7 @@ function approvalsPage() {
         this.loadError = e.message || 'Could not load approvals.';
       }
       try {
-        var jd = await OpenFangAPI.get('/api/jobs');
+        var jd = await OpenFangAPI.get('/api/cron/jobs');
         this.jobs = jd.jobs || jd || [];
       } catch(e) { this.jobs = []; }
       this.loading = false;
