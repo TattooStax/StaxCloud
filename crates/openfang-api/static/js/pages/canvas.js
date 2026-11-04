@@ -553,7 +553,10 @@ function canvasPage() {
       // it can go back into that client's thread as a picture.
       var args = { request_id: rid, brief: brief, artist_id: artist, reference_ref: this.cv.fileId || undefined };
       var client = (this.cv.client || '').trim();
-      if (client) { args.client = client; args.channel = 'canvas'; }
+      // The core's channel set is closed (sms / email / widget): a
+      // design started in this app is a widget-origin request; the
+      // client field carries who it is for.
+      if (client) { args.client = client; args.channel = 'widget'; }
       this.cvQueue('gen.design', args)
         .then(function() {
           self.cv.brief = ''; self.cv.fileId = ''; self.cv.client = '';
