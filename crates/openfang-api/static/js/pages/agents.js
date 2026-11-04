@@ -417,14 +417,14 @@ function agentsPage() {
 
     killAgent(agent) {
       var self = this;
-      OpenFangToast.confirm('Stop Agent', 'Stop agent "' + agent.name + '"? The agent will be shut down.', async function() {
+      OpenFangToast.confirm('Delete helper', 'Delete "' + agent.name + '"? It is removed from your helpers.', async function() {
         try {
           await OpenFangAPI.del('/api/agents/' + agent.id);
-          OpenFangToast.success('Agent "' + agent.name + '" stopped');
+          OpenFangToast.success('"' + agent.name + '" deleted');
           self.showDetailModal = false;
           await Alpine.store('app').refreshAgents();
         } catch(e) {
-          OpenFangToast.error('Failed to stop agent: ' + e.message);
+          OpenFangToast.error('Could not delete: ' + e.message);
         }
       });
     },
@@ -452,21 +452,24 @@ function agentsPage() {
       );
     },
 
-    killAllAgents() {
-      var list = this.filteredAgents;
-      if (!list.length) return;
-      OpenFangToast.confirm('Stop All Agents', 'Stop ' + list.length + ' agent(s)? All agents will be shut down.', async function() {
+    // Delete All never takes the crew: hand-owned agents and the lead stay.
+    async killAllAgents() {
+      var store = Alpine.store('app'), owned = {};
+      try { ((await OpenFangAPI.get('/api/hands/active')).instances || []).forEach(function(i) { if (i.agent_id) owned[i.agent_id] = 1; }); } catch(e) { /* crew names still guard */ }
+      var list = this.filteredAgents.filter(function(a) { return !owned[a.id] && !store.isCrew(a) && a.id !== STAX_LEAD_ID; });
+      if (!list.length) { OpenFangToast.info('Only your crew is here, and Delete All keeps the crew.'); return; }
+      OpenFangToast.confirm('Delete all', 'Delete ' + list.length + (list.length === 1 ? ' helper' : ' helpers') + '? Your crew stays.', async function() {
         var errors = [];
         for (var i = 0; i < list.length; i++) {
           try {
             await OpenFangAPI.del('/api/agents/' + list[i].id);
           } catch(e) { errors.push(list[i].name + ': ' + e.message); }
         }
-        await Alpine.store('app').refreshAgents();
+        await store.refreshAgents();
         if (errors.length) {
-          OpenFangToast.error('Some agents failed to stop: ' + errors.join(', '));
+          OpenFangToast.error('Some were not deleted: ' + errors.join(', '));
         } else {
-          OpenFangToast.success(list.length + ' agent(s) stopped');
+          OpenFangToast.success(list.length + (list.length === 1 ? ' helper' : ' helpers') + ' deleted');
         }
       });
     },

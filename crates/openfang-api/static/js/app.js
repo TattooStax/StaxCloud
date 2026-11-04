@@ -394,6 +394,8 @@ document.addEventListener('alpine:init', function() {
           // Fresh login always lands on home.
           window.location.hash = 'chat';
           this.refreshAgents();
+          // The thread read before sign-in was refused: read the record again
+          this.homeReload++;
         } else {
           OpenFangToast.error(result.error || 'Login failed');
         }

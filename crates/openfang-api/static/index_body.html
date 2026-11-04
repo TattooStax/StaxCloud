@@ -671,8 +671,9 @@
               <button class="home-send" x-show="!sending" @click="homeEngaged = true; sendMessage()" :disabled="!(inputText.trim() || attachments.length) || !currentAgent" aria-label="Send to Stax">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
               </button>
-              <button class="home-send home-send--stop" x-show="sending" @click="stopAgent()" aria-label="Stop Stax">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+              <button class="home-send home-send--stop" :class="{ 'is-finishing': finishing }" x-show="sending" @click="stopAgent()" :disabled="finishing" :aria-label="finishing ? 'Finishing' : 'Stop Stax'">
+                <svg x-show="!finishing" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+                <span x-show="finishing">Finishing&hellip;</span>
               </button>
             </div>
           </div>
@@ -761,7 +762,7 @@
                 <button class="btn btn-ghost btn-sm" @click="$store.app.toggleFocusMode()" title="Ctrl+Shift+F">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g x-show="!$store.app.focusMode"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></g><g x-show="$store.app.focusMode"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></g></svg>
                 </button>
-                <button class="btn btn-danger btn-sm" @click="killAgent()">Stop</button>
+                <button class="btn btn-danger btn-sm" @click="killAgent()">Delete</button>
                 <button class="btn btn-danger btn-sm" @click="uninstallAgent()" title="Stop and remove agent files from workspace">Uninstall</button>
               </div>
             </div>
@@ -936,8 +937,9 @@
                   </button>
                 </template>
                 <template x-if="sending">
-                  <button class="btn-stop" @click="stopAgent()" title="Stop generating">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                  <button class="btn-stop" :class="{ 'is-finishing': finishing }" @click="stopAgent()" :disabled="finishing" :title="finishing ? 'Finishing' : 'Stop generating'">
+                    <svg x-show="!finishing" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                    <span x-show="finishing">Finishing&hellip;</span>
                   </button>
                 </template>
               </div>
@@ -1014,7 +1016,7 @@
           <h2>Helpers</h2>
           <div class="flex gap-2">
             <button class="btn btn-ghost btn-sm" x-show="agents.length" @click="openSpawnWizard()">+ New Helper</button>
-            <button class="btn btn-danger btn-sm" x-show="agents.length > 1" @click="killAllAgents()">Stop All</button>
+            <button class="btn btn-danger btn-sm" x-show="agents.length > 1" @click="killAllAgents()">Delete All</button>
           </div>
         </div>
         <div class="page-body" style="overflow-y:auto;padding:24px">
@@ -1214,7 +1216,7 @@
                     <button class="btn btn-primary" @click="chatWithAgent(detailAgent); showDetailModal = false">Chat</button>
                     <button class="btn btn-ghost" @click="cloneAgent(detailAgent)">Clone</button>
                     <button class="btn btn-ghost" @click="clearHistory(detailAgent)">Clear History</button>
-                    <button class="btn btn-danger" @click="killAgent(detailAgent)">Stop</button>
+                    <button class="btn btn-danger" @click="killAgent(detailAgent)">Delete</button>
                     <button class="btn btn-danger" @click="uninstallAgent(detailAgent)" title="Stop and remove agent files from workspace">Uninstall</button>
                   </div>
                 </div>
