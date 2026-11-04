@@ -133,6 +133,18 @@
 .approval-card { min-width: 0; overflow-wrap: anywhere; }
 .board-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .board-stats .card { text-align: center; padding: 14px 10px; }
+/* Canvas studio surface (designstudio block): the input matches the
+   shell's control height; version thumbs are board controls, so they
+   clear the 44px hit floor; the selected chip/thumb reads in accent. */
+.cv-input { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; min-height: var(--hit-min); }
+.cv-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cv-vthumb { position: relative; width: 52px; height: 52px; min-width: var(--hit-min); min-height: var(--hit-min); padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; cursor: pointer; }
+.cv-vthumb > span { position: absolute; right: 3px; bottom: 1px; color: #1b1a17; font-weight: 700; text-shadow: 0 0 4px #fff, 0 0 4px #fff; }
+.cv-vthumb.is-on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.stax-chip.is-on { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.cv-vthumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 640px) { .cv-input { font-size: 16px; } }
+
 .board-page .btn, .board-page .stax-chip { min-height: var(--hit-min); }
 /* Traditional tiles: the outer level (dock, drawer section heads, a
    surface's page mark). Raster art, its image set per tile in

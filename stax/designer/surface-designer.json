@@ -1,1 +1,16 @@
-{"key":"surface/designer","note":"Install artifact — NOT the stored record. The installer stores the object under \"value\" (exactly {title, updated, blocks}, no key field inside it) at the kv key named by \"key\". The stats are composition-time counts (here: the Round B staging store — design/index 3 ids; designreq awaiting_artist 1) and the Next actions line is that store's held design draft; whoever stores it recounts from the target store first (surface-builder playbook, THE DESIGNS BOARD).","value":{"title":"Designs","updated":"2026-11-04T00:34:01Z","blocks":[{"type":"text","text":"Your shop's tattoo designs: what's on file, and what's waiting for an artist's OK."},{"type":"stats","items":[{"label":"Designs stored","value":"3"},{"label":"Waiting your OK","value":"1"}]},{"type":"kvlist","title":"Designs","prefix":"design/"},{"type":"list","title":"How it works","items":[{"title":"Artist approval first","sub":"The artist approves before a customer sees anything"},{"title":"Customer designs are opt-in","sub":"Customers can ask for a design only from artists who opted in"},{"title":"Transparent, layered, always","sub":"Line and shading stay separate layers on a clear background"}]},{"type":"list","title":"Next actions","items":[{"title":"OK the color swallow design for Marta","sub":"Leni — waiting in Work","badge":"Needs you"}]}]}}
+{
+ "key": "surface/designer",
+ "note": "Install artifact — NOT the stored record. The installer stores the object under \"value\" (exactly {title, updated, blocks}, no key field inside it) at the kv key named by \"key\". The stats are composition-time counts (here: the Round B staging store — design/index 3 ids; designreq awaiting_artist 1) and the Next actions line is that store's held design draft; whoever stores it recounts from the target store first (surface-builder playbook, THE DESIGNS BOARD).",
+ "value": {
+  "title": "Canvas",
+  "blocks": [
+   {
+    "type": "heading",
+    "text": "Designs"
+   },
+   {
+    "type": "designstudio"
+   }
+  ]
+ }
+}

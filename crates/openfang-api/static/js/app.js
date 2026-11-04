@@ -1182,6 +1182,10 @@ function boardsPage() {
         var data = await OpenFangAPI.get('/api/memory/agents/' + agentId + '/kv');
         var pairs = data.kv_pairs || [];
         this.kvAll = pairs;
+        try {
+          var apData = await OpenFangAPI.get('/api/approvals');
+          this.approvals = Array.isArray(apData) ? apData : (apData.approvals || []);
+        } catch(e) { this.approvals = []; }
         var list = [];
         pairs.forEach(function(pr) {
           if (pr.key && pr.key.indexOf('surface/') === 0) {
@@ -1198,7 +1202,15 @@ function boardsPage() {
                 });
               });
               var fresh = boardAgo(v.updated || v.updated_at);
-              list.push({ slug: pr.key.slice(8), title: v.title || pr.key.slice(8), blocks: blocks, fresh: fresh, line: [head, fresh].filter(Boolean).join(' · ') });
+              if (!head && blocks.some(function(b) { return b && b.type === 'designstudio'; })) {
+            var dn = 0;
+            pairs.forEach(function(pr2) {
+              var k2 = pr2.key || '';
+              if (k2.indexOf('design/') === 0 && !/^(index|meta)$/.test(k2.slice(7))) dn++;
+            });
+            if (dn) head = dn + (dn === 1 ? ' design' : ' designs');
+          }
+          list.push({ slug: pr.key.slice(8), title: v.title || pr.key.slice(8), blocks: blocks, fresh: fresh, line: [head, fresh].filter(Boolean).join(' · ') });
             }
           }
         });
@@ -1216,6 +1228,7 @@ function boardsPage() {
         this.loadError = e.message || 'Could not load boards.';
       }
       this.loading = false;
+      this.cvArmPoll();
     },
 
     get currentSurface() {
@@ -1239,7 +1252,195 @@ function boardsPage() {
         else rows.push({ key: k, title: name || o.status, sub: name && typeof o.status === 'string' ? o.status.replace(/_/g, ' ') : '' });
       });
       return { rows: rows, count: bare ? bare + ' ' + (rows.length ? 'more ' : '') + noun + ' stored' : '', empty: 'No ' + noun + ' yet — new ' + noun + ' land here.' };
+    },
+    // ── Canvas studio (designstudio block) ──────────────────────────
+    // The working surface over the designer sidecar's records:
+    // designreq/ requests, design/ built versions, draft/design-
+    // approval holds, designjob/ the work queue. The surface queues
+    // job records exactly as the designer playbook prescribes and
+    // reads everything back from the same store — it invents
+    // nothing, and no design is customer-visible before approval.
+    cv: { artist: 'shawn', brief: '', fileId: '', fileName: '', busy: false, err: '', open: {}, sel: {}, note: {}, decided: {} },
+    approvals: [],
+    _cvTimer: null,
+
+    cvParse(v) {
+      if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) { return null; } }
+      return v && typeof v === 'object' ? v : null;
+    },
+    cvRecs(prefix, skipIndex) {
+      var out = [], self = this;
+      this.kvAll.forEach(function(pr) {
+        var k = pr.key || '';
+        if (k.indexOf(prefix) !== 0) return;
+        if (skipIndex && /^(index|meta)$/.test(k.slice(prefix.length))) return;
+        var v = self.cvParse(pr.value);
+        if (v && typeof v === 'object' && !v.deleted) out.push({ key: k, id: k.slice(prefix.length), v: v });
+      });
+      return out;
+    },
+    cvDesignerId() {
+      var agents = (Alpine.store('app').agents || []);
+      var d = agents.find(function(a) { return a.name === 'designer'; });
+      return d ? d.id : ((agents[0] || {}).id || 'shared');
+    },
+    async cvKvPut(key, value) {
+      await OpenFangAPI.put('/api/memory/agents/' + this.cvDesignerId() + '/kv/' + encodeURIComponent(key), { value: value });
+    },
+    async cvQueue(jobId, op, args) {
+      await this.cvKvPut('designjob/' + jobId, { job_id: jobId, op: op, args: args, status: 'queued', ts: new Date().toISOString() });
+      var idx = { jobs: [] };
+      var recs = this.cvRecs('designjob/', false);
+      for (var i = 0; i < recs.length; i++) {
+        if (recs[i].id === 'index' && Array.isArray(recs[i].v.jobs)) idx = recs[i].v;
+      }
+      if (idx.jobs.indexOf(jobId) === -1) idx.jobs.push(jobId);
+      await this.cvKvPut('designjob/index', idx);
+    },
+    cvArtists() {
+      return this.cvRecs('artist/', true).map(function(r) {
+        return { id: r.id, name: r.v.display_name || r.id };
+      }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+    },
+    cvArtistName(id) {
+      var a = this.cvArtists().find(function(x) { return x.id === id; });
+      return a ? a.name : id;
+    },
+    cvFirstName(id) { return this.cvArtistName(id).split(' ')[0]; },
+    cvPlainErr(e) { return String(e || '').replace(/^[A-Za-z]*Error:\s*/, ''); },
+    cvCards() {
+      var self = this;
+      var designs = this.cvRecs('design/', true);
+      var drafts = {};
+      this.cvRecs('draft/', false).forEach(function(r) {
+        if (r.id.indexOf('design-') === 0) drafts[r.id.slice(7)] = r.v;
+      });
+      var jobs = this.cvRecs('designjob/', true);
+      var cards = this.cvRecs('designreq/', true).map(function(r) {
+        var req = r.v, id = r.id;
+        var mine = designs.filter(function(d) { return d.v.request_id === id; })
+          .sort(function(a, b) { return (a.v.version || 0) - (b.v.version || 0); });
+        var myJobs = jobs.filter(function(j) { return j.v.args && j.v.args.request_id === id; })
+          .sort(function(a, b) { return String(a.v.ts || '').localeCompare(String(b.v.ts || '')); });
+        var sel = mine.find(function(d) { return d.id === self.cv.sel[id]; }) || mine[mine.length - 1] || null;
+        return { id: id,
+                 brief: (req.intake || {}).prompt_text || 'Design',
+                 artistId: req.artist_id || '',
+                 status: req.status || '',
+                 versions: mine, sel: sel,
+                 draft: drafts[id] || null,
+                 lastJob: myJobs[myJobs.length - 1] || null,
+                 lastTs: myJobs.length ? (myJobs[myJobs.length - 1].v.ts || '') : '' };
+      });
+      cards.sort(function(a, b) { return String(b.lastTs).localeCompare(String(a.lastTs)); });
+      return cards;
+    },
+    cvState(card) {
+      var j = card.lastJob;
+      if (j && (j.v.status === 'queued' || j.v.status === 'running')) return { word: 'Designing…' };
+      if (j && j.v.status === 'error' && !card.versions.length) return { word: 'Needs another try', error: this.cvPlainErr(j.v.error) };
+      switch (card.status) {
+        case 'artist_approved': return { word: 'Approved' };
+        case 'artist_rejected': return { word: 'Not approved' };
+        case 'awaiting_artist': return { word: 'Waiting for ' + this.cvFirstName(card.artistId) };
+        case 'planned': return card.versions.length ? { word: 'Ready' } : { word: 'Designing…' };
+        default: return { word: 'Getting ready' };
+      }
+    },
+    cvClosed(card) {
+      return ['artist_approved', 'artist_rejected', 'sent_to_customer', 'customer_approved', 'stencil_ready'].indexOf(card.status) !== -1;
+    },
+    cvApprovalFor(card) {
+      if (!card.draft || !card.draft.approval_id) return null;
+      return (this.approvals || []).find(function(a) { return a.id === card.draft.approval_id && a.status === 'pending'; }) || null;
+    },
+    async cvPickFile(ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      this.cv.err = '';
+      try {
+        var res = await OpenFangAPI.upload(this.cvDesignerId(), f);
+        this.cv.fileId = res.file_id;
+        this.cv.fileName = f.name;
+      } catch(e) { this.cv.err = 'That photo did not upload. Try again.'; }
+    },
+    async cvGenerate() {
+      if (this.cv.busy) return;
+      this.cv.err = '';
+      if (!this.cv.fileId) { this.cv.err = 'Add the reference photo first.'; return; }
+      if (!this.cv.brief.trim()) { this.cv.err = 'Say what we are designing.'; return; }
+      this.cv.busy = true;
+      try {
+        var reqId = 'req-' + Math.random().toString(36).slice(2, 10);
+        await this.cvQueue('job-' + reqId + '-gen', 'gen.design', {
+          request_id: reqId, brief: this.cv.brief.trim(),
+          artist_id: this.cv.artist, reference_ref: this.cv.fileId });
+        this.cv.brief = '';
+        this.cv.fileId = '';
+        this.cv.fileName = '';
+        this.cv.open[reqId] = true;
+        await this.loadData();
+      } catch(e) { this.cv.err = 'The design did not start. Try again in a moment.'; }
+      this.cv.busy = false;
+    },
+    async cvSubmit(card) {
+      try {
+        await this.cvQueue('job-' + card.id + '-submit-' + Date.now(), 'request.submit', { request_id: card.id });
+        await this.loadData();
+      } catch(e) { OpenFangToast.error('That did not send. Try again in a moment.'); }
+    },
+    async cvApprove(card) {
+      var ap = this.cvApprovalFor(card);
+      if (!ap) return;
+      try {
+        await OpenFangAPI.post('/api/approvals/' + ap.id + '/approve', {});
+        this.cv.decided[card.id] = true;
+        await this.loadData();
+      } catch(e) { OpenFangToast.error('That approval did not save. Try again.'); }
+    },
+    cvReject(card) {
+      var ap = this.cvApprovalFor(card);
+      if (!ap) return;
+      var self = this;
+      OpenFangToast.confirm('Not approve this design?', 'It stays out of the customer view.', async function() {
+        try {
+          await OpenFangAPI.post('/api/approvals/' + ap.id + '/reject', {});
+          self.cv.decided[card.id] = true;
+          await self.loadData();
+        } catch(e) { OpenFangToast.error('That did not save. Try again.'); }
+      });
+    },
+    async cvRedesign(card) {
+      try {
+        await this.cvQueue('job-' + card.id + '-rd-' + Date.now(), 'gen.redesign', {
+          request_id: card.id, note: (this.cv.note[card.id] || '').trim() });
+        this.cv.note[card.id] = '';
+        this.cv.open[card.id] = true;
+        await this.loadData();
+      } catch(e) { OpenFangToast.error('That version did not start. Try again.'); }
+    },
+    cvPending() {
+      var busy = this.cvRecs('designjob/', true).some(function(j) { return j.v.status === 'queued' || j.v.status === 'running'; });
+      if (busy) return true;
+      var self = this, any = false;
+      Object.keys(this.cv.decided).forEach(function(id) {
+        var c = self.cvCards().find(function(x) { return x.id === id; });
+        if (c && c.status === 'awaiting_artist') any = true;
+        else delete self.cv.decided[id];
+      });
+      return any;
+    },
+    cvArmPoll() {
+      if (this._cvTimer) { clearTimeout(this._cvTimer); this._cvTimer = null; }
+      var blocks = (this.currentSurface && this.currentSurface.blocks) || [];
+      var hasStudio = blocks.some(function(b) { return b && b.type === 'designstudio'; });
+      if (hasStudio && this.cvPending()) {
+        var self = this;
+        this._cvTimer = setTimeout(function() { self.loadData(); }, 5000);
+      }
     }
+
   };
 }
 
