@@ -1,13 +1,19 @@
-// OpenFang Approvals Page — Execution approval queue for sensitive agent actions
+// StaxCloud Work — Needs you (decisions), Current work, Finished.
+// One count source: the header badge reads the shell store's
+// pendingApprovalCount, the same number Home and the floating pill
+// show. This page's own fetch feeds the lists only.
 'use strict';
 
 function approvalsPage() {
   return {
     approvals: [],
-    filterStatus: 'pending',
+    jobs: [],
     loading: true,
     loadError: '',
     refreshTimer: null,
+    expandedId: '',
+    showCurrent: false,
+    showFinished: false,
 
     init() {
       var self = this;
@@ -24,14 +30,53 @@ function approvalsPage() {
       }
     },
 
-    get filtered() {
-      var f = this.filterStatus;
-      if (f === 'all') return this.approvals;
-      return this.approvals.filter(function(a) { return a.status === f; });
+    // A held item keeps one identity across re-carries: the daemon
+    // mints a new approval id each carry, so records are matched by
+    // what they ask, not by id (the shell's toast de-dupe keys the
+    // same way).
+    fingerprint(a) {
+      return [a.agent_id || a.agent_name || '', a.tool_name || a.action || '',
+        a.description || '', a.action_summary || ''].join('|');
     },
 
-    get pendingCount() {
-      return this.approvals.filter(function(a) { return a.status === 'pending'; }).length;
+    dedupe(list) {
+      var seen = {}, out = [];
+      var sorted = list.slice().sort(function(x, y) {
+        return new Date(y.created_at || 0) - new Date(x.created_at || 0);
+      });
+      sorted.forEach(function(a) {
+        var k = this.fingerprint(a);
+        if (!seen[k]) { seen[k] = true; out.push(a); }
+      }, this);
+      return out;
+    },
+
+    get pendingList() {
+      return this.dedupe(this.approvals.filter(function(a) { return a.status === 'pending'; }));
+    },
+
+    get decidedList() {
+      return this.dedupe(this.approvals.filter(function(a) { return a.status !== 'pending'; }));
+    },
+
+    // What would actually happen, in plain lines: the summary when it
+    // adds anything, plus the call's own fields (a text's body, a
+    // design's id) so no decision is blind.
+    previewLines(a) {
+      var lines = [];
+      var desc = a.description || '';
+      if (a.action_summary && a.action_summary !== desc) lines.push(a.action_summary);
+      var args = a.args || a.tool_args || null;
+      if (args && typeof args === 'object') {
+        Object.keys(args).forEach(function(k) {
+          var v = args[k];
+          if (v === null || v === undefined || v === '') return;
+          var s = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+          if (s.length > 300) s = s.slice(0, 300) + '…';
+          lines.push(k + ': ' + s);
+        });
+      }
+      return lines;
     },
 
     async loadData() {
@@ -43,6 +88,10 @@ function approvalsPage() {
       } catch(e) {
         this.loadError = e.message || 'Could not load approvals.';
       }
+      try {
+        var jd = await OpenFangAPI.get('/api/jobs');
+        this.jobs = jd.jobs || jd || [];
+      } catch(e) { this.jobs = []; }
       this.loading = false;
     },
 
@@ -67,6 +116,18 @@ function approvalsPage() {
           OpenFangToast.error(e.message);
         }
       });
+    },
+
+    jobName(j) {
+      return j.name || j.label || ({ texts: 'Texts check', designer: 'Design check', brief: 'Morning brief', forms: 'Forms check' })[j.hand_id] || j.hand_id || 'Scheduled check';
+    },
+
+    jobWhen(j) {
+      var t = j.next_run_at || j.next_run || null;
+      if (!t) return j.enabled === false ? 'Paused' : 'On its schedule';
+      var d = new Date(t);
+      if (isNaN(d)) return j.enabled === false ? 'Paused' : 'On its schedule';
+      return (j.enabled === false ? 'Paused · next ' : 'Next ') + d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     },
 
     timeAgo(dateStr) {

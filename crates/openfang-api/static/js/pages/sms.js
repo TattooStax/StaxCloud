@@ -59,6 +59,19 @@ function smsPage() {
 
     lastMsg(t) { return t.messages.length ? t.messages[t.messages.length - 1] : null; },
 
+    // Row preview: the last message's words, or a truthful label when
+    // it carried only media (an MMS picture has no body text).
+    snippet(t) {
+      var m = this.lastMsg(t);
+      if (!m) return '';
+      if ((m.body || '').trim()) return m.body;
+      if (m.media && m.media.length) {
+        var img = m.media.some(function(x) { return (x.mime || '').indexOf('image/') === 0; });
+        return img ? 'Photo' : 'Attachment';
+      }
+      return '';
+    },
+
     fmtTs(ts) {
       if (!ts) return '';
       var d = new Date(ts);

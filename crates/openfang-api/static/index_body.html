@@ -1517,13 +1517,15 @@
       </div>
     </template>
 
-    <!-- Page: Approvals -->
+    <!-- Page: Approvals (Work) — Needs you / Current work / Finished.
+         The header count is the shell store's, the same number Home
+         and the floating pill show. -->
     <template x-if="page === 'approvals'">
       <div x-data="approvalsPage()" x-init="init()">
         <div class="page-header">
           <h2>Needs you</h2>
           <div class="flex items-center gap-2">
-            <span class="badge badge-warn" x-show="pendingCount > 0" x-text="pendingCount + ' pending'"></span>
+            <span class="badge badge-warn" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount + ' pending'"></span>
             <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
           </div>
         </div>
@@ -1536,34 +1538,69 @@
           </div>
           <template x-if="!loading && !loadError">
             <div>
-              <div class="filter-pills mb-4">
-                <button class="filter-pill" :class="{ active: filterStatus === 'all' }" @click="filterStatus = 'all'">All</button>
-                <button class="filter-pill" :class="{ active: filterStatus === 'pending' }" @click="filterStatus = 'pending'">Pending</button>
-                <button class="filter-pill" :class="{ active: filterStatus === 'approved' }" @click="filterStatus = 'approved'">Approved</button>
-                <button class="filter-pill" :class="{ active: filterStatus === 'rejected' }" @click="filterStatus = 'rejected'">Rejected</button>
-                <button class="filter-pill" :class="{ active: filterStatus === 'expired' }" @click="filterStatus = 'expired'">Expired</button>
-              </div>
-              <div x-show="filtered.length === 0" class="empty-state">
-                <h4 x-text="filterStatus === 'pending' ? 'Nothing needs you' : 'Nothing here'"></h4>
-                <p class="hint" x-text="filterStatus === 'pending' ? 'When a helper wants to do something sensitive, it will ask here first — and on Home, in your conversation with Stax.' : 'No approvals with this status yet.'"></p>
+              <div x-show="pendingList.length === 0" class="empty-state">
+                <h4>Nothing needs you</h4>
+                <p class="hint">When a helper wants to do something sensitive, it will ask here first — and on Home, in your conversation with Stax.</p>
               </div>
               <div class="card-grid">
-                <template x-for="a in filtered" :key="a.id">
-                  <div class="card approval-card" :class="{ pending: a.status === 'pending', approved: a.status === 'approved', rejected: a.status === 'rejected', expired: a.status === 'expired' }">
+                <template x-for="a in pendingList" :key="a.id">
+                  <div class="card approval-card pending">
                     <div class="flex justify-between items-center mb-2">
-                      <span class="badge" :class="{ 'badge-warn': a.status === 'pending', 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status === 'pending' ? 'Waiting for you' : a.status"></span>
+                      <span class="badge badge-warn">Waiting for you</span>
                       <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                     </div>
                     <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
                     <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first &middot; <span x-text="a.action"></span></div>
-                    <template x-if="a.status === 'pending'">
-                      <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
-                        <button class="btn btn-success" @click="approve(a.id)">Approve</button>
-                        <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="reject(a.id)">Reject</button>
+                    <button class="btn btn-ghost btn-sm" style="margin-top:8px" x-show="previewLines(a).length" @click="expandedId = expandedId === a.id ? '' : a.id" :aria-expanded="expandedId === a.id" x-text="expandedId === a.id ? 'Hide the details' : 'See what happens'"></button>
+                    <div x-show="expandedId === a.id" style="margin-top:8px">
+                      <template x-for="line in previewLines(a)" :key="line">
+                        <p class="text-sm" style="margin:0 0 4px;line-height:1.5;word-break:break-word" x-text="line"></p>
+                      </template>
+                    </div>
+                    <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
+                      <button class="btn btn-success" @click="approve(a.id)">Approve</button>
+                      <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="reject(a.id)">Reject</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <div style="margin-top:22px">
+                <button class="btn btn-ghost" style="width:100%;justify-content:space-between" @click="showCurrent = !showCurrent" :aria-expanded="showCurrent">
+                  <span>Current work</span>
+                  <span class="text-xs text-dim" x-text="jobs.length + (jobs.length === 1 ? ' check running' : ' checks running')"></span>
+                </button>
+                <div x-show="showCurrent" style="margin-top:10px">
+                  <div x-show="jobs.length === 0" class="empty-state"><p class="hint">No scheduled checks right now.</p></div>
+                  <template x-for="j in jobs" :key="j.id">
+                    <div class="card" style="margin-bottom:8px">
+                      <div class="text-sm" style="font-weight:600" x-text="jobName(j)"></div>
+                      <div class="text-xs text-dim" x-text="jobWhen(j)"></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <div style="margin-top:14px">
+                <button class="btn btn-ghost" style="width:100%;justify-content:space-between" @click="showFinished = !showFinished" :aria-expanded="showFinished">
+                  <span>Finished</span>
+                  <span class="text-xs text-dim" x-text="decidedList.length + (decidedList.length === 1 ? ' decision' : ' decisions')"></span>
+                </button>
+                <div x-show="showFinished" style="margin-top:10px">
+                  <div x-show="decidedList.length === 0" class="empty-state"><p class="hint">No decisions yet.</p></div>
+                  <div class="card-grid">
+                    <template x-for="a in decidedList" :key="a.id">
+                      <div class="card approval-card" :class="{ approved: a.status === 'approved', rejected: a.status === 'rejected', expired: a.status === 'expired' }">
+                        <div class="flex justify-between items-center mb-2">
+                          <span class="badge" :class="{ 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status"></span>
+                          <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
+                        </div>
+                        <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
+                        <div class="text-xs text-dim"><span x-text="a.agent_name"></span> asked first &middot; <span x-text="a.action"></span></div>
                       </div>
                     </template>
                   </div>
-                </template>
+                </div>
               </div>
             </div>
           </template>
@@ -5605,8 +5642,31 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <!-- Gallery: every design + start a new one (a page-
                changing destination, like Procreate's Gallery) -->
           <div x-show="cvTab === 'gallery'">
-            <div class="card" style="margin-bottom:14px">
-              <div class="text-sm" style="font-weight:600">Start a design</div>
+            <template x-for="r in cvOrphanReqs" :key="r.id">
+              <div class="card" style="margin-bottom:10px">
+                <div class="text-sm" style="font-weight:600" x-text="(r.intake && r.intake.prompt_text) || 'Design'"></div>
+                <template x-if="cvGenState(r.id)">
+                  <p class="text-sm" :class="cvGenState(r.id).phase === 'error' ? 'notice notice-error' : 'text-dim'" style="margin:6px 0 0" x-text="cvGenState(r.id).text"></p>
+                </template>
+              </div>
+            </template>
+
+            <div class="cv-grid" x-show="cvCardList.length">
+              <template x-for="c in cvCardList" :key="c.req ? c.req.id : c.versions[0].request_id">
+                <button class="cv-gcard" @click="cvOpenDesign(cv.sel[c.req ? c.req.id : ''] || c.versions[c.versions.length - 1].id)">
+                  <img :src="c.versions[c.versions.length - 1].preview_b64 ? 'data:' + (c.versions[c.versions.length - 1].preview_mime || 'image/jpeg') + ';base64,' + c.versions[c.versions.length - 1].preview_b64 : ''" :alt="(c.req && c.req.intake && c.req.intake.prompt_text) || 'Design'">
+                  <span class="cv-gcard-brief" x-text="(c.req && c.req.intake && c.req.intake.prompt_text) || c.versions[0].title || 'Design'"></span>
+                  <span class="cv-gcard-meta" x-text="cvState(c.req) + ' · ' + c.versions.length + (c.versions.length === 1 ? ' version' : ' versions')"></span>
+                </button>
+              </template>
+            </div>
+            <div class="card" style="text-align:center;padding:24px 18px" x-show="cvLoaded && !cvCardList.length && !cvOrphanReqs.length">
+              <div class="text-sm" style="font-weight:600">No designs yet</div>
+              <p class="text-sm text-dim" style="margin:6px 0 0">Start one below — it lands here when the first version is ready.</p>
+            </div>
+
+            <div class="card" style="margin:14px 0">
+              <div class="text-sm" style="font-weight:600">Start a new design</div>
               <div class="cv-field">
                 <label>Reference picture (optional)</label>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -5635,29 +5695,6 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <p class="text-sm text-dim" style="margin:6px 0 0">A design made for a customer is made in the artist&rsquo;s style, and once you approve it, it can go back to their thread as a picture — never a link.</p>
               </div>
               <button class="btn btn-primary" style="width:100%" @click="cvGenerate()" :disabled="cvBusy || !(cv.brief || '').trim()">Make the designs</button>
-            </div>
-
-            <template x-for="r in cvOrphanReqs" :key="r.id">
-              <div class="card" style="margin-bottom:10px">
-                <div class="text-sm" style="font-weight:600" x-text="(r.intake && r.intake.prompt_text) || 'Design'"></div>
-                <template x-if="cvGenState(r.id)">
-                  <p class="text-sm" :class="cvGenState(r.id).phase === 'error' ? 'notice notice-error' : 'text-dim'" style="margin:6px 0 0" x-text="cvGenState(r.id).text"></p>
-                </template>
-              </div>
-            </template>
-
-            <div class="cv-grid" x-show="cvCardList.length">
-              <template x-for="c in cvCardList" :key="c.req ? c.req.id : c.versions[0].request_id">
-                <button class="cv-gcard" @click="cvOpenDesign(cv.sel[c.req ? c.req.id : ''] || c.versions[c.versions.length - 1].id)">
-                  <img :src="c.versions[c.versions.length - 1].preview_b64 ? 'data:' + (c.versions[c.versions.length - 1].preview_mime || 'image/jpeg') + ';base64,' + c.versions[c.versions.length - 1].preview_b64 : ''" :alt="(c.req && c.req.intake && c.req.intake.prompt_text) || 'Design'">
-                  <span class="cv-gcard-brief" x-text="(c.req && c.req.intake && c.req.intake.prompt_text) || c.versions[0].title || 'Design'"></span>
-                  <span class="cv-gcard-meta" x-text="cvState(c.req) + ' · ' + c.versions.length + (c.versions.length === 1 ? ' version' : ' versions')"></span>
-                </button>
-              </template>
-            </div>
-            <div class="card" style="text-align:center;padding:24px 18px" x-show="cvLoaded && !cvCardList.length && !cvOrphanReqs.length">
-              <div class="text-sm" style="font-weight:600">No designs yet</div>
-              <p class="text-sm text-dim" style="margin:6px 0 0">Start one above — it lands on the bench when the first version is ready.</p>
             </div>
           </div>
 
@@ -5768,7 +5805,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
           </template>
           <template x-if="!cvOpen">
-            <p class="text-sm text-dim">Open a design to save its line as a stamp — the saved stamps are below.</p>
+            <p class="text-sm text-dim">Open a design to save its line as a stamp.</p>
           </template>
           <template x-for="a in cvArtists" :key="a.id">
             <div style="margin-bottom:14px">
@@ -5966,9 +6003,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <template x-for="f in (previewDef ? previewDef.fields : [])" :key="f.key">
                     <div>
                       <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="f.label + (f.required ? ' *' : '')"></label>
-                      <input x-show="f.type === 'text' || f.type === 'email' || f.type === 'phone'" :type="f.type === 'text' ? 'text' : (f.type === 'email' ? 'email' : 'tel')" class="input" style="width:100%" x-model="previewData[f.key]">
-                      <textarea x-show="f.type === 'textarea'" class="input" style="width:100%" rows="4" x-model="previewData[f.key]"></textarea>
-                      <select x-show="f.type === 'select'" class="input" style="width:100%" x-model="previewData[f.key]">
+                      <input x-show="f.type === 'text' || f.type === 'email' || f.type === 'phone'" :type="f.type === 'text' ? 'text' : (f.type === 'email' ? 'email' : 'tel')" class="form-input" style="width:100%" x-model="previewData[f.key]">
+                      <textarea x-show="f.type === 'textarea'" class="form-textarea" style="width:100%" rows="4" x-model="previewData[f.key]"></textarea>
+                      <select x-show="f.type === 'select'" class="form-select" style="width:100%" x-model="previewData[f.key]">
                         <option value="">Choose...</option>
                         <template x-for="o in (f.options || [])" :key="o">
                           <option :value="o" x-text="o"></option>
@@ -6013,7 +6050,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <span class="thread-avatar" x-text="(th.name || th.number || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
                   <span class="thread-copy">
                     <span class="thread-name" x-text="th.name || prettyNumber(th.number)"></span>
-                    <span class="thread-snippet text-dim" x-text="lastMsg(th) ? lastMsg(th).body : ''"></span>
+                    <span class="thread-snippet text-dim" x-text="snippet(th)"></span>
                   </span>
                   <span class="thread-meta">
                     <span class="thread-small" x-text="lastMsg(th) ? fmtTs(lastMsg(th).ts) : ''"></span>
@@ -6032,12 +6069,13 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <template x-for="(m, i) in (selected ? selected.messages : [])" :key="i">
                     <div :style="m.dir === 'out' ? 'align-self:flex-end;background:var(--accent);color:#fff' : 'align-self:flex-start;background:var(--surface-2)'" style="max-width:82%;border-radius:14px;padding:8px 12px">
                       <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
+                      <div class="text-sm" x-show="m.media && m.media.length && !(m.body || '').trim()" x-text="m.media.some(function(x){ return (x.mime || '').indexOf('image/') === 0; }) ? 'Photo' : 'Attachment'"></div>
                       <div style="font-size:10px;opacity:.75;margin-top:3px" x-text="fmtTs(m.ts) + (m.dir === 'out' && m.status ? ' - ' + m.status : '')"></div>
                     </div>
                   </template>
                 </div>
                 <div style="margin-top:14px">
-                  <textarea class="input" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
+                  <textarea class="form-textarea" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
                   <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="holdReply()" :disabled="holding">Hold reply for approval</button>
                 </div>
                 <div style="margin-top:14px" x-show="outbox.length">
@@ -6100,7 +6138,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
             <div style="margin-top:16px">
               <label class="text-xs text-dim" for="team-compose">Message the team</label>
-              <textarea id="team-compose" class="input" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
+              <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
               <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="post()" :disabled="posting || !draft.trim()" aria-label="Post message to the team">Post</button>
             </div>
           </div>

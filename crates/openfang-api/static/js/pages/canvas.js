@@ -73,7 +73,17 @@ function canvasPage() {
     cvParse(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } } return v; },
     cvRecs(prefix) {
       var out = [], kv = this.cvKv || {};
-      for (var k in kv) if (k.indexOf(prefix) === 0) { var r = this.cvParse(kv[k]); if (r) out.push(r); }
+      for (var k in kv) {
+        if (k.indexOf(prefix) !== 0 || k === prefix + 'index') continue;
+        var r = this.cvParse(kv[k]);
+        if (!r) continue;
+        // Records are keyed by their id but do not all carry it as a
+        // field (designreq records don't; designs do). Attach the key's
+        // id when the record lacks one, so lookups by id — requests by
+        // request_id, approvals by request id — can match at all.
+        if (!r.id) r.id = k.slice(prefix.length);
+        out.push(r);
+      }
       return out;
     },
     get cvLoaded() { return !!this.cvKv; },
@@ -142,7 +152,9 @@ function canvasPage() {
       var self = this, out = [];
       (idx.artists || []).forEach(function(id) {
         var a = self.cvParse((self.cvKv || {})['artist/' + id]);
-        if (a) out.push(a);
+        // Artist records carry artist_id, not id; every consumer
+        // (chips, the bench selector, saves) keys on id.
+        if (a) { if (!a.id) a.id = a.artist_id || id; out.push(a); }
       });
       return out;
     },

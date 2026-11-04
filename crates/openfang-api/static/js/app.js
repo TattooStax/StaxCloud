@@ -227,8 +227,13 @@ document.addEventListener('alpine:init', function() {
     // Record text for display: a missing value renders as nothing, never as
     // its template token ("Draft reply to Marta (<slug>)" -> "Draft reply to Marta").
     plain(t) {
-      return String(t || '').replace(/\s*\(\s*(?:<[a-z_-]+>|\{\{?\s*[a-z_-]+\s*\}?\})\s*\)/gi, '')
-        .replace(/<[a-z_-]+>|\{\{\s*[a-z_-]+\s*\}\}/gi, '').replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+      var out = String(t || '').replace(/\s*\(\s*(?:<[a-z_-]+>|\{\{?\s*[a-z_-]+\s*\}?\})\s*\)/gi, '')
+        .replace(/<[a-z_-]+>|\{\{\s*[a-z_-]+\s*\}\}/gi, '').replace(/\(\s*\)/g, '')
+        .replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+      // A recipient-less draft title names the gap instead of
+      // trailing off ("Draft reply to" with nobody after it).
+      if (/^Draft reply to$/i.test(out)) out = 'Draft reply (no name on file)';
+      return out;
     },
     // Card copy with its links live: one line each, ellipsis end, full href.
     plainLinked(t) {
