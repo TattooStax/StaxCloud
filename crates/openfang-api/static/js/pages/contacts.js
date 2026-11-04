@@ -107,6 +107,20 @@ function contactsPage() {
       return this.contacts.find(function(c) { return c.key === k; }) || null;
     },
 
+    // Returning from the detail restores focus to the row that opened
+    // it (V4 acceptance J.8). The row stays in the DOM under x-show, so
+    // this is a focus call, not a re-render; scroll is the browser's,
+    // nothing moves it.
+    closeDetail() {
+      var key = this.selectedKey;
+      this.selectedKey = '';
+      var tick = this.$nextTick || function(cb) { setTimeout(cb, 0); };
+      tick(function() {
+        var el = document.querySelector('[data-ckey="' + key + '"]');
+        if (el) el.focus();
+      });
+    },
+
     // Density: the directory renders in pages behind "Show more" instead
     // of every row at once.
     get visible() {

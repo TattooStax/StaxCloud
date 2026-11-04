@@ -541,24 +541,25 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 [data-theme="dark"] .artist-seg button.is-on { background: var(--surface3); box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 .artist-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .leads-summary { font-size: 14px; color: var(--text-dim); margin: 0 0 12px; }
-.lead-stage { margin-bottom: 10px; }
-.lead-stage-head { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--text); font: inherit; font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; text-align: left; }
+.lead-stage { margin-bottom: 0; background: var(--surface); }
+.lead-stage:first-of-type { border-top: 1px solid var(--border); }
+.lead-stage-head { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; color: var(--text); font: inherit; font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; text-align: left; }
 .lead-stage-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lead-stage-count { color: var(--text-dim); font-weight: 600; font-size: 13.5px; }
 .lead-stage-chev { margin-left: auto; flex: none; width: 16px; height: 16px; color: var(--text-muted); transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
 .lead-stage-head[aria-expanded="true"] .lead-stage-chev { transform: rotate(180deg); }
-.lead-list { display: flex; flex-direction: column; gap: 10px; padding: 10px 0 4px; }
-.lead-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
+.lead-list { display: flex; flex-direction: column; gap: 0; padding: 0; }
+.lead-card { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 12px 14px; }
 .lead-card-top { display: flex; align-items: center; gap: 10px; }
-.lead-name { font-size: 15.5px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; flex: 1; min-width: 0; }
+.lead-name { font-size: 13px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lead-temp { flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
 .lead-temp[data-temp="Ready"] { color: var(--success); border-color: var(--success); }
 .lead-temp[data-temp="Interested"] { color: var(--warning); border-color: var(--warning); }
-.lead-idea { margin: 8px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--text-secondary); }
-.lead-meta { margin-top: 8px; font-size: 13px; color: var(--text-dim); display: flex; gap: 6px; flex-wrap: wrap; }
+.lead-idea { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lead-meta { margin-top: 8px; font-size: 11px; color: var(--text-dim); display: flex; gap: 6px; flex-wrap: wrap; }
 .lead-next { margin: 8px 0 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
-.lead-stage-empty { padding: 6px 4px 2px; font-size: 13.5px; color: var(--text-dim); }
-.lead-more { width: 100%; margin-top: 2px; }
+.lead-stage-empty { padding: 12px 14px; font-size: 13px; color: var(--text-dim); }
+.lead-more { width: 100%; margin: 6px 0; }
 @media (prefers-reduced-motion: reduce) { .lead-stage-chev, .artist-seg button { transition: none; } }
 
 /* People lists (Contacts, Texts) — the row component both pages share.
@@ -595,6 +596,26 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .people-error { margin: 10px 12px; padding: 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); background: color-mix(in srgb, var(--error) 6%, transparent); }
 .people-error-msg { font-size: 12px; font-weight: 700; color: var(--error); margin: 0; }
 .people-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--text-on-accent); font-size: 20px; font-weight: 700; }
+
+/* Conversation rows (V4 adoption C): Texts uses the Inbox variant of the
+   same grammar — a 72px grid row where the avatar belongs (conversations
+   and detail headers carry initials; directories do not). */
+.thread-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; min-height: 72px; padding: 12px 14px; background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.thread-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.thread-row:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.thread-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.thread-avatar { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 18%, var(--surface2)); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); font-size: 13px; font-weight: 800; letter-spacing: 0.02em; }
+.thread-copy { min-width: 0; display: grid; gap: 2px; }
+.thread-name { font-size: 14px; font-weight: 600; }
+.thread-name, .thread-snippet { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-snippet { font-size: 13px; }
+.thread-small { font-size: 11px; color: var(--text-dim); }
+.thread-meta { display: grid; justify-items: end; align-self: stretch; gap: 6px; min-width: 58px; }
+@media (max-width: 640px) {
+  .thread-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 9px; padding: 11px 10px; }
+  .thread-avatar { width: 38px; height: 38px; }
+  .thread-meta { min-width: 48px; }
+}
 .stax-field-label { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
 /* Attach menu: the composer's "+" listing — the same labeled
    destinations everywhere the composer appears (Home, Canvas):

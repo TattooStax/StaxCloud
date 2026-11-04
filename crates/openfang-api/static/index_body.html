@@ -4964,7 +4964,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
             <div class="people-list" x-show="!selected">
               <template x-for="c in visible" :key="c.key">
-                <button class="people-row" @click="selectedKey = c.key">
+                <button class="people-row" :data-ckey="c.key" @click="selectedKey = c.key">
                   <span class="people-copy">
                     <span class="people-name" x-text="c.name"></span>
                     <span class="people-sub" x-text="c.email || c.phone || 'No contact info'"></span>
@@ -4976,7 +4976,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-ghost" style="width:100%;margin-top:10px" x-show="!selected && filtered.length > visibleCount" @click="visibleCount += 60">Show more · <span x-text="filtered.length - visibleCount"></span> more</button>
 
             <div x-show="selected" style="max-width:640px">
-              <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px">&larr; All contacts</button>
+              <button class="btn btn-ghost btn-sm" @click="closeDetail()" style="margin-bottom:10px">&larr; All contacts</button>
               <div class="card" x-show="selected">
                 <div style="display:flex;gap:14px;align-items:center">
                   <span class="people-avatar" x-text="selected ? initials(selected.name) : ''"></span>
@@ -6007,16 +6007,18 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <p class="hint">When the modem bridge is connected, conversations from the studio line land here — and replies you approve go out from here.</p>
             </div>
 
-            <div class="stax-brief-list" x-show="!selected">
+            <div class="people-list" x-show="!selected">
               <template x-for="th in threads" :key="th.key">
-                <button class="stax-brief-row" @click="selectedKey = th.key">
-                  <span class="stax-side-avatar" x-text="(th.name || th.number || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
-                  <span style="flex:1;min-width:0;text-align:left">
-                    <span style="display:block;font-weight:600;font-size:14px" x-text="th.name || prettyNumber(th.number)"></span>
-                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="text-xs text-dim" x-text="lastMsg(th) ? lastMsg(th).body : ''"></span>
+                <button class="thread-row" @click="selectedKey = th.key">
+                  <span class="thread-avatar" x-text="(th.name || th.number || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
+                  <span class="thread-copy">
+                    <span class="thread-name" x-text="th.name || prettyNumber(th.number)"></span>
+                    <span class="thread-snippet text-dim" x-text="lastMsg(th) ? lastMsg(th).body : ''"></span>
                   </span>
-                  <span x-show="th.test" class="badge badge-dim" style="font-size:10px">test</span>
-                  <span class="text-xs text-dim" x-text="lastMsg(th) ? fmtTs(lastMsg(th).ts) : ''"></span>
+                  <span class="thread-meta">
+                    <span class="thread-small" x-text="lastMsg(th) ? fmtTs(lastMsg(th).ts) : ''"></span>
+                    <span x-show="th.test" class="badge badge-dim" style="font-size:10px">test</span>
+                  </span>
                 </button>
               </template>
             </div>
