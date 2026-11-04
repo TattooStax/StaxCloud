@@ -70,8 +70,8 @@
 }
 
 .page-header h2 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: -0.01em;
 }
 
@@ -143,6 +143,13 @@
 .cv-vthumb.is-on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .stax-chip.is-on { background: var(--accent-dim); color: var(--text-on-accent); border-color: var(--accent); }
 .cv-vthumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cv-row { display: flex; gap: 10px; align-items: center; width: 100%; min-height: 56px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cv-row > svg { width: 20px; height: 20px; }
+.cv-row.is-on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cv-layer-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 56px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.cv-context { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.cv-stage { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 @media (max-width: 640px) { .cv-input { font-size: 16px; } }
 
 .board-page .btn, .board-page .stax-chip { min-height: var(--hit-min); }
@@ -158,7 +165,7 @@
 /* ── R1: StaxCloud dock shell ─────────────────────────── */
 .app-layout { flex-direction: column; }
 .stax-dock { flex: none; display: flex; background: var(--bg-primary); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 60; }
-.stax-dock-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 6px 2px; background: none; border: none; color: var(--text-dim); font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; cursor: pointer; position: relative; }
+.stax-dock-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: var(--dock-height); padding: 6px 2px; background: none; border: none; color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .01em; cursor: pointer; position: relative; }
 .stax-dock-btn svg { width: 22px; height: 22px; }
 .stax-dock-btn.active { color: var(--accent); }
 /* Primary dock: the colorful family marks. The active tab gets a tinted
@@ -166,9 +173,18 @@
 .stax-dock-btn .stax-ic { width: 26px; height: 26px; padding: 3px 15px; box-sizing: content-box; border-radius: 999px; transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 .stax-dock-btn.active .stax-ic { background: var(--accent-glow); }
 .stax-dock-btn.active span:last-child { font-weight: 700; }
-.stax-dock-btn:active .stax-ic { transform: scale(0.94); }
+.stax-dock-btn:active .stax-ic { transform: scale(0.96); }
+.stax-dock-btn:active > svg { transform: scale(0.96); }
 .stax-dock-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 12px; }
 .stax-dock-badge { position: absolute; top: 5px; right: calc(50% - 21px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+/* The needs-you badge as a shell fixture: one element for every dock
+   variant, floating just above the dock band's trailing edge (the
+   shell column caps at 920px on wide screens), clear of the tab
+   slots, always a number, tappable to Work. Sits below the drawer
+   (61/62) and the confirm overlay. */
+.stax-shell-badge { position: fixed; right: max(10px, calc(50% - 450px)); bottom: calc(var(--dock-height) + env(safe-area-inset-bottom) + 8px); z-index: 59; min-width: 44px; height: 44px; padding: 0 12px; border-radius: 999px; border: 2px solid var(--bg-primary); background: var(--accent); color: #fff; font: inherit; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-sm); }
+.stax-shell-badge:active { transform: scale(0.96); }
+.stax-shell-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .stax-chips { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding: 8px 16px; overflow-x: auto; scrollbar-width: none; }
 .stax-chips::-webkit-scrollbar { display: none; }
 /* The generic page-wrapper rule (.main-content > div) stretches every
@@ -178,7 +194,7 @@
 .main-content > .stax-chips { flex: none; }
 .stax-menu-btn { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -5px 0 -5px -8px; background: none; border: none; border-radius: 10px; color: var(--text); cursor: pointer; }
 .stax-menu-btn:hover { background: var(--surface); }
-.stax-chip { flex: none; padding: 6px 13px; min-height: 34px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.stax-chip { flex: none; padding: 6px 13px; min-height: var(--hit-min); border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .stax-chip.active { background: rgba(20,110,104,.14); color: var(--accent); border-color: var(--accent); }
 
 /* ── Side card: a left drawer opened from the shell bar's menu button ── */

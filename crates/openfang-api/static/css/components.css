@@ -20,7 +20,7 @@
   letter-spacing: -0.01em;
 }
 
-.btn:active { transform: scale(0.97); }
+.btn:active { transform: scale(0.96); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .btn-primary {
   background: var(--accent);

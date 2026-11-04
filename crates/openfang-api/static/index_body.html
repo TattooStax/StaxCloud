@@ -34,6 +34,9 @@
     <symbol id="g-library" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 22 C18 18 24 15 32 15 C40 15 46 18 46 22 V43 C46 47 40 50 32 50 C24 50 18 47 18 43 Z"/><path d="M18 22 C18 26 24 29 32 29 C40 29 46 26 46 22"/><path d="M18 33 C18 37 24 40 32 40 C40 40 46 37 46 33"/></g></symbol>
     <symbol id="g-contacts" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="25" cy="25" r="6" fill="currentColor"/><path d="M14 47 C14 39.5 19 35 25 35 C31 35 36 39.5 36 47"/><circle cx="41.5" cy="27" r="5" fill="currentColor"/><path d="M38 36.5 C43 36.5 47.5 40 48.5 45.5"/></g></symbol>
     <symbol id="g-canvas" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M24 14 H40 L46.5 30 L32 51 L17.5 30 Z"/><path d="M21.5 23 H42.5"/><path d="M32 51 V38"/><circle cx="32" cy="34" r="2.6" fill="currentColor"/></g></symbol>
+    <symbol id="g-layers" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 13 L51 23.5 L32 34 L13 23.5 Z"/><path d="M13 32 L32 42.5 L51 32"/><path d="M13 40.5 L32 51 L51 40.5"/></g></symbol>
+    <symbol id="g-display" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="15" y="16" width="34" height="25" rx="3"/><path d="M32 41 V49"/><path d="M23 52 H41"/></g></symbol>
+    <symbol id="g-export" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 35 V47 H44 V35"/><path d="M32 40 V17"/><path d="M23.5 25 L32 16.5 L40.5 25"/></g></symbol>
     <symbol id="g-settings" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="8"/><path d="M32 13 V19 M32 45 V51 M13 32 H19 M45 32 H51 M18.6 18.6 L22.8 22.8 M41.2 41.2 L45.4 45.4 M45.4 18.6 L41.2 22.8 M22.8 41.2 L18.6 45.4"/></g></symbol>
     <symbol id="g-connections" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="29" width="22" height="13" rx="6.5"/><rect x="29" y="22" width="22" height="13" rx="6.5"/></g></symbol>
     <symbol id="g-advanced" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="15" width="40" height="34" rx="5"/><path d="M20 25 L27 31 L20 37"/><path d="M31 39 H43"/></g></symbol>
@@ -5343,75 +5346,307 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   </div>
                   <div x-show="b.type === 'kvlist' && !kvView(b).rows.length && !kvView(b).count" class="text-sm text-dim" x-text="b.type === 'kvlist' ? kvView(b).empty : ''"></div>
                 </div>
-                <div x-show="b.type === 'designstudio'">
-                  <div class="card" style="margin-bottom:14px">
-                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                      <label class="btn btn-ghost" style="cursor:pointer;margin:0">
-                        <input type="file" accept="image/*" @change="cvPickFile($event)" style="display:none">
-                        <span x-text="cv.fileName ? 'Change photo' : 'Add the reference photo'"></span>
-                      </label>
-                      <img x-show="cv.fileId" :src="cv.fileId ? '/api/uploads/' + cv.fileId : ''" alt="Reference photo" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
-                      <span x-show="cv.fileName" class="text-sm text-dim" x-text="cv.fileName"></span>
+              </div>
+            </template>
+            <p class="text-xs text-dim" style="margin-top:6px">Want a change? Ask Stax.</p>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Page: Canvas — the artist's design bench (its own app) -->
+    <template x-if="page === 'canvas'">
+      <div x-data="canvasPage" x-init="loadData()">
+        <div class="page-header">
+          <div style="min-width:0">
+            <h2>Canvas</h2>
+            <div class="text-sm text-dim" x-text="cvHeadLine()"></div>
+          </div>
+          <button class="btn btn-ghost" @click="navigate('chat')">Ask Stax</button>
+        </div>
+        <div class="page-body" x-ref="body" @scroll="cvNoteScroll()">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading Canvas...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load Canvas</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError">
+
+            <!-- Tab: Canvas — the bench itself -->
+            <section x-show="$store.app.canvasTab === 'canvas'">
+              <div x-show="!cvOpenCard() && cvAnyJobBusy()" class="card" style="margin-bottom:14px">
+                <div class="text-sm" style="font-weight:600">Designing…</div>
+                <p class="text-sm text-dim" style="margin:6px 0 0">Your design is being made. It opens here when the first version is ready.</p>
+              </div>
+              <template x-if="cvOpenCard()">
+                <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+                  <img x-show="cvOpenCard().sel && cvOpenCard().sel.v.preview_b64" :src="cvOpenCard().sel && cvOpenCard().sel.v.preview_b64 ? 'data:' + (cvOpenCard().sel.v.preview_mime || 'image/jpeg') + ';base64,' + cvOpenCard().sel.v.preview_b64 : ''" :alt="cvOpenCard().brief" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff">
+                  <div style="padding:12px 14px 14px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                      <span style="min-width:0">
+                        <span class="text-sm" style="font-weight:600;display:block" x-text="cvOpenCard().brief"></span>
+                        <span class="text-xs text-dim" x-text="cvArtistName(cvOpenCard().artistId)"></span>
+                      </span>
+                      <span class="badge badge-dim" style="font-size:10px;white-space:nowrap" x-text="cvState(cvOpenCard()).word"></span>
                     </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" role="group" aria-label="Artist">
-                      <template x-for="a in cvArtists()" :key="a.id">
-                        <button class="stax-chip" :class="{ 'is-on': cv.artist === a.id }" :aria-pressed="cv.artist === a.id" @click="cv.artist = a.id" x-text="a.name"></button>
+                    <div x-show="cvOpenCard().versions.length" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px">
+                      <template x-for="v in cvOpenCard().versions" :key="v.id">
+                        <button class="cv-vthumb" :class="{ 'is-on': cvOpenCard().sel && cvOpenCard().sel.id === v.id }" @click="cvSelVersion(cvOpenCard(), v)" :aria-label="'Version ' + v.v.version" :aria-pressed="cvOpenCard().sel && cvOpenCard().sel.id === v.id">
+                          <img :src="v.v.preview_b64 ? 'data:' + (v.v.preview_mime || 'image/jpeg') + ';base64,' + v.v.preview_b64 : ''" alt="" style="width:100%;height:100%;object-fit:cover;background:#fff">
+                          <span class="text-xs" x-text="'v' + v.v.version"></span>
+                        </button>
                       </template>
                     </div>
-                    <div style="display:flex;gap:8px;margin-top:12px">
-                      <input type="text" class="cv-input" style="flex:1;min-width:0" x-model="cv.brief" placeholder="Fine-line floral sprig for a forearm" aria-label="What are we designing?" @keydown.enter="cvGenerate()">
-                      <button class="btn btn-primary" @click="cvGenerate()" :disabled="cv.busy" x-text="cv.busy ? 'Starting…' : 'Design it'"></button>
+                    <div x-show="cvOpenCard().sel" class="text-sm text-dim" style="margin:8px 0 0" x-text="cvLayerLine(cvOpenCard())"></div>
+                    <p x-show="cvState(cvOpenCard()).error" class="text-sm" style="color:var(--error);margin:10px 0 0" x-text="cvState(cvOpenCard()).error"></p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+                      <button x-show="cvOpenCard().status === 'planned' && cvOpenCard().versions.length" class="btn btn-primary" @click="cvSubmit(cvOpenCard())" x-text="'Send for ' + cvFirstName(cvOpenCard().artistId) + '’s approval'"></button>
+                      <template x-if="cvOpenCard().status === 'awaiting_artist' && cvApprovalFor(cvOpenCard())">
+                        <span style="display:flex;gap:8px">
+                          <button class="btn btn-primary" @click="cvApprove(cvOpenCard())">Approve</button>
+                          <button class="btn btn-ghost" @click="cvReject(cvOpenCard())">Not yet</button>
+                        </span>
+                      </template>
+                      <span x-show="cvOpenCard().status === 'awaiting_artist' && !cvApprovalFor(cvOpenCard())" class="text-sm text-dim">Waiting in Needs you…</span>
                     </div>
-                    <p x-show="cv.err" class="text-sm" style="color:var(--error);margin:8px 0 0" x-text="cv.err"></p>
+                    <div x-show="!cvClosed(cvOpenCard()) && cvOpenCard().versions.length" style="display:flex;gap:8px;margin-top:10px">
+                      <input type="text" class="cv-input" style="flex:1;min-width:0" x-model="cv.note[cvOpenCard().id]" placeholder="Bigger leaves, lighter shading" aria-label="What should change?" @keydown.enter="cvRedesign(cvOpenCard())">
+                      <button class="btn btn-ghost" @click="cvRedesign(cvOpenCard())">Make new version</button>
+                    </div>
                   </div>
-                  <div x-show="!cvCards().length" class="text-sm text-dim">No designs yet — start one above.</div>
-                  <div style="display:flex;flex-direction:column;gap:14px">
-                    <template x-for="card in cvCards()" :key="card.id">
-                      <div class="card" style="padding:0;overflow:hidden">
-                        <button @click="cv.open[card.id] = !cv.open[card.id]" :aria-expanded="!!cv.open[card.id]" style="display:block;width:100%;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit">
-                          <img x-show="card.sel && card.sel.v.preview_b64" :src="card.sel && card.sel.v.preview_b64 ? 'data:' + (card.sel.v.preview_mime || 'image/jpeg') + ';base64,' + card.sel.v.preview_b64 : ''" :alt="card.brief" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff">
-                          <span style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px">
-                            <span style="min-width:0">
-                              <span class="text-sm" style="font-weight:600;display:block" x-text="card.brief"></span>
-                              <span class="text-xs text-dim" x-text="cvArtistName(card.artistId)"></span>
-                            </span>
-                            <span class="badge badge-dim" style="font-size:10px;white-space:nowrap" x-text="cvState(card).word"></span>
+                </div>
+              </template>
+              <div x-show="!cvOpenCard() && !cvAnyJobBusy()" class="empty-state">
+                <h4>No designs yet</h4>
+                <p class="hint">Your bench is empty — no design is open. Start one below with a reference photo and a few words about the piece.</p>
+              </div>
+              <div class="card" style="margin-bottom:14px">
+                <div class="text-sm font-bold" style="margin-bottom:12px">Start a new design</div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                  <label class="btn btn-ghost" style="cursor:pointer;margin:0">
+                    <input type="file" accept="image/*" @change="cvPickFile($event)" style="display:none">
+                    <span x-text="cv.fileId ? 'Change photo' : 'Add the reference photo'"></span>
+                  </label>
+                  <img x-show="cv.fileId" :src="cv.fileId ? '/api/uploads/' + cv.fileId : ''" alt="Reference photo" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
+                  <span x-show="fileName" class="text-sm text-dim" x-text="fileName"></span>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" role="group" aria-label="Artist">
+                  <template x-for="a in cvArtists()" :key="a.id">
+                    <button class="stax-chip" :class="{ 'is-on': cv.artist === a.id }" :aria-pressed="cv.artist === a.id" @click="cv.artist = a.id" x-text="a.name"></button>
+                  </template>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                  <input type="text" class="cv-input" style="flex:1;min-width:0" x-model="cv.brief" placeholder="Fine-line floral sprig for a forearm" aria-label="What are we designing?" @keydown.enter="cvGenerate()">
+                  <button class="btn btn-primary" @click="cvGenerate()" :disabled="busy" x-text="busy ? 'Starting…' : 'Design it'"></button>
+                </div>
+                <p x-show="err" class="text-sm" style="color:var(--error);margin:8px 0 0" x-text="err"></p>
+              </div>
+              <div x-show="cvCards().length">
+                <div class="text-sm font-bold" style="margin:4px 0 8px">All designs</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <template x-for="card in cvCards()" :key="card.id">
+                    <button class="cv-row" :class="{ 'is-on': cv.openId === card.id }" @click="cvOpen(card)" :aria-current="cv.openId === card.id ? 'true' : null">
+                      <img x-show="card.sel && card.sel.v.preview_b64" :src="card.sel && card.sel.v.preview_b64 ? 'data:' + (card.sel.v.preview_mime || 'image/jpeg') + ';base64,' + card.sel.v.preview_b64 : ''" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;background:#fff;flex:none">
+                      <span style="flex:1;min-width:0;text-align:left">
+                        <span class="text-sm" style="font-weight:600;display:block" x-text="card.brief"></span>
+                        <span class="text-xs text-dim" style="display:block" x-text="cvArtistName(card.artistId) + ' · ' + cvState(card).word"></span>
+                      </span>
+                      <svg style="flex:none;color:var(--text-dim)" aria-hidden="true"><use href="#g-chev"/></svg>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </section>
+
+            <!-- Tab: Layers — the open design's stack -->
+            <section x-show="$store.app.canvasTab === 'layers'">
+              <div x-show="!cvOpenCard()" class="empty-state">
+                <h4>Nothing open yet</h4>
+                <p class="hint">No design is open — designs live on the Canvas tab. Open one there and its layers show here.</p>
+                <button class="btn btn-primary" @click="$store.app.canvasTab = 'canvas'">Go to the canvas</button>
+              </div>
+              <div x-show="cvOpenCard() && !cvOpenCard().sel" class="empty-state">
+                <h4>Designing…</h4>
+                <p class="hint">This design is still being made — its layers land here when the first version is ready.</p>
+              </div>
+              <template x-if="cvOpenCard() && cvOpenCard().sel">
+                <div>
+                  <div class="cv-context">
+                    <img :src="cvOpenCard().sel.v.preview_b64 ? 'data:' + (cvOpenCard().sel.v.preview_mime || 'image/jpeg') + ';base64,' + cvOpenCard().sel.v.preview_b64 : ''" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;background:#fff;flex:none">
+                    <span style="flex:1;min-width:0">
+                      <span class="text-sm" style="font-weight:600;display:block" x-text="cvOpenCard().brief"></span>
+                      <span class="text-xs text-dim" style="display:block" x-text="'Version ' + cvOpenCard().sel.v.version + ' · ' + cvLayers(cvOpenCard()).length + ' layers'"></span>
+                    </span>
+                    <button class="stax-chip" @click="$store.app.canvasTab = 'canvas'">Change</button>
+                  </div>
+                  <p class="text-sm text-dim" style="margin:2px 0 12px">The layers of this version, in stack order. What shows is what gets shared — hide a layer and it stays out of the share picture.</p>
+                  <p x-show="cvLayerErr(cvOpenCard())" class="text-sm" style="color:var(--error);margin:0 0 10px" x-text="cvLayerErr(cvOpenCard())"></p>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="(layer, li) in cvLayers(cvOpenCard())" :key="layer.id">
+                      <div>
+                        <div class="cv-layer-row">
+                          <span style="flex:1;min-width:0">
+                            <span class="text-sm" style="font-weight:600;display:block" x-text="cvLayerName(layer)"></span>
+                            <span class="text-xs text-dim" style="display:block" x-text="'Layer ' + (li + 1) + ' of ' + cvLayers(cvOpenCard()).length"></span>
                           </span>
-                        </button>
-                        <div x-show="cv.open[card.id]" style="padding:0 14px 14px">
-                          <div x-show="card.versions.length" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-                            <template x-for="v in card.versions" :key="v.id">
-                              <button class="cv-vthumb" :class="{ 'is-on': card.sel && card.sel.id === v.id }" @click="cv.sel[card.id] = v.id" :aria-label="'Version ' + v.v.version" :aria-pressed="card.sel && card.sel.id === v.id">
-                                <img :src="v.v.preview_b64 ? 'data:' + (v.v.preview_mime || 'image/jpeg') + ';base64,' + v.v.preview_b64 : ''" alt="" style="width:100%;height:100%;object-fit:cover;background:#fff">
-                                <span class="text-xs" x-text="'v' + v.v.version"></span>
-                              </button>
-                            </template>
-                          </div>
-                          <div x-show="card.sel" class="text-sm text-dim" style="margin-bottom:10px" x-text="card.sel ? (card.sel.v.layers || []).map(function(l) { return l.role === 'line' ? 'Line' : l.role === 'shading' ? 'Shading' : (l.name || l.role || ''); }).join(' · ') : ''"></div>
-                          <p x-show="cvState(card).error" class="text-sm" style="color:var(--error);margin:0 0 10px" x-text="cvState(card).error"></p>
-                          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                            <button x-show="card.status === 'planned' && card.versions.length" class="btn btn-primary btn-sm" @click="cvSubmit(card)" x-text="'Send for ' + cvFirstName(card.artistId) + '’s approval'"></button>
-                            <template x-if="card.status === 'awaiting_artist' && cvApprovalFor(card)">
-                              <span style="display:flex;gap:8px">
-                                <button class="btn btn-primary btn-sm" @click="cvApprove(card)">Approve</button>
-                                <button class="btn btn-ghost btn-sm" @click="cvReject(card)">Not yet</button>
-                              </span>
-                            </template>
-                            <span x-show="card.status === 'awaiting_artist' && !cvApprovalFor(card)" class="text-sm text-dim">Waiting in Needs you…</span>
-                          </div>
-                          <div x-show="!cvClosed(card) && card.versions.length" style="display:flex;gap:8px;margin-top:10px">
-                            <input type="text" class="cv-input" style="flex:1;min-width:0" x-model="cv.note[card.id]" placeholder="Bigger leaves, lighter shading" aria-label="What should change?" @keydown.enter="cvRedesign(card)">
-                            <button class="btn btn-ghost btn-sm" @click="cvRedesign(card)">Make new version</button>
-                          </div>
+                          <button class="stax-chip" :class="{ 'is-on': layer.visible }" :aria-pressed="layer.visible" :disabled="layer.busy" @click="cvToggleLayer(cvOpenCard(), layer)" x-text="layer.busy ? 'Saving…' : (layer.visible ? 'Shown' : 'Hidden')"></button>
+                          <button class="btn btn-ghost" :disabled="li === 0 || layer.busy" @click="cvMoveLayer(cvOpenCard(), layer, -1)" aria-label="Move layer up">&uarr;</button>
+                          <button class="btn btn-ghost" :disabled="li === cvLayers(cvOpenCard()).length - 1 || layer.busy" @click="cvMoveLayer(cvOpenCard(), layer, 1)" aria-label="Move layer down">&darr;</button>
+                          <button class="btn btn-ghost" :disabled="layer.busy" @click="cvExportBrush(cvOpenCard(), layer)">Stamp file</button>
                         </div>
+                        <p x-show="cvBrushState(cvOpenCard(), layer)" class="text-xs text-dim" style="margin:4px 2px 0" x-text="cvBrushState(cvOpenCard(), layer)"></p>
                       </div>
                     </template>
                   </div>
                 </div>
-                <div x-show="['heading','text','stats','list','kvlist','designstudio'].indexOf(b.type) === -1" class="text-xs text-dim">A newer kind of block — update StaxCloud to view it.</div>
+              </template>
+            </section>
+
+            <!-- Tab: Display — how the design presents, and sharing -->
+            <section x-show="$store.app.canvasTab === 'display'">
+              <div x-show="!cvOpenCard()" class="empty-state">
+                <h4>Nothing open yet</h4>
+                <p class="hint">No design is open — designs live on the Canvas tab. Open one there and you can check how it sits here.</p>
+                <button class="btn btn-primary" @click="$store.app.canvasTab = 'canvas'">Go to the canvas</button>
               </div>
-            </template>
-            <p class="text-xs text-dim" style="margin-top:6px">Want a change? Ask Stax.</p>
+              <div x-show="cvOpenCard() && !cvOpenCard().sel" class="empty-state">
+                <h4>Designing…</h4>
+                <p class="hint">This design is still being made — it shows here when the first version is ready.</p>
+              </div>
+              <template x-if="cvOpenCard() && cvOpenCard().sel">
+                <div>
+                  <div class="cv-stage" :style="cvStageStyle()">
+                    <img :src="cvOpenCard().sel.v.preview_b64 ? 'data:' + (cvOpenCard().sel.v.preview_mime || 'image/jpeg') + ';base64,' + cvOpenCard().sel.v.preview_b64 : ''" :alt="cvOpenCard().brief" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;mix-blend-mode:multiply">
+                  </div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px" role="group" aria-label="Background">
+                    <button class="stax-chip" :class="{ 'is-on': cv.bg === 'white' }" :aria-pressed="cv.bg === 'white'" @click="cv.bg = 'white'">On white</button>
+                    <button class="stax-chip" :class="{ 'is-on': cv.bg === 'clear' }" :aria-pressed="cv.bg === 'clear'" @click="cv.bg = 'clear'">See-through</button>
+                    <button class="stax-chip" :class="{ 'is-on': cv.bg === 'skin1' }" :aria-pressed="cv.bg === 'skin1'" @click="cv.bg = 'skin1'">Skin · light</button>
+                    <button class="stax-chip" :class="{ 'is-on': cv.bg === 'skin2' }" :aria-pressed="cv.bg === 'skin2'" @click="cv.bg = 'skin2'">Skin · medium</button>
+                    <button class="stax-chip" :class="{ 'is-on': cv.bg === 'skin3' }" :aria-pressed="cv.bg === 'skin3'" @click="cv.bg = 'skin3'">Skin · deep</button>
+                  </div>
+                  <div class="card">
+                    <div class="text-sm font-bold" style="margin-bottom:6px">Sharing</div>
+                    <p class="text-sm text-dim" style="margin:0 0 10px">What's on the canvas is what gets shared — only the layers that are showing.</p>
+                    <p x-show="cvShareStale(cvOpenCard())" class="text-sm" style="margin:0 0 10px">The layers changed since the share picture was made — update it before you share.</p>
+                    <p x-show="cvExportState(cvOpenCard(), 'share')" class="text-sm text-dim" style="margin:0 0 10px" x-text="'Share picture: ' + cvExportState(cvOpenCard(), 'share')"></p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="btn btn-primary" @click="cvShareDesign(cvOpenCard())">Share this design</button>
+                      <button class="btn btn-ghost" @click="cvExportKind(cvOpenCard(), 'share')">Update the share picture</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </section>
+
+            <!-- Tab: Export — the design's files -->
+            <section x-show="$store.app.canvasTab === 'export'">
+              <div x-show="!cvOpenCard()" class="empty-state">
+                <h4>Nothing open yet</h4>
+                <p class="hint">No design is open — designs live on the Canvas tab. Open one there and its files show here.</p>
+                <button class="btn btn-primary" @click="$store.app.canvasTab = 'canvas'">Go to the canvas</button>
+              </div>
+              <div x-show="cvOpenCard() && !cvOpenCard().sel" class="empty-state">
+                <h4>Designing…</h4>
+                <p class="hint">This design is still being made — its files land here when the first version is ready.</p>
+              </div>
+              <template x-if="cvOpenCard() && cvOpenCard().sel">
+                <div>
+                  <div class="cv-context">
+                    <img :src="cvOpenCard().sel.v.preview_b64 ? 'data:' + (cvOpenCard().sel.v.preview_mime || 'image/jpeg') + ';base64,' + cvOpenCard().sel.v.preview_b64 : ''" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;background:#fff;flex:none">
+                    <span style="flex:1;min-width:0">
+                      <span class="text-sm" style="font-weight:600;display:block" x-text="cvOpenCard().brief"></span>
+                      <span class="text-xs text-dim" style="display:block" x-text="'Version ' + cvOpenCard().sel.v.version"></span>
+                    </span>
+                    <button class="stax-chip" @click="$store.app.canvasTab = 'canvas'">Change</button>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <div class="card">
+                      <div class="text-sm" style="font-weight:600">Layered design file</div>
+                      <p class="text-sm text-dim" style="margin:4px 0 0" x-text="'The full design with every layer separate — saved with the design' + (cvSizeLine(cvOpenCard()) ? ' · ' + cvSizeLine(cvOpenCard()) : '') + '.'"></p>
+                    </div>
+                    <div class="card">
+                      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <div style="flex:1;min-width:140px">
+                          <div class="text-sm" style="font-weight:600">Stencil</div>
+                          <p class="text-sm text-dim" style="margin:4px 0 0" x-text="cvExportState(cvOpenCard(), 'stencil') || 'Not made yet'"></p>
+                        </div>
+                        <button class="btn btn-ghost" @click="cvExportKind(cvOpenCard(), 'stencil')">Make a fresh stencil</button>
+                      </div>
+                    </div>
+                    <div class="card">
+                      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <div style="flex:1;min-width:140px">
+                          <div class="text-sm" style="font-weight:600">PSD file</div>
+                          <p class="text-sm text-dim" style="margin:4px 0 0" x-text="cvPsdState(cvOpenCard()) || 'Not made yet — the layered Photoshop file.'"></p>
+                        </div>
+                        <button class="btn btn-ghost" @click="cvExportPsd(cvOpenCard())">Make the PSD</button>
+                      </div>
+                    </div>
+                    <div class="card">
+                      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <div style="flex:1;min-width:140px">
+                          <div class="text-sm" style="font-weight:600">Procreate stamp</div>
+                          <p class="text-sm text-dim" style="margin:4px 0 0" x-text="cvLineLayer(cvOpenCard()) ? (cvBrushState(cvOpenCard(), cvLineLayer(cvOpenCard())) || 'The line layer as a stamp file.') : 'This design has no line layer.'"></p>
+                        </div>
+                        <button class="btn btn-ghost" x-show="cvLineLayer(cvOpenCard())" @click="cvExportBrush(cvOpenCard(), cvLineLayer(cvOpenCard()))">Make the stamp file</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="text-sm text-dim" style="margin-top:12px">Files save with the design on the studio computer — ask Stax to send you one any time.</p>
+                </div>
+              </template>
+            </section>
+
+            <!-- Tab: Settings — the artist's own Canvas settings -->
+            <section x-show="$store.app.canvasTab === 'settings'">
+              <div class="text-sm font-bold" style="margin:2px 0 8px">Whose bench?</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px" role="group" aria-label="Artist">
+                <template x-for="a in cvArtists()" :key="a.id">
+                  <button class="stax-chip" :class="{ 'is-on': cv.setArtist === a.id }" :aria-pressed="cv.setArtist === a.id" @click="cvSetArtist(a.id)" x-text="a.name"></button>
+                </template>
+              </div>
+              <template x-if="artistDraft">
+                <div class="card">
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <div style="flex:1;min-width:180px">
+                      <div class="text-sm" style="font-weight:600">Customers can request designs</div>
+                      <p class="text-sm text-dim" style="margin:4px 0 0">When this is on, customers can ask for a design from this artist. Off is the usual setting.</p>
+                    </div>
+                    <button class="stax-chip" :class="{ 'is-on': artistDraft.allow }" :aria-pressed="artistDraft.allow" @click="artistDraft.allow = !artistDraft.allow" x-text="artistDraft.allow ? 'On' : 'Off'"></button>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px">
+                    <div style="flex:1;min-width:180px">
+                      <div class="text-sm" style="font-weight:600">Versions per request</div>
+                      <p class="text-sm text-dim" style="margin:4px 0 0">How many versions get made each time a design is requested.</p>
+                    </div>
+                    <span style="display:flex;gap:8px;align-items:center">
+                      <button class="btn btn-ghost" @click="cvStepVersions(-1)" aria-label="Fewer versions">&minus;</button>
+                      <span class="text-sm" style="font-weight:700;min-width:20px;text-align:center" x-text="artistDraft.versions"></span>
+                      <button class="btn btn-ghost" @click="cvStepVersions(1)" aria-label="More versions">+</button>
+                    </span>
+                  </div>
+                  <div style="margin-top:16px">
+                    <div class="text-sm" style="font-weight:600">Style preset</div>
+                    <p class="text-sm text-dim" style="margin:4px 0 8px">Tattoo Smooth Grey: clean, simplified shading that's easier to tattoo — no tiny speckle dots.</p>
+                    <button class="stax-chip" :class="{ 'is-on': cvPresetOn('tattoo-smooth-grey') }" :aria-pressed="cvPresetOn('tattoo-smooth-grey')" @click="cvTogglePreset('tattoo-smooth-grey')">Tattoo Smooth Grey</button>
+                  </div>
+                  <div style="margin-top:16px">
+                    <label class="text-sm" style="font-weight:600;display:block;margin-bottom:6px" for="cv-style-note">Style note</label>
+                    <input id="cv-style-note" type="text" class="cv-input" style="width:100%" x-model="artistDraft.note" placeholder="How this artist likes their designs">
+                  </div>
+                  <p x-show="artistDraft.styles" class="text-sm text-dim" style="margin:14px 0 0" x-text="'Styles: ' + artistDraft.styles"></p>
+                  <p x-show="artistDraft.specialties" class="text-sm text-dim" style="margin:4px 0 0" x-text="'Known for: ' + artistDraft.specialties"></p>
+                  <div style="margin-top:16px">
+                    <button class="btn btn-primary" @click="cvSaveArtist()">Save settings</button>
+                  </div>
+                  <p class="text-sm text-dim" style="margin:10px 0 0">These are the same settings Stax designs by — changing them here changes them everywhere.</p>
+                </div>
+              </template>
+            </section>
+
           </div>
         </div>
       </div>
@@ -6366,23 +6601,22 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
   </main>
 
-  <!-- Dock: four tabs. Stax is the conversation's only dock home; only
-       Work carries a badge. -->
-  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms' && !inSystemCorner()" aria-label="Primary">
-      <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
+  <!-- Dock: four tabs. Stax is the conversation's only dock home; the
+       needs-you badge is the shell fixture after the docks. -->
+  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms' && page !== 'canvas' && !inSystemCorner()" aria-label="Primary">
+      <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" :aria-current="surf() === 'home' ? 'page' : null" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
         <svg class="stax-ic stax-ic--reaper" aria-hidden="true"><use href="#stax-reaper"/></svg>
         <span>Stax</span>
       </button>
-      <button class="stax-dock-btn" :class="{ active: surf() === 'work' }" @click="goSurface('work')" aria-label="Work">
+      <button class="stax-dock-btn" :class="{ active: surf() === 'work' }" :aria-current="surf() === 'work' ? 'page' : null" @click="goSurface('work')" aria-label="Work">
         <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span>
-        <span class="stax-dock-badge" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span>
         <span>Work</span>
       </button>
-      <button class="stax-dock-btn" :class="{ active: surf() === 'boards' }" @click="goSurface('boards')" aria-label="Boards">
+      <button class="stax-dock-btn" :class="{ active: surf() === 'boards' }" :aria-current="surf() === 'boards' ? 'page' : null" @click="goSurface('boards')" aria-label="Boards">
         <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
         <span>Boards</span>
       </button>
-      <button class="stax-dock-btn" :class="{ active: surf() === 'leads' }" @click="goSurface('leads')" aria-label="Leads">
+      <button class="stax-dock-btn" :class="{ active: surf() === 'leads' }" :aria-current="surf() === 'leads' ? 'page' : null" @click="goSurface('leads')" aria-label="Leads">
         <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
         <span>Leads</span>
       </button>
@@ -6406,6 +6640,30 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
       <svg aria-hidden="true"><use href="#g-done"/></svg>
       <span>Done</span>
+    </button>
+  </nav>
+
+  <!-- StaxCloud module dock — Canvas: the bench's own tabs, front
+       screen first, the standard exit last. No agent or action slots
+       in the bar; the needs-you badge is the shell fixture below. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'canvas'" aria-label="Canvas">
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'canvas' }" :aria-current="$store.app.canvasTab === 'canvas' ? 'page' : null" @click="$store.app.canvasTab = 'canvas'">
+      <svg aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'layers' }" :aria-current="$store.app.canvasTab === 'layers' ? 'page' : null" @click="$store.app.canvasTab = 'layers'">
+      <svg aria-hidden="true"><use href="#g-layers"/></svg><span>Layers</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'display' }" :aria-current="$store.app.canvasTab === 'display' ? 'page' : null" @click="$store.app.canvasTab = 'display'">
+      <svg aria-hidden="true"><use href="#g-display"/></svg><span>Display</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'export' }" :aria-current="$store.app.canvasTab === 'export' ? 'page' : null" @click="$store.app.canvasTab = 'export'">
+      <svg aria-hidden="true"><use href="#g-export"/></svg><span>Export</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'settings' }" :aria-current="$store.app.canvasTab === 'settings' ? 'page' : null" @click="$store.app.canvasTab = 'settings'">
+      <svg aria-hidden="true"><use href="#g-settings"/></svg><span>Settings</span>
+    </button>
+    <button class="stax-dock-btn" @click="goSurface('home')">
+      <svg aria-hidden="true"><use href="#g-done"/></svg><span>Done</span>
     </button>
   </nav>
 
@@ -6452,6 +6710,13 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 </div>
 
 <!-- Toast notification container -->
+  <!-- The needs-you badge: one shell fixture, bound once to the
+       pending-approval count and anchored at the dock's trailing
+       edge on every dock variant. Tapping it goes to Work. -->
+  <button class="stax-shell-badge" x-cloak x-show="$store.app.sessionUser && $store.app.pendingApprovalCount > 0" @click="goSurface('work')" :aria-label="$store.app.pendingApprovalCount + ' waiting for your decision in Work'">
+    <span x-text="$store.app.pendingApprovalCount"></span>
+  </button>
+
 <!-- Side card — the menu button toggles it; it also follows a drag from the
      left screen edge, and a leftward drag on the card or the dimmed page
      closes it (gestures in staxDrawer().initGestures, app.js). One composition:
@@ -6520,9 +6785,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><svg class="sd-ico" aria-hidden="true"><use href="#g-forms"/></svg><span>Forms</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'library' }" :aria-current="page === 'library' ? 'page' : false" @click="navigate('library')"><svg class="sd-ico" aria-hidden="true"><use href="#g-library"/></svg><span>Library</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><svg class="sd-ico" aria-hidden="true"><use href="#g-contacts"/></svg><span>Contacts</span></button>
-          <!-- Canvas (interim, Verdict 4 disposition 3): lands on Boards with
-               the Canvas board already open, until the Canvas surface ships. -->
-          <button class="sd-row" @click="$store.app.boardPick = 'designer'; goSurface('boards')"><svg class="sd-ico" aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span></button>
+          <!-- Canvas: the design bench, its own app surface. -->
+          <button class="sd-row" :class="{ 'is-here': page === 'canvas' }" :aria-current="page === 'canvas' ? 'page' : false" @click="navigate('canvas')"><svg class="sd-ico" aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span></button>
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-system)">
