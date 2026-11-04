@@ -104,14 +104,20 @@ function canvasPage() {
       var id = 'job-' + Math.random().toString(36).slice(2, 10);
       var rec = { job_id: id, op: op, args: args, status: 'queued', ts: new Date().toISOString() };
       await this.cvKvPut('designjob/' + id, rec);
-      var idx = [];
-      try { idx = this.cvParse((this.cvKv || {})['designjob/index']) || []; } catch (e) { idx = []; }
-      if (!Array.isArray(idx)) idx = [];
-      idx.push(id);
-      await this.cvKvPut('designjob/index', idx);
+      // The index is a {jobs: [...]} record — the sidecar's job
+      // runner reads exactly that shape (a bare list would hide
+      // every queued job, the hand's included).
+      var cur = null;
+      try { cur = this.cvParse((this.cvKv || {})['designjob/index']); } catch (e) { cur = null; }
+      var ids = [];
+      if (cur && Array.isArray(cur.jobs)) ids = cur.jobs.slice();
+      else if (Array.isArray(cur)) ids = cur.slice();
+      if (ids.indexOf(id) < 0) ids.push(id);
+      var idxRec = { jobs: ids };
+      await this.cvKvPut('designjob/index', idxRec);
       if (!this.cvKv) this.cvKv = {};
       this.cvKv['designjob/' + id] = rec;
-      this.cvKv['designjob/index'] = idx;
+      this.cvKv['designjob/index'] = idxRec;
       this.cvArmPoll();
       return id;
     },
