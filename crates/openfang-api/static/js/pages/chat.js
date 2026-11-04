@@ -84,11 +84,10 @@ function chatPage() {
     get currentTip() {
       if (localStorage.getItem('of-tips-off') === 'true') return '';
       if (!this._tipsInitialized) {
-        var t = typeof window.t === 'function' ? window.t : function(s) { return s; };
         this.tips = [
-          t('tips.commands'),
-          t('tips.think'),
-          t('tips.focus'),
+          'Type / for commands',
+          '/think on for reasoning',
+          'Ctrl+Shift+F for focus mode',
           'Drag files to attach',
           '/model to switch models',
           '/context to check usage',

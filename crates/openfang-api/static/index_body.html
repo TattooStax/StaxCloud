@@ -140,7 +140,7 @@
               <div style="display:flex;flex-direction:column;gap:10px">
                 <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                   <div class="card approval-card pending">
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
                     <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
                     <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                       <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
@@ -1029,7 +1029,7 @@
             <div style="display:flex;flex-direction:column;gap:10px">
               <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                 <div class="card approval-card pending">
-                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
+                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
                   <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
                   <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                     <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
@@ -1532,7 +1532,7 @@
                       <span class="badge" :class="{ 'badge-warn': a.status === 'pending', 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status === 'pending' ? 'Waiting for you' : a.status"></span>
                       <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                     </div>
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-text="$store.app.plain(a.description)"></div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
                     <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first &middot; <span x-text="a.action"></span></div>
                     <template x-if="a.status === 'pending'">
                       <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
@@ -5274,13 +5274,13 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <p class="text-sm text-dim" style="margin:2px 0 16px">Boards live here. Ask Stax — "make me a board for walk-ins" — and it shows up, kept current by your team.</p>
             <div x-show="surfaces.length === 0" class="empty-state">
               <h4>No boards yet</h4>
-              <p class="hint">Your first board is one sentence away. Try: "Make me an SEO board for the shop."</p>
+              <p class="hint">Your shop's dashboards land here — try asking Stax for an SEO board.</p>
             </div>
             <div class="card-grid">
               <template x-for="s in surfaces" :key="s.slug">
                 <div class="card" style="cursor:pointer" @click="current = s.slug">
                   <div class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="s.title"></div>
-                  <div class="text-sm text-dim" style="margin-top:4px" x-text="s.blocks.length + (s.blocks.length === 1 ? ' block' : ' blocks')"></div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-show="s.line" x-text="s.line"></div>
                 </div>
               </template>
             </div>
@@ -5297,14 +5297,17 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <div style="margin-bottom:14px">
                 <h3 x-show="b.type === 'heading'" style="font-size:18px;font-weight:700;margin:6px 0" x-text="b.text"></h3>
                 <p x-show="b.type === 'text'" class="text-sm" style="line-height:1.6;margin:4px 0" x-text="b.text"></p>
-                <div x-show="b.type === 'stats'" style="display:flex;flex-wrap:wrap;gap:10px">
-                  <template x-for="(it, ii) in (b.items || [])" :key="ii">
-                    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px 10px">
+                <div x-show="b.type === 'stats'" class="board-stats">
+                  <template x-for="(it, ii) in stats(b, true)" :key="ii">
+                    <div class="card">
                       <div style="font-size:20px;font-weight:700" x-text="it.value"></div>
                       <div class="text-xs text-dim" style="margin-top:2px" x-text="it.label"></div>
                     </div>
                   </template>
                 </div>
+                <template x-for="(it, ii) in (b.type === 'stats' ? stats(b, false) : [])" :key="'t' + ii">
+                  <p class="text-sm" style="margin:8px 0 0" x-text="it.label + ': ' + it.value"></p>
+                </template>
                 <div x-show="b.type === 'list'" class="card">
                   <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
                   <div style="display:flex;flex-direction:column;gap:8px">
@@ -5314,23 +5317,24 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                           <div class="text-sm" style="font-weight:600" x-text="it.title"></div>
                           <div x-show="it.sub" class="text-xs text-dim" x-text="it.sub"></div>
                         </div>
-                        <span x-show="it.badge" class="badge badge-dim" style="font-size:10px" x-text="it.badge"></span>
+                        <span x-show="badge(it.badge)" class="badge badge-dim" style="font-size:10px" x-text="badge(it.badge)"></span>
                       </div>
                     </template>
                   </div>
-                  <div x-show="!(b.items || []).length" class="text-sm text-dim">Nothing here yet.</div>
+                  <div x-show="!(b.items || []).length" class="text-sm text-dim">Nothing on this list yet — your team adds to it as work comes in.</div>
                 </div>
                 <div x-show="b.type === 'kvlist'" class="card">
                   <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
                   <div style="display:flex;flex-direction:column;gap:8px">
-                    <template x-for="row in kvRows(b.prefix)" :key="row.key">
-                      <div style="display:flex;gap:8px;align-items:baseline">
-                        <span class="text-sm" style="font-weight:600" x-text="row.key"></span>
-                        <span class="text-xs text-dim" style="flex:1;min-width:0" x-text="row.sub"></span>
+                    <template x-for="row in (b.type === 'kvlist' ? kvView(b).rows : [])" :key="row.key">
+                      <div>
+                        <div class="text-sm" style="font-weight:600" x-text="row.title"></div>
+                        <div x-show="row.sub" class="text-xs text-dim" x-text="row.sub"></div>
                       </div>
                     </template>
+                    <div x-show="b.type === 'kvlist' && kvView(b).count" class="text-sm text-dim" x-text="b.type === 'kvlist' ? kvView(b).count : ''"></div>
                   </div>
-                  <div x-show="kvRows(b.prefix).length === 0" class="text-sm text-dim">Nothing stored under this yet.</div>
+                  <div x-show="b.type === 'kvlist' && !kvView(b).rows.length && !kvView(b).count" class="text-sm text-dim" x-text="b.type === 'kvlist' ? kvView(b).empty : ''"></div>
                 </div>
                 <div x-show="['heading','text','stats','list','kvlist'].indexOf(b.type) === -1" class="text-xs text-dim">A newer kind of block — update StaxCloud to view it.</div>
               </div>
@@ -6416,7 +6420,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Needs you</div>
       <template x-for="a in $store.app.pendingApprovals.slice(0, 5)" :key="a.id">
         <div style="border-top:1px solid var(--border);padding:10px 0">
-          <div style="font-size:14px;font-weight:600;line-height:1.4" x-text="$store.app.plain(a.description)"></div>
+          <div style="font-size:14px;font-weight:600;line-height:1.4" x-html="$store.app.plainLinked(a.description)"></div>
           <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
           <div class="approval-actions" style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
