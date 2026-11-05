@@ -538,6 +538,10 @@ pub async fn build_router(
             axum::routing::get(routes::list_approvals).post(routes::create_approval),
         )
         .route(
+            "/api/approvals/{id}",
+            axum::routing::get(routes::get_approval),
+        )
+        .route(
             "/api/approvals/{id}/approve",
             axum::routing::post(routes::approve_request),
         )
