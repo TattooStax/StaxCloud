@@ -549,7 +549,7 @@ impl ApprovalManager {
                 out.push(record);
             }
         }
-        out.sort_by(|a, b| b.decided_at.cmp(&a.decided_at));
+        out.sort_by_key(|r| std::cmp::Reverse(r.decided_at));
         out
     }
 
