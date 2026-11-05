@@ -5496,7 +5496,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <div class="text-sm text-dim" x-text="cvHeadLine()"></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-ghost" @click="$store.app.canvasPanel = ''; $store.app.goSurface('home')" aria-label="Done, back to Stax">Done</button>
+            <button class="btn btn-ghost" @click="$store.app.canvasPanel = ''; goSurface('home')" aria-label="Done, back to Stax">Done</button>
             <button class="btn btn-ghost" @click="cvTab === 'settings' ? cvTabGo('canvas') : cvTabGo('settings')" :aria-current="cvTab === 'settings' ? 'page' : null" aria-label="Canvas settings">
               <svg width="20" height="20" aria-hidden="true"><use href="#g-settings"/></svg>
             </button>
@@ -5591,7 +5591,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <div class="cv-field" style="margin-top:16px" x-show="!cvClosed(cvOpenReq)">
                     <label :for="'cv-note-' + cvOpen.request_id">Want a new version? Say what to change</label>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
-                      <input class="cv-input" style="flex:1;min-width:180px" :id="'cv-note-' + cvOpen.request_id" type="text" placeholder="Lighter shading, bigger leaves…" x-model="cv.note[cvOpen.request_id]">
+                      <input class="form-input" style="flex:1;min-width:180px" :id="'cv-note-' + cvOpen.request_id" type="text" placeholder="Lighter shading, bigger leaves…" x-model="cv.note[cvOpen.request_id]">
                       <button class="btn btn-ghost" @click="cvRedesign({ req: cvOpenReq })" :disabled="cvBusy || !(cv.note[cvOpen.request_id] || '').trim()">Make new version</button>
                     </div>
                   </div>
@@ -5602,7 +5602,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <!-- The composer: the same component as Home's — same
                  attach menu, same send path — pointed at the
                  designer, carrying where the artist is. -->
-            <div class="card">
+            <div class="card" style="border-radius:var(--radius-md)">
               <div class="text-sm" style="font-weight:600">Tell Stax</div>
               <p class="text-sm text-dim" style="margin:4px 0 10px">Stax can see where you are in Canvas, and works on the design that&rsquo;s open — ask for a change right here.</p>
               <div class="cv-thread" x-show="cvThread.length || cvThreadBusy" x-cloak>
@@ -5701,11 +5701,11 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               </div>
               <div class="cv-field">
                 <label for="cv-brief">The design</label>
-                <textarea class="cv-input" id="cv-brief" rows="2" style="width:100%;resize:vertical" placeholder="A wolf in black and grey, forearm…" x-model="cv.brief"></textarea>
+                <textarea class="form-textarea" id="cv-brief" rows="2" style="width:100%;resize:vertical" placeholder="A wolf in black and grey, forearm…" x-model="cv.brief"></textarea>
               </div>
               <div class="cv-field">
                 <label for="cv-client">For a customer? Their name (optional)</label>
-                <input class="cv-input" id="cv-client" type="text" style="width:100%" placeholder="Only if it's a mock-up for someone" x-model="cv.client">
+                <input class="form-input" id="cv-client" type="text" style="width:100%" placeholder="Only if it's a mock-up for someone" x-model="cv.client">
                 <p class="text-sm text-dim" style="margin:6px 0 0">A design made for a customer is made in the artist&rsquo;s style, and once you approve it, it can go back to their thread as a picture — never a link.</p>
               </div>
               <button class="btn btn-primary" style="width:100%" @click="cvGenerate()" :disabled="cvBusy || !(cv.brief || '').trim()">Make the designs</button>
@@ -5756,7 +5756,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 </div>
                 <div class="cv-field" style="margin-top:14px">
                   <label :for="'cv-style-note'">How this artist works, in their words</label>
-                  <textarea class="cv-input" :id="'cv-style-note'" rows="3" style="width:100%;resize:vertical" x-model="cvSetArtistRec.style_note"></textarea>
+                  <textarea class="form-textarea" :id="'cv-style-note'" rows="3" style="width:100%;resize:vertical" x-model="cvSetArtistRec.style_note"></textarea>
                   <button class="btn btn-primary" style="margin-top:8px" @click="cvSaveArtist({ style_note: cvSetArtistRec.style_note })" :disabled="cvBusy">Save</button>
                 </div>
               </div>
@@ -5814,7 +5814,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <div class="text-sm" style="font-weight:600">Keep this design&rsquo;s line as a stamp</div>
               <p class="text-sm text-dim" style="margin:4px 0 8px">Saved under the artist&rsquo;s name, kept for good — ready to drop into new work.</p>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <input class="cv-input" style="flex:1;min-width:160px" type="text" placeholder="Name it (or keep the layer's name)" x-model="cvStampName">
+                <input class="form-input" style="flex:1;min-width:160px" type="text" placeholder="Name it (or keep the layer's name)" x-model="cvStampName">
                 <button class="btn btn-primary" @click="cvSaveLineAsStamp()" :disabled="cvBusy">Save the stamp</button>
               </div>
               <p class="text-sm notice notice-error" role="alert" style="margin:8px 0 0" x-show="cvJobError('library.save_element', 'design_id', cvOpen.id)" x-text="cvJobError('library.save_element', 'design_id', cvOpen.id)"></p>
@@ -5853,7 +5853,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 </template>
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-                <input class="cv-input" style="flex:1;min-width:160px" type="text" placeholder="Name a new kit" x-model="cvKitName">
+                <input class="form-input" style="flex:1;min-width:160px" type="text" placeholder="Name a new kit" x-model="cvKitName">
                 <button class="btn btn-ghost" @click="cvCreateKit(a.id)" :disabled="cvBusy || !(cvKitName || '').trim()">Make the kit</button>
               </div>
             </div>
@@ -6937,19 +6937,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
        Layers / Stamps / Stencil open panels over the bench. -->
   <nav class="stax-dock" x-cloak x-show="page === 'canvas'" aria-label="Canvas">
     <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'canvas' }" :aria-current="$store.app.canvasTab === 'canvas' ? 'page' : null" @click="$store.app.canvasGo('canvas')">
-      <svg aria-hidden="true"><use href="#g-canvas"/></svg><span>Canvas</span>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--machine"></span></span><span>Canvas</span>
     </button>
     <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'gallery' }" :aria-current="$store.app.canvasTab === 'gallery' ? 'page' : null" @click="$store.app.canvasGo('gallery')">
-      <svg aria-hidden="true"><use href="#g-gallery"/></svg><span>Gallery</span>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span><span>Gallery</span>
     </button>
     <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'layers' }" :aria-pressed="$store.app.canvasPanel === 'layers'" @click="$store.app.canvasPanelToggle('layers')">
-      <svg aria-hidden="true"><use href="#g-layers"/></svg><span>Layers</span>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span><span>Layers</span>
     </button>
     <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'stamps' }" :aria-pressed="$store.app.canvasPanel === 'stamps'" @click="$store.app.canvasPanelToggle('stamps')">
-      <svg aria-hidden="true"><use href="#g-stamp"/></svg><span>Stamps</span>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span><span>Stamps</span>
     </button>
     <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'stencil' }" :aria-pressed="$store.app.canvasPanel === 'stencil'" @click="$store.app.canvasPanelToggle('stencil')">
-      <svg aria-hidden="true"><use href="#g-stencil"/></svg><span>Stencil</span>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--envelope"></span></span><span>Stencil</span>
     </button>
   </nav>
 

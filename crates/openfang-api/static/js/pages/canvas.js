@@ -96,10 +96,10 @@ function canvasPage() {
     },
     cvDesignerId() {
       // The designer agent's own id, resolved from the agents list
-      // (the store's jobs slice is a 3-item widget read — not a
+      // (the shell's jobs slice is a 3-item widget read — not a
       // directory). The jobs scan stays as a fallback.
       if (this.cvAgentId) return this.cvAgentId;
-      var jobs = (this.$store.app.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
+      var jobs = (this.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
       return jobs.length ? jobs[0].agent_id : '';
     },
     // The kv lives behind the per-agent route (the only one the
@@ -113,7 +113,7 @@ function canvasPage() {
       this._cvIdPromise = OpenFangAPI.get('/api/agents').then(function(list) {
         var found = (list || []).filter(function(a) { return a.name === 'designer'; })[0];
         if (found) { self.cvAgentId = found.id; return found.id; }
-        var jobs = (self.$store.app.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
+        var jobs = (self.jobs || []).filter(function(j) { return j.hand_id === 'designer'; });
         if (jobs.length) { self.cvAgentId = jobs[0].agent_id; return self.cvAgentId; }
         return '';
       }).catch(function() { self._cvIdPromise = null; return ''; });
@@ -843,7 +843,9 @@ function canvasPage() {
 
     async loadData() {
       var self = this;
-      if (this.$store.app.page !== 'canvas') return;
+      // `page` lives on the shell component and is read through the
+      // scope chain; the app store has no `page` key.
+      if (this.page !== 'canvas') return;
       var id = await this.cvResolveDesignerId();
       if (id) this.cvLoadThread();
       var hadData = !!(this.cvKv && Object.keys(this.cvKv).length);
