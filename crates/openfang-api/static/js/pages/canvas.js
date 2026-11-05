@@ -26,6 +26,7 @@ function canvasPage() {
     cvKv: null,
     cvBusy: false,
     cvErr: '',
+    cvLoadFailed: false,
     cvStampName: '',
     cvKitName: '',
     cvThread: [],
@@ -46,7 +47,7 @@ function canvasPage() {
           var saved = (self.cv.scroll || {})[v];
           if (sc && saved != null) sc.scrollTop = saved;
         });
-        if (v === 'gallery') self.loadData();
+        if (v === 'gallery') self.loadData().then(function() { self.cvEnsureGallery(); });
         if (v === 'canvas') self.cvArmPoll();
         self.cvNoteContext();
       });
@@ -66,7 +67,6 @@ function canvasPage() {
       if (sc) { if (!this.cv.scroll) this.cv.scroll = {}; this.cv.scroll[this.cvTab] = sc.scrollTop; }
       this.$store.app.canvasGo(tab);
     },
-
     cvPanelGo(panel) { this.$store.app.canvasPanelToggle(panel); },
 
     // --- record reads (the same kv reads the Boards block made) --
@@ -223,12 +223,14 @@ function canvasPage() {
       var d = this.cvOpen;
       if (d) this.cv.sel[d.request_id] = id;
       if (this.cvTab !== 'canvas') this.cvTabGo('canvas');
+      this.cvEnsureOpen();
       this.cvLoadThread();
       this.cvNoteContext();
     },
     cvHeadLine() {
       if (this.cvTab === 'gallery') return 'Every design on the bench';
       if (this.cvTab === 'settings') return 'How your bench is set up';
+      if (this.cvLoadFailed) return 'Your bench couldn\'t load';
       var cards = this.cvCardList.length;
       var need = 0, reqs = this.cvRequests;
       Object.keys(reqs).forEach(function(k) { if (reqs[k].status === 'awaiting_artist' || reqs[k].status === 'artist_review') need++; });
@@ -666,12 +668,28 @@ function canvasPage() {
       if (d) {
         var req = this.cvOpenReq;
         parts.push('the open design is "' + (((req || {}).intake || {}).prompt_text || d.title || 'the design') + '"');
-        parts.push('(request id ' + d.request_id + ', version ' + (d.version || 1) + ' of ' + Math.max(this.cvVersions.length, 1) + ', its state is ' + this.cvState(req).toLowerCase() + ')');
+        // The seat acts through job records, which key on the design
+        // id — the prefix must carry it (it once carried only the
+        // request id, so the seat could not act and asked the artist
+        // for ids instead).
+        parts.push('(design id ' + d.id + ', request id ' + d.request_id + ', version ' + (d.version || 1) + ' of ' + Math.max(this.cvVersions.length, 1) + ', revision ' + (d.revision || 0) + ', its state is ' + this.cvState(req).toLowerCase() + ')');
         var showing = this.cvLayers.filter(function(l) { return l.visible; }).map(function(l) { return l.name; });
         if (showing.length) parts.push('layers showing: ' + showing.join(', '));
         var sel = this.cvSelLayers;
         if (sel.length) parts.push('layers picked: ' + sel.map(function(l) { return l.name; }).join(', '));
       }
+      // The bench itself, by title: how the seat resolves "the wolf
+      // design" to a record without asking the artist for an id.
+      var cards = this.cvCardList.slice(0, 8), self = this;
+      if (cards.length) {
+        parts.push('on the bench: ' + cards.map(function(c) {
+          var v = c.versions[c.versions.length - 1];
+          var title = (c.req && c.req.intake && c.req.intake.prompt_text) || v.title || 'Design';
+          return '"' + title + '" (design id ' + v.id + ', ' + self.cvState(c.req).toLowerCase() + ')';
+        }).join('; '));
+      }
+      var ba = d ? this.cvArtistOf(d) : this.cvSetArtistRec;
+      if (ba) parts.push('the bench artist is ' + ba.display_name + ' (artist id ' + ba.id + ')');
       return parts.join('; ');
     },
     cvNoteContext() {
@@ -722,7 +740,7 @@ function canvasPage() {
       this.cvAtts.splice(i, 1);
     },
     async cvSendMsg() {
-      var id = this.cvDesignerId();
+      var id = this.cvDesignerId() || (await this.cvResolveDesignerId());
       var text = (this.cv.msgDraft || '').trim();
       if (!id || (!text && !this.cvAtts.length) || this.cvThreadBusy) return;
       var self = this;
@@ -765,43 +783,147 @@ function canvasPage() {
       }, fast ? 3000 : 5000);
     },
 
+    // The bench's load, in two waves. Wave 1 fetches ONLY the
+    // families Canvas reads, and the design records WITHOUT their
+    // embedded payloads (preview_b64 / bundle_b64 ride the strip
+    // param): first paint needs record metadata — counts, cards,
+    // states, layer lists — and the old whole-store pull shipped
+    // ~2.5 MB (forms, contacts, every design's image data) before
+    // any of it could render. Wave 2 fetches a design's full record
+    // per key, only when that design is opened or its card is on
+    // screen (cvEnsureDesign). Every fetch carries a hard timeout:
+    // a load that cannot settle lands on a truthful failure state
+    // with a way back, never on an 'Opening your bench' that never
+    // resolves — the failure the owner photographed on 2026-11-04.
+    _cvEnsuring: {},
+    async cvFetchFamily(id, prefix, strip) {
+      var url = '/api/memory/agents/' + id + '/kv?prefix=' + encodeURIComponent(prefix);
+      if (strip) url += '&strip=' + encodeURIComponent(strip);
+      var all = await OpenFangAPI.get(url, { timeoutMs: 10000 });
+      var out = {};
+      (all.kv_pairs || []).forEach(function(p) { out[p.key] = p.value; });
+      return out;
+    },
+    async cvEnsureDesign(id) {
+      if (!id) return;
+      var cur = this.cvParse((this.cvKv || {})['design/' + id]);
+      if (cur && cur.preview_b64) return;
+      if (this._cvEnsuring[id]) return this._cvEnsuring[id];
+      var self = this;
+      this._cvEnsuring[id] = (async function() {
+        try {
+          var agentId = await self.cvResolveDesignerId();
+          if (!agentId) return;
+          var rec = await OpenFangAPI.get('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('design/' + id), { timeoutMs: 15000 });
+          var val = self.cvParse(rec && rec.value);
+          if (val && self.cvKv) {
+            var map = Object.assign({}, self.cvKv);
+            map['design/' + id] = val;
+            self.cvKv = map;
+          }
+        } catch (e) { /* the tile/stage keeps its placeholder; a later open retries */ }
+        delete self._cvEnsuring[id];
+      })();
+      return this._cvEnsuring[id];
+    },
+    cvEnsureOpen() {
+      var d = this.cvOpen;
+      if (!d) return;
+      var self = this;
+      this.cvVersions.forEach(function(v) { self.cvEnsureDesign(v.id); });
+    },
+    cvEnsureGallery() {
+      var self = this;
+      this.cvCardList.forEach(function(c) {
+        var v = c.versions[c.versions.length - 1];
+        if (v) self.cvEnsureDesign(v.id);
+      });
+    },
+
     async loadData() {
       var self = this;
       if (this.$store.app.page !== 'canvas') return;
       var id = await this.cvResolveDesignerId();
       if (id) this.cvLoadThread();
-      try {
-        if (!id) throw new Error('the design helper is not set up');
-        var all = await OpenFangAPI.get('/api/memory/agents/' + id + '/kv');
-        var map = {};
-        (all.kv_pairs || []).forEach(function(p) { map[p.key] = p.value; });
-        this.cvKv = map;
-        this.cvErr = '';
-        this.cvSyncArtistDraft();
-        var cards = this.cvCards();
-        Object.keys(cards).forEach(function(rid) {
-          var c = cards[rid];
-          if (!self.cv.sel[rid] || !c.versions.some(function(v) { return v.id === self.cv.sel[rid]; })) {
-            self.cv.sel[rid] = c.versions[c.versions.length - 1].id;
-          }
-        });
-        if (!this.cv.openId || !this.cvOpen) {
-          var list = this.cvCardList;
-          if (list.length) {
-            var top = list[0], topSel = this.cv.sel[top.req ? top.req.id : ''] || top.versions[top.versions.length - 1].id;
-            this.cv.openId = topSel;
-            this.cvLoadThread();
-          }
-        } else if (this.cvOpen) {
-          this.cv.sel[this.cvOpen.request_id] = this.cv.openId;
-        }
-        if (this.cvJobs.some(function(j) { return j.status === 'queued'; })) this.cvArmPoll();
-      } catch (e) {
-        // The last good read stays on screen; with no good read yet,
-        // land on the truthful empty state plus the error line
-        // instead of an 'Opening your bench' that never resolves.
-        if (!this.cvKv) { this.cvKv = {}; this.cvErr = 'Your bench couldn\'t load just now - reopen Canvas in a moment.'; }
+      var hadData = !!(this.cvKv && Object.keys(this.cvKv).length);
+      if (!id) {
+        if (!hadData) { this.cvKv = {}; this.cvLoadFailed = true; this.cvErr = 'Your bench couldn\'t load just now — the design helper isn\'t answering.'; }
+        return;
       }
+      var fams = [
+        { prefix: 'design/', strip: 'preview_b64,bundle_b64', critical: true },
+        { prefix: 'designreq/', critical: true },
+        { prefix: 'designjob/' },
+        { prefix: 'artist/' },
+        { prefix: 'designlib/' },
+        { prefix: 'designkit/' },
+        { prefix: 'canvas/' }
+      ];
+      var results = await Promise.all(fams.map(function(f) {
+        return self.cvFetchFamily(id, f.prefix, f.strip).then(
+          function(map) { return { f: f, map: map }; },
+          function(e) { return { f: f, err: e }; });
+      }));
+      var map = {}, criticalFail = false, anyFail = false;
+      results.forEach(function(r) {
+        if (r.err) { anyFail = true; if (r.f.critical) criticalFail = true; return; }
+        Object.keys(r.map).forEach(function(k) { map[k] = r.map[k]; });
+      });
+      if (criticalFail) {
+        if (!hadData) {
+          // Nothing good to show yet: land on the failure state (the
+          // markup keys the error card + Retry off cvLoadFailed) —
+          // never leave the opening line up as if it were progress.
+          this.cvKv = {};
+          this.cvLoadFailed = true;
+          this.cvErr = 'Your bench couldn\'t load just now — check your connection and try again.';
+        } else {
+          // A refresh failed: the last good read stays on screen.
+          this.cvErr = 'Your bench couldn\'t refresh just now — showing the last good read.';
+        }
+        return;
+      }
+      // Keep previews already fetched in full: wave 1 arrives
+      // stripped, and a poll must not blank a design on screen.
+      var prev = this.cvKv || {};
+      Object.keys(map).forEach(function(k) {
+        if (k.indexOf('design/') !== 0) return;
+        var fresh = self.cvParse(map[k]), old = self.cvParse(prev[k]);
+        if (fresh && old && old.preview_b64 && String(old.updated || '') === String(fresh.updated || '')) {
+          fresh.preview_b64 = old.preview_b64;
+          if (old.preview_mime) fresh.preview_mime = old.preview_mime;
+          map[k] = fresh;
+        }
+      });
+      this.cvKv = map;
+      this.cvLoadFailed = false;
+      this.cvErr = (anyFail && !criticalFail) ? 'Some of the bench couldn\'t refresh — what you see may be a little behind.' : '';
+      this.cvSyncArtistDraft();
+      var cards = this.cvCards();
+      Object.keys(cards).forEach(function(rid) {
+        var c = cards[rid];
+        if (!self.cv.sel[rid] || !c.versions.some(function(v) { return v.id === self.cv.sel[rid]; })) {
+          self.cv.sel[rid] = c.versions[c.versions.length - 1].id;
+        }
+      });
+      var openBefore = this.cvOpen;
+      if (!this.cv.openId || !this.cvOpen) {
+        var list = this.cvCardList;
+        if (list.length) {
+          var top = list[0], topSel = this.cv.sel[top.req ? top.req.id : ''] || top.versions[top.versions.length - 1].id;
+          this.cv.openId = topSel;
+          this.cvLoadThread();
+        }
+      } else if (this.cvOpen) {
+        this.cv.sel[this.cvOpen.request_id] = this.cv.openId;
+      }
+      // The open design's picture: fetch its full record if wave 1
+      // brought newer metadata than the full record we hold (or we
+      // hold none). Version thumbs ride along via cvEnsureOpen.
+      var od = this.cvOpen;
+      if (od && (!openBefore || String(openBefore.updated || '') !== String(od.updated || '') || !od.preview_b64)) this.cvEnsureOpen();
+      if (this.cvTab === 'gallery') this.cvEnsureGallery();
+      if (this.cvJobs.some(function(j) { return j.status === 'queued'; })) this.cvArmPoll();
     }
   };
 }

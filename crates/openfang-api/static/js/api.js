@@ -155,9 +155,20 @@ var OpenFangAPI = (function() {
 
   function onConnectionChange(fn) { _connectionListeners.push(fn); }
 
-  function request(method, path, body) {
+  function request(method, path, body, timeoutMs) {
     var opts = { method: method, headers: headers() };
     if (body !== undefined) opts.body = JSON.stringify(body);
+    // Optional hard timeout: a caller that renders a loading state
+    // passes one so a stalled response rejects (and its error state
+    // shows) instead of leaving the spinner up forever. Callers that
+    // pass nothing keep the historical unbounded behavior.
+    var ctl = null, timer = null;
+    if (timeoutMs && typeof AbortController !== 'undefined') {
+      ctl = new AbortController();
+      opts.signal = ctl.signal;
+      timer = setTimeout(function() { ctl.abort(); }, timeoutMs);
+    }
+    var done = function() { if (timer) clearTimeout(timer); };
     return fetch(BASE + path, opts).then(function(r) {
       if (_connectionState !== 'connected') setConnectionState('connected');
       if (!r.ok) {
@@ -194,10 +205,17 @@ var OpenFangAPI = (function() {
         throw new Error('Cannot connect to daemon — is openfang running?');
       }
       throw e;
+    }).then(function(v) {
+      done();
+      return v;
+    }, function(e) {
+      done();
+      if (e && e.name === 'AbortError') throw new Error('That took too long — check your connection and try again.');
+      throw e;
     });
   }
 
-  function get(path) { return request('GET', path); }
+  function get(path, opts) { return request('GET', path, undefined, opts && opts.timeoutMs); }
   function post(path, body) { return request('POST', path, body); }
   function put(path, body) { return request('PUT', path, body); }
   function patch(path, body) { return request('PATCH', path, body); }
