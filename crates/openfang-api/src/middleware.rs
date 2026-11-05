@@ -54,6 +54,25 @@ pub struct AuthState {
     pub allow_no_auth: bool,
 }
 
+/// The authenticated principal class of a request, stamped by the
+/// auth middleware from *how the request authenticated* — never from
+/// anything the caller asserts (Work build §3, Consult 12 Q3).
+/// Decision handlers read it from the request extensions to stamp
+/// `decided_via` on approval records; grant creation and the send
+/// gate honor `OwnerSession` decisions only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthClass {
+    /// The dashboard's password-login session (HMAC session cookie),
+    /// carrying the session's username.
+    OwnerSession(String),
+    /// The shared API key (Bearer, X-API-Key, or ?token=) — carriers,
+    /// sidecars, and external callers.
+    ApiToken,
+    /// No credential class: public reads, loopback pass-through, or
+    /// an explicitly unauthenticated local setup.
+    System,
+}
+
 /// Bearer token authentication middleware.
 ///
 /// When `api_key` is non-empty (after trimming), requests to non-public
@@ -70,7 +89,7 @@ pub struct AuthState {
 /// When dashboard auth is enabled, session cookies are also accepted.
 pub async fn auth(
     axum::extract::State(auth_state): axum::extract::State<AuthState>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> Response<Body> {
     // SECURITY: Capture method early for method-aware public endpoint checks.
@@ -86,6 +105,7 @@ pub async fn auth(
     // when the request is from loopback.
     let path = request.uri().path();
     if path == "/api/shutdown" && is_loopback {
+        request.extensions_mut().insert(AuthClass::System);
         return next.run(request).await;
     }
 
@@ -140,6 +160,7 @@ pub async fn auth(
         || (path == "/api/auth/check" && is_get);
 
     if is_public {
+        request.extensions_mut().insert(AuthClass::System);
         return next.run(request).await;
     }
 
@@ -154,6 +175,7 @@ pub async fn auth(
     let api_key_trimmed = auth_state.api_key.trim().to_string();
     if api_key_trimmed.is_empty() && !auth_state.auth_enabled {
         if is_loopback || auth_state.allow_no_auth {
+            request.extensions_mut().insert(AuthClass::System);
             return next.run(request).await;
         }
         return Response::builder()
@@ -209,20 +231,29 @@ pub async fn auth(
         token.as_bytes().ct_eq(api_key.as_bytes()).into()
     });
 
-    // Accept if either auth method matches
-    if header_auth == Some(true) || query_auth == Some(true) {
-        return next.run(request).await;
-    }
-
-    // Check session cookie (dashboard login sessions)
+    // Session cookie (dashboard login) is checked FIRST for class
+    // attribution: a valid session token is HMAC-signed and issued
+    // only by the password login, so a request carrying one is the
+    // owner's dashboard session even if the browser also presents a
+    // saved API key. Either credential alone still suffices to pass;
+    // the cookie merely decides the class when both are present.
     if auth_state.auth_enabled {
         if let Some(token) = crate::session_auth::extract_session_cookie(request.headers()) {
-            if crate::session_auth::verify_session_token(&token, &auth_state.session_secret)
-                .is_some()
+            if let Some(username) =
+                crate::session_auth::verify_session_token(&token, &auth_state.session_secret)
             {
+                request
+                    .extensions_mut()
+                    .insert(AuthClass::OwnerSession(username));
                 return next.run(request).await;
             }
         }
+    }
+
+    // Accept if either API-key method matches
+    if header_auth == Some(true) || query_auth == Some(true) {
+        request.extensions_mut().insert(AuthClass::ApiToken);
+        return next.run(request).await;
     }
 
     // Determine error message: was a credential provided but wrong, or missing entirely?

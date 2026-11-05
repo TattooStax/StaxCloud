@@ -549,6 +549,10 @@ pub async fn build_router(
             "/api/approvals/{id}/reject",
             axum::routing::post(routes::reject_request),
         )
+        .route(
+            "/api/approvals/{id}/supersede",
+            axum::routing::post(routes::supersede_request),
+        )
         // Usage endpoints
         .route("/api/usage", axum::routing::get(routes::usage_stats))
         .route(

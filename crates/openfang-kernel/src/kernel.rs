@@ -1171,7 +1171,19 @@ impl OpenFangKernel {
         }
 
         // Initialize execution approval manager
-        let approval_manager = crate::approval::ApprovalManager::new(config.approval.clone());
+        let mut approval_manager = crate::approval::ApprovalManager::new(config.approval.clone());
+        // Work build §5: decisions land in a durable, append-only
+        // ledger under the data dir so decided history survives the
+        // in-memory store's restarts. An attach failure is loud in
+        // the log; the deploy read-back verifies the ledger holds
+        // the deploy-smoke decision before the build is called done.
+        let ledger_path = config.data_dir.join("approval_decisions.jsonl");
+        if let Err(e) = approval_manager.attach_ledger(&ledger_path) {
+            tracing::error!(
+                path = %ledger_path.display(), error = %e,
+                "decision ledger failed to open — decided history will not survive restarts"
+            );
+        }
 
         // Initialize binding/broadcast/auto-reply from config
         let initial_bindings = config.bindings.clone();
@@ -7682,6 +7694,7 @@ impl KernelHandle for OpenFangKernel {
             risk_level: crate::approval::ApprovalManager::classify_risk(tool_name),
             requested_at: chrono::Utc::now(),
             timeout_secs: policy.timeout_secs,
+            lineage: None,
         };
 
         let decision = self.approval_manager.request_approval(req).await;

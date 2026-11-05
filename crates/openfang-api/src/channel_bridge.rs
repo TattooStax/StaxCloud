@@ -665,6 +665,7 @@ impl ChannelBridgeHandle for KernelBridgeAdapter {
                     req.id,
                     decision,
                     Some("channel".to_string()),
+                    Some("agent".to_string()),
                 ) {
                     Ok(_) => {
                         let verb = if approve { "Approved" } else { "Rejected" };

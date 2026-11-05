@@ -10791,13 +10791,36 @@ pub async fn serve_upload(Path(file_id): Path<String>) -> impl IntoResponse {
 // Execution Approval System — backed by kernel.approval_manager
 // ---------------------------------------------------------------------------
 
+/// The (decided_by, decided_via) stamp for a decision made by this
+/// request (Work build §3, Consult 12 Q3). Derived solely from the
+/// auth class the middleware established for the request; a caller
+/// cannot name its own provenance — a body field claiming
+/// `owner_session` is never read here.
+fn decision_stamp(
+    class: Option<&crate::middleware::AuthClass>,
+) -> (Option<String>, Option<String>) {
+    match class {
+        Some(crate::middleware::AuthClass::OwnerSession(user)) => {
+            (Some(user.clone()), Some("owner_session".to_string()))
+        }
+        Some(crate::middleware::AuthClass::ApiToken) => {
+            (Some("api".to_string()), Some("api_token".to_string()))
+        }
+        _ => (Some("local".to_string()), Some("system".to_string())),
+    }
+}
+
 /// GET /api/approvals — List pending and recent approval requests.
 ///
 /// Transforms field names to match the dashboard template expectations:
 /// `action_summary` → `action`, `agent_id` → `agent_name`, `requested_at` → `created_at`.
 pub async fn list_approvals(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let pending = state.kernel.approval_manager.list_pending();
-    let recent = state.kernel.approval_manager.list_recent(50);
+    // Decided records come from the durable decision ledger (Work
+    // build §5.2.4) — the full history, not the in-memory recent-50.
+    let recent = state.kernel.approval_manager.list_decided();
+    let pending_total = pending.len();
+    let decided_total = recent.len();
 
     // Resolve agent names for display
     let registry_agents = state.kernel.registry.list();
@@ -10825,6 +10848,7 @@ pub async fn list_approvals(State(state): State<Arc<AppState>>) -> impl IntoResp
                 "requested_at": a.requested_at,
                 "created_at": a.requested_at,
                 "timeout_secs": a.timeout_secs,
+                "lineage": a.lineage,
                 "status": "pending"
             })
         })
@@ -10837,6 +10861,7 @@ pub async fn list_approvals(State(state): State<Arc<AppState>>) -> impl IntoResp
             openfang_types::approval::ApprovalDecision::Approved => "approved",
             openfang_types::approval::ApprovalDecision::Denied => "rejected",
             openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+            openfang_types::approval::ApprovalDecision::Superseded => "superseded",
         };
         serde_json::json!({
             "id": request.id,
@@ -10850,9 +10875,11 @@ pub async fn list_approvals(State(state): State<Arc<AppState>>) -> impl IntoResp
             "requested_at": request.requested_at,
             "created_at": request.requested_at,
             "timeout_secs": request.timeout_secs,
+            "lineage": request.lineage,
             "status": status,
             "decided_at": record.decided_at,
             "decided_by": record.decided_by,
+            "decided_via": record.decided_via,
         })
     }));
 
@@ -10866,7 +10893,12 @@ pub async fn list_approvals(State(state): State<Arc<AppState>>) -> impl IntoResp
 
     let total = approvals.len();
 
-    Json(serde_json::json!({"approvals": approvals, "total": total}))
+    Json(serde_json::json!({
+        "approvals": approvals,
+        "total": total,
+        "pending_total": pending_total,
+        "decided_total": decided_total,
+    }))
 }
 
 /// POST /api/approvals — Create a manual approval request (for external systems).
@@ -10882,6 +10914,11 @@ pub struct CreateApprovalRequest {
     pub description: String,
     #[serde(default)]
     pub action_summary: String,
+    /// Carrier lineage (Work build §6.2): the draft this hold carries
+    /// for. Submissions naming the same draft key + round as a live
+    /// hold return that hold's id instead of minting a duplicate.
+    #[serde(default)]
+    pub lineage: Option<openfang_types::approval::ApprovalLineage>,
 }
 
 /// The request is submitted as a queued hold: the record exists before
@@ -10915,6 +10952,7 @@ pub async fn create_approval(
         // Retained for record-shape compatibility with tool-gate
         // requests; queued holds are not expired on it.
         timeout_secs: policy.timeout_secs,
+        lineage: req.lineage,
     };
 
     match state.kernel.approval_manager.submit_queued(approval_req) {
@@ -10924,7 +10962,9 @@ pub async fn create_approval(
         ),
         Err(e) => (
             StatusCode::TOO_MANY_REQUESTS,
-            Json(serde_json::json!({"error": e})),
+            // Structured refusal (Work build §4.5): carriers count a
+            // queue-full refusal from `reason`, never from prose.
+            Json(serde_json::json!({"error": e.to_string(), "reason": "queue_full"})),
         ),
     }
 }
@@ -10975,6 +11015,7 @@ pub async fn get_approval(
                     "requested_at": a.requested_at,
                     "created_at": a.requested_at,
                     "timeout_secs": a.timeout_secs,
+                    "lineage": a.lineage,
                     "status": "pending"
                 })),
             )
@@ -10986,6 +11027,7 @@ pub async fn get_approval(
                 openfang_types::approval::ApprovalDecision::Approved => "approved",
                 openfang_types::approval::ApprovalDecision::Denied => "rejected",
                 openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+                openfang_types::approval::ApprovalDecision::Superseded => "superseded",
             };
             (
                 StatusCode::OK,
@@ -11001,9 +11043,11 @@ pub async fn get_approval(
                     "requested_at": request.requested_at,
                     "created_at": request.requested_at,
                     "timeout_secs": request.timeout_secs,
+                    "lineage": request.lineage,
                     "status": status,
                     "decided_at": record.decided_at,
                     "decided_by": record.decided_by,
+                    "decided_via": record.decided_via,
                 })),
             )
         }
@@ -11014,26 +11058,22 @@ pub async fn get_approval(
     }
 }
 
-/// POST /api/approvals/{id}/approve — Approve a pending request.
-pub async fn approve_request(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    let uuid = match uuid::Uuid::parse_str(&id) {
-        Ok(u) => u,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Invalid approval ID"})),
-            );
-        }
-    };
+fn approval_status_str(
+    decision: openfang_types::approval::ApprovalDecision,
+) -> &'static str {
+    match decision {
+        openfang_types::approval::ApprovalDecision::Approved => "approved",
+        openfang_types::approval::ApprovalDecision::Denied => "rejected",
+        openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+        openfang_types::approval::ApprovalDecision::Superseded => "superseded",
+    }
+}
 
-    match state.kernel.approval_manager.resolve(
-        uuid,
-        openfang_types::approval::ApprovalDecision::Approved,
-        Some("api".to_string()),
-    ) {
+fn decide_response(
+    id: &str,
+    result: Result<openfang_types::approval::ApprovalResponse, String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match result {
         // The rendered status comes from the stored response, not the
         // endpoint: an idempotent re-decide returns the decision on
         // record, which may be the opposite of this endpoint's verb.
@@ -11041,21 +11081,26 @@ pub async fn approve_request(
             StatusCode::OK,
             Json(serde_json::json!({
                 "id": id,
-                "status": match resp.decision {
-                    openfang_types::approval::ApprovalDecision::Approved => "approved",
-                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
-                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
-                },
-                "decided_at": resp.decided_at.to_rfc3339()
+                "status": approval_status_str(resp.decision),
+                "decided_at": resp.decided_at.to_rfc3339(),
+                "decided_by": resp.decided_by,
+                "decided_via": resp.decided_via,
             })),
+        ),
+        // A ledger failure is a server failure, not a missing record:
+        // the decision was not applied and the hold is still pending.
+        Err(e) if e.starts_with("decision ledger") => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
         ),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
     }
 }
 
-/// POST /api/approvals/{id}/reject — Reject a pending request.
-pub async fn reject_request(
+/// POST /api/approvals/{id}/approve — Approve a pending request.
+pub async fn approve_request(
     State(state): State<Arc<AppState>>,
+    auth_class: Option<axum::Extension<crate::middleware::AuthClass>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let uuid = match uuid::Uuid::parse_str(&id) {
@@ -11067,28 +11112,90 @@ pub async fn reject_request(
             );
         }
     };
-
-    match state.kernel.approval_manager.resolve(
-        uuid,
-        openfang_types::approval::ApprovalDecision::Denied,
-        Some("api".to_string()),
-    ) {
-        // See approve_request: render the stored decision, so an
-        // idempotent re-decide reports the decision on record.
-        Ok(resp) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": id,
-                "status": match resp.decision {
-                    openfang_types::approval::ApprovalDecision::Approved => "approved",
-                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
-                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
-                },
-                "decided_at": resp.decided_at.to_rfc3339()
-            })),
+    let class = auth_class.as_ref().map(|e| &e.0);
+    let (decided_by, decided_via) = decision_stamp(class);
+    decide_response(
+        &id,
+        state.kernel.approval_manager.resolve(
+            uuid,
+            openfang_types::approval::ApprovalDecision::Approved,
+            decided_by,
+            decided_via,
         ),
-        Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
-    }
+    )
+}
+
+/// POST /api/approvals/{id}/reject — Reject a pending request.
+pub async fn reject_request(
+    State(state): State<Arc<AppState>>,
+    auth_class: Option<axum::Extension<crate::middleware::AuthClass>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let uuid = match uuid::Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Invalid approval ID"})),
+            );
+        }
+    };
+    let class = auth_class.as_ref().map(|e| &e.0);
+    let (decided_by, decided_via) = decision_stamp(class);
+    decide_response(
+        &id,
+        state.kernel.approval_manager.resolve(
+            uuid,
+            openfang_types::approval::ApprovalDecision::Denied,
+            decided_by,
+            decided_via,
+        ),
+    )
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct SupersedeRequest {
+    /// Who is performing the administrative terminalization — the
+    /// reconciliation tool names itself and its authorization here.
+    /// Recorded as the record's decider; carries no decision weight.
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// POST /api/approvals/{id}/supersede — Administratively terminalize
+/// a pending hold as superseded (Work build §12). Not a decision:
+/// fires no consumer effect, and the record lands in the decision
+/// ledger as `superseded`, distinct from approve/reject. The
+/// reconciliation tool is the caller; it runs this only under an
+/// owner authorization it records separately.
+pub async fn supersede_request(
+    State(state): State<Arc<AppState>>,
+    auth_class: Option<axum::Extension<crate::middleware::AuthClass>>,
+    Path(id): Path<String>,
+    body: Option<Json<SupersedeRequest>>,
+) -> impl IntoResponse {
+    let uuid = match uuid::Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Invalid approval ID"})),
+            );
+        }
+    };
+    let class = auth_class.as_ref().map(|e| &e.0);
+    let (_, decided_via) = decision_stamp(class);
+    let actor = body
+        .and_then(|Json(b)| b.actor)
+        .filter(|a| !a.trim().is_empty())
+        .unwrap_or_else(|| "cleanup".to_string());
+    decide_response(
+        &id,
+        state
+            .kernel
+            .approval_manager
+            .supersede(uuid, Some(actor), decided_via),
+    )
 }
 
 // ---------------------------------------------------------------------------
