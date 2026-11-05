@@ -11005,11 +11005,20 @@ pub async fn approve_request(
         openfang_types::approval::ApprovalDecision::Approved,
         Some("api".to_string()),
     ) {
+        // The rendered status comes from the stored response, not the
+        // endpoint: an idempotent re-decide returns the decision on
+        // record, which may be the opposite of this endpoint's verb.
         Ok(resp) => (
             StatusCode::OK,
-            Json(
-                serde_json::json!({"id": id, "status": "approved", "decided_at": resp.decided_at.to_rfc3339()}),
-            ),
+            Json(serde_json::json!({
+                "id": id,
+                "status": match resp.decision {
+                    openfang_types::approval::ApprovalDecision::Approved => "approved",
+                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
+                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+                },
+                "decided_at": resp.decided_at.to_rfc3339()
+            })),
         ),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
     }
@@ -11035,11 +11044,19 @@ pub async fn reject_request(
         openfang_types::approval::ApprovalDecision::Denied,
         Some("api".to_string()),
     ) {
+        // See approve_request: render the stored decision, so an
+        // idempotent re-decide reports the decision on record.
         Ok(resp) => (
             StatusCode::OK,
-            Json(
-                serde_json::json!({"id": id, "status": "rejected", "decided_at": resp.decided_at.to_rfc3339()}),
-            ),
+            Json(serde_json::json!({
+                "id": id,
+                "status": match resp.decision {
+                    openfang_types::approval::ApprovalDecision::Approved => "approved",
+                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
+                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+                },
+                "decided_at": resp.decided_at.to_rfc3339()
+            })),
         ),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
     }
