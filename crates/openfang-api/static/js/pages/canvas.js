@@ -625,7 +625,8 @@ function canvasPage() {
     cvSyncArtistDraft() {
       var list = this.cvArtists;
       if (!list.length) return;
-      if (!this.cv.setArtist || !list.some(function(a) { return a.id === this.cv.setArtist; })) this.cv.setArtist = list[0].id;
+      var cur = this.cv.setArtist;
+      if (!cur || !list.some(function(a) { return a.id === cur; })) this.cv.setArtist = list[0].id;
     },
     get cvSetArtistRec() {
       var id = this.cv.setArtist, found = null;
