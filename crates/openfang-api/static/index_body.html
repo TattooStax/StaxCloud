@@ -6956,24 +6956,24 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
   <!-- R7: Forms module dock — inside Forms, the dock belongs to the module -->
   <nav class="stax-dock" x-cloak x-show="page === 'forms'" aria-label="Forms module">
     <button class="stax-dock-btn" @click="$store.app.formsAgent()" aria-label="Forms agent">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
       <span>Agent</span>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
       <span>My Forms</span>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'subs' }" @click="$store.app.formsTab = 'subs'" aria-label="Submissions">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--envelope"></span></span>
       <span>Submissions</span>
       <span class="stax-dock-badge" x-show="$store.app.formsNewCount > 0" x-text="$store.app.formsNewCount"></span>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span>
       <span>Preview</span>
     </button>
     <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--reaper"></span></span>
       <span>Done</span>
     </button>
   </nav>
@@ -6981,15 +6981,15 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
   <!-- R9: Texts module dock -->
   <nav class="stax-dock" x-cloak x-show="page === 'sms'" aria-label="Texts module">
     <button class="stax-dock-btn" @click="$store.app.smsAgent()" aria-label="Texts agent">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
       <span>Agent</span>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.smsTab === 'inbox' }" @click="$store.app.smsTab = 'inbox'" aria-label="Inbox">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--envelope"></span></span>
       <span>Inbox</span>
     </button>
     <button class="stax-dock-btn" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--reaper"></span></span>
       <span>Done</span>
     </button>
   </nav>
