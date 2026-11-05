@@ -8,6 +8,7 @@ function approvalsPage() {
   return {
     approvals: [],
     jobs: [],
+    heldBack: [],
     loading: true,
     loadError: '',
     refreshTimer: null,
@@ -86,6 +87,21 @@ function approvalsPage() {
       return lines;
     },
 
+    // Held-back items (Work build §4): when the queue is full the
+    // carriers refuse visibly instead of dropping work — each keeps
+    // its refused drafts in a shared record the page reads. They are
+    // NOT decisions waiting on the owner, so they never join the
+    // badge or the pending count; they get their own plain line.
+    get heldBackCount() {
+      return this.heldBack.length;
+    },
+
+    get heldBackSeats() {
+      var by = {};
+      this.heldBack.forEach(function(e) { by[e.seat] = (by[e.seat] || 0) + 1; });
+      return Object.keys(by).sort().map(function(s) { return s + ' ' + by[s]; }).join(' · ');
+    },
+
     async loadData() {
       this.loading = true;
       this.loadError = '';
@@ -95,6 +111,21 @@ function approvalsPage() {
       } catch(e) {
         this.loadError = e.message || 'Could not load approvals.';
       }
+      try {
+        var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
+        var kv = await OpenFangAPI.get('/api/memory/agents/' + agentId + '/kv?prefix=' + encodeURIComponent('attention/held-back'));
+        var held = [];
+        (kv.kv_pairs || []).forEach(function(pr) {
+          var v = pr.value;
+          if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+          if (!v || typeof v !== 'object' || !v.entries) return;
+          Object.keys(v.entries).forEach(function(k) {
+            var e = v.entries[k] || {};
+            held.push({ key: k, seat: e.seat || 'Texts', at: e.at || '' });
+          });
+        });
+        this.heldBack = held;
+      } catch(e) { this.heldBack = []; }
       try {
         var jd = await OpenFangAPI.get('/api/cron/jobs');
         this.jobs = jd.jobs || jd || [];
