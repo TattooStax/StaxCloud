@@ -3371,17 +3371,46 @@ pub async fn get_template(Path(name): Path<String>) -> impl IntoResponse {
 ///
 /// Note: memory_store tool writes to a shared namespace, so we read from that
 /// same namespace regardless of which agent ID is in the URL.
+///
+/// Optional query params keep a caller from having to pull the whole
+/// store to read one corner of it: `prefix` returns only keys starting
+/// with it, and `strip` (comma-separated) drops those top-level fields
+/// from object values — a surface that needs record metadata at first
+/// paint should not have to download every record's embedded payloads
+/// (design previews, file bundles) to get it. Defaults are unchanged:
+/// no params returns the full store, full values.
 pub async fn get_agent_kv(
     State(state): State<Arc<AppState>>,
     Path(_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let agent_id = openfang_kernel::kernel::shared_memory_agent_id();
+    let prefix = params.get("prefix").cloned().unwrap_or_default();
+    let strip: Vec<String> = params
+        .get("strip")
+        .map(|s| {
+            s.split(',')
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
 
     match state.kernel.memory.list_kv(agent_id) {
         Ok(pairs) => {
             let kv: Vec<serde_json::Value> = pairs
                 .into_iter()
-                .map(|(k, v)| serde_json::json!({"key": k, "value": v}))
+                .filter(|(k, _)| prefix.is_empty() || k.starts_with(&prefix))
+                .map(|(k, mut v)| {
+                    if !strip.is_empty() {
+                        if let Some(obj) = v.as_object_mut() {
+                            for f in &strip {
+                                obj.remove(f);
+                            }
+                        }
+                    }
+                    serde_json::json!({"key": k, "value": v})
+                })
                 .collect();
             (StatusCode::OK, Json(serde_json::json!({"kv_pairs": kv})))
         }

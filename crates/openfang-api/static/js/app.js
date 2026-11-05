@@ -531,8 +531,14 @@ function app() {
         }
       });
 
-      // Hash routing
+      // Hash routing. validPages is the stock console list; the
+      // fork's module pages (the surfaces the dock and drawer
+      // navigate to) were never added to it, so a boot or refresh
+      // from a module hash (#canvas, #leads, …) silently fell back
+      // to Home — in-app taps worked only because navigate() sets
+      // the page directly. Both lists are valid landings.
       var validPages = ['overview','chat','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard','advanced'];
+      var modulePages = ['sms','team','email','leads','contacts','boards','forms','library','canvas'];
       var pageRedirects = {
         'templates': 'agents',
         'triggers': 'workflows',
@@ -562,7 +568,7 @@ function app() {
         if (('#' + hash) !== window.location.hash) {
           history.replaceState(null, '', '#' + hash);
         }
-        if (validPages.indexOf(hash) >= 0) {
+        if (validPages.indexOf(hash) >= 0 || modulePages.indexOf(hash) >= 0) {
           self.page = hash;
           self.surface = self.surfaceOf[hash] || null;
         }
