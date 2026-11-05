@@ -1538,7 +1538,7 @@
           </div>
           <template x-if="!loading && !loadError">
             <div>
-              <div x-show="heldBackCount > 0" style="border:1px solid var(--border,#3a3f4a);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+              <div x-show="heldBackCount > 0" role="status" aria-live="polite" style="border:1px solid var(--border,#3a3f4a);border-radius:10px;padding:10px 14px;margin-bottom:14px">
                 <span style="font-weight:600" x-text="heldBackCount + ' held back — the queue is full'"></span>
                 <span class="text-xs text-dim" style="margin-left:8px" x-text="heldBackSeats"></span>
                 <p class="hint" style="margin:4px 0 0">Nothing is lost. Each one joins the list above as soon as a decision frees up room.</p>
