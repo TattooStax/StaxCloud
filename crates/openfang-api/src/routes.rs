@@ -10855,6 +10855,10 @@ pub struct CreateApprovalRequest {
     pub action_summary: String,
 }
 
+/// The request is submitted as a queued hold: the record exists before
+/// the 201 is written, and it stays pending until a person decides it.
+/// A submission the store refuses (per-agent queue cap) answers 429 —
+/// never a 201 carrying an id that names nothing.
 pub async fn create_approval(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateApprovalRequest>,
@@ -10879,19 +10883,106 @@ pub async fn create_approval(
         },
         risk_level: RiskLevel::High,
         requested_at: chrono::Utc::now(),
+        // Retained for record-shape compatibility with tool-gate
+        // requests; queued holds are not expired on it.
         timeout_secs: policy.timeout_secs,
     };
 
-    // Spawn the request in the background (it will block until resolved or timed out)
-    let kernel = Arc::clone(&state.kernel);
-    tokio::spawn(async move {
-        kernel.approval_manager.request_approval(approval_req).await;
-    });
+    match state.kernel.approval_manager.submit_queued(approval_req) {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"id": id.to_string(), "status": "pending"})),
+        ),
+        Err(e) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error": e})),
+        ),
+    }
+}
 
-    (
-        StatusCode::CREATED,
-        Json(serde_json::json!({"id": id.to_string(), "status": "pending"})),
-    )
+/// GET /api/approvals/{id} — Read one approval request by id.
+///
+/// Returns the same JSON shape as the list endpoint, for a pending or
+/// a decided record; 404 when the id names nothing in the store.
+pub async fn get_approval(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    use openfang_kernel::approval::ApprovalLookup;
+
+    let uuid = match uuid::Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Invalid approval ID"})),
+            );
+        }
+    };
+
+    let registry_agents = state.kernel.registry.list();
+    let agent_name_for = |agent_id: &str| {
+        registry_agents
+            .iter()
+            .find(|ag| ag.id.to_string() == agent_id || ag.name == agent_id)
+            .map(|ag| ag.name.clone())
+            .unwrap_or_else(|| agent_id.to_string())
+    };
+
+    match state.kernel.approval_manager.lookup(uuid) {
+        ApprovalLookup::Pending(a) => {
+            let agent_name = agent_name_for(&a.agent_id);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": a.id,
+                    "agent_id": a.agent_id,
+                    "agent_name": agent_name,
+                    "tool_name": a.tool_name,
+                    "description": a.description,
+                    "action_summary": a.action_summary,
+                    "action": a.action_summary,
+                    "risk_level": a.risk_level,
+                    "requested_at": a.requested_at,
+                    "created_at": a.requested_at,
+                    "timeout_secs": a.timeout_secs,
+                    "status": "pending"
+                })),
+            )
+        }
+        ApprovalLookup::Decided(record) => {
+            let request = record.request;
+            let agent_name = agent_name_for(&request.agent_id);
+            let status = match record.decision {
+                openfang_types::approval::ApprovalDecision::Approved => "approved",
+                openfang_types::approval::ApprovalDecision::Denied => "rejected",
+                openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+            };
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": request.id,
+                    "agent_id": request.agent_id,
+                    "agent_name": agent_name,
+                    "tool_name": request.tool_name,
+                    "description": request.description,
+                    "action_summary": request.action_summary,
+                    "action": request.action_summary,
+                    "risk_level": request.risk_level,
+                    "requested_at": request.requested_at,
+                    "created_at": request.requested_at,
+                    "timeout_secs": request.timeout_secs,
+                    "status": status,
+                    "decided_at": record.decided_at,
+                    "decided_by": record.decided_by,
+                })),
+            )
+        }
+        ApprovalLookup::Missing => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("No approval request with id {id}")})),
+        ),
+    }
 }
 
 /// POST /api/approvals/{id}/approve — Approve a pending request.
@@ -10914,11 +11005,20 @@ pub async fn approve_request(
         openfang_types::approval::ApprovalDecision::Approved,
         Some("api".to_string()),
     ) {
+        // The rendered status comes from the stored response, not the
+        // endpoint: an idempotent re-decide returns the decision on
+        // record, which may be the opposite of this endpoint's verb.
         Ok(resp) => (
             StatusCode::OK,
-            Json(
-                serde_json::json!({"id": id, "status": "approved", "decided_at": resp.decided_at.to_rfc3339()}),
-            ),
+            Json(serde_json::json!({
+                "id": id,
+                "status": match resp.decision {
+                    openfang_types::approval::ApprovalDecision::Approved => "approved",
+                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
+                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+                },
+                "decided_at": resp.decided_at.to_rfc3339()
+            })),
         ),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
     }
@@ -10944,11 +11044,19 @@ pub async fn reject_request(
         openfang_types::approval::ApprovalDecision::Denied,
         Some("api".to_string()),
     ) {
+        // See approve_request: render the stored decision, so an
+        // idempotent re-decide reports the decision on record.
         Ok(resp) => (
             StatusCode::OK,
-            Json(
-                serde_json::json!({"id": id, "status": "rejected", "decided_at": resp.decided_at.to_rfc3339()}),
-            ),
+            Json(serde_json::json!({
+                "id": id,
+                "status": match resp.decision {
+                    openfang_types::approval::ApprovalDecision::Approved => "approved",
+                    openfang_types::approval::ApprovalDecision::Denied => "rejected",
+                    openfang_types::approval::ApprovalDecision::TimedOut => "expired",
+                },
+                "decided_at": resp.decided_at.to_rfc3339()
+            })),
         ),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e}))),
     }

@@ -11,6 +11,11 @@ use uuid::Uuid;
 
 /// Max pending requests per agent.
 const MAX_PENDING_PER_AGENT: usize = 5;
+/// Max queued (non-blocking) holds per agent. A sidecar carries every
+/// hold of its class under one agent id, so the tool-gate cap above
+/// would refuse most of a real queue; this cap is sized for that use
+/// and exists to bound memory, not to shape the queue.
+const MAX_QUEUED_PER_AGENT: usize = 100;
 /// Max recent approval records to retain for history and UI visibility.
 const MAX_RECENT_APPROVALS: usize = 100;
 
@@ -32,6 +37,15 @@ pub struct ApprovalRecord {
     pub decision: ApprovalDecision,
     pub decided_at: chrono::DateTime<Utc>,
     pub decided_by: Option<String>,
+}
+
+/// One read of the store by id: a queued/tool request still waiting,
+/// a request that already carries a decision, or no such request.
+#[derive(Debug, Clone)]
+pub enum ApprovalLookup {
+    Pending(ApprovalRequest),
+    Decided(ApprovalRecord),
+    Missing,
 }
 
 impl ApprovalManager {
@@ -95,7 +109,66 @@ impl ApprovalManager {
         }
     }
 
+    /// Submit a queued hold for a human decision (the external/API path).
+    ///
+    /// Unlike `request_approval`, nothing waits on this request and no
+    /// timer runs against it: a hold is a queue entry a person decides
+    /// on human time, and the consumers that poll for the decision work
+    /// on a multi-minute cadence the tool-gate timeout (max 300s) cannot
+    /// outlive. The record is inserted before this returns, so an id the
+    /// caller is handed always names a record that exists; refusing a
+    /// submission (per-agent queue cap) is an error here, never an id
+    /// that was never stored.
+    pub fn submit_queued(&self, req: ApprovalRequest) -> Result<Uuid, String> {
+        let agent_pending = self
+            .pending
+            .iter()
+            .filter(|r| r.value().request.agent_id == req.agent_id)
+            .count();
+        if agent_pending >= MAX_QUEUED_PER_AGENT {
+            warn!(agent_id = %req.agent_id, "Queued approval rejected: too many pending");
+            return Err(format!(
+                "Too many pending approvals for agent {} (max {MAX_QUEUED_PER_AGENT})",
+                req.agent_id
+            ));
+        }
+        let id = req.id;
+        // No waiter exists for a queued hold; the sender is kept so
+        // `resolve` treats both paths identically, and its send simply
+        // finds no receiver.
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        self.pending.insert(
+            id,
+            PendingRequest {
+                request: req,
+                sender: tx,
+            },
+        );
+        info!(request_id = %id, "Queued approval submitted");
+        Ok(id)
+    }
+
+    /// Look up one request by id across the pending map and the
+    /// decided history, so a caller holding an id reads the same fact
+    /// the list views are built from.
+    pub fn lookup(&self, request_id: Uuid) -> ApprovalLookup {
+        if let Some(entry) = self.pending.get(&request_id) {
+            return ApprovalLookup::Pending(entry.value().request.clone());
+        }
+        let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+        match recent.iter().find(|r| r.request.id == request_id) {
+            Some(record) => ApprovalLookup::Decided(record.clone()),
+            None => ApprovalLookup::Missing,
+        }
+    }
+
     /// Resolve a pending request (called by API/UI).
+    ///
+    /// Deciding an already-decided id returns the stored decision
+    /// unchanged: a decision is a fact about the record, and a repeated
+    /// decide (a second tap, a retried caller) must never produce a
+    /// second effect. A timed-out request is refused as timed out —
+    /// its waiter already received that outcome.
     pub fn resolve(
         &self,
         request_id: Uuid,
@@ -121,7 +194,22 @@ impl ApprovalManager {
                 info!(request_id = %request_id, ?decision, "Approval request resolved");
                 Ok(response)
             }
-            None => Err(format!("No pending approval request with id {request_id}")),
+            None => match self.lookup(request_id) {
+                ApprovalLookup::Decided(record) => match record.decision {
+                    ApprovalDecision::Approved | ApprovalDecision::Denied => {
+                        Ok(ApprovalResponse {
+                            request_id,
+                            decision: record.decision,
+                            decided_at: record.decided_at,
+                            decided_by: record.decided_by,
+                        })
+                    }
+                    ApprovalDecision::TimedOut => Err(format!(
+                        "Approval request {request_id} already timed out"
+                    )),
+                },
+                _ => Err(format!("No pending approval request with id {request_id}")),
+            },
         }
     }
 
@@ -283,6 +371,85 @@ mod tests {
         let result = mgr.resolve(Uuid::new_v4(), ApprovalDecision::Approved, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No pending approval request"));
+    }
+
+    // -----------------------------------------------------------------------
+    // submit_queued — the queue path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_submit_queued_visible_immediately() {
+        let mgr = default_manager();
+        let req = make_request("agent-1", "design_approval", 60);
+        let id = req.id;
+        let returned = mgr.submit_queued(req).unwrap();
+        assert_eq!(returned, id);
+        // The record exists before the caller is answered: readable by
+        // id, present in the pending list, counted.
+        match mgr.lookup(id) {
+            ApprovalLookup::Pending(found) => assert_eq!(found.id, id),
+            other => panic!("expected Pending, got {other:?}"),
+        }
+        assert!(mgr.list_pending().iter().any(|r| r.id == id));
+        assert_eq!(mgr.pending_count(), 1);
+    }
+
+    #[test]
+    fn test_submit_queued_cap_refuses_without_phantom() {
+        let mgr = default_manager();
+        for _ in 0..MAX_QUEUED_PER_AGENT {
+            let req = make_request("agent-1", "design_approval", 60);
+            mgr.submit_queued(req).unwrap();
+        }
+        assert_eq!(mgr.pending_count(), MAX_QUEUED_PER_AGENT);
+        // The next submission for the same agent is refused as an
+        // error, and its id names nothing in the store.
+        let refused = make_request("agent-1", "design_approval", 60);
+        let refused_id = refused.id;
+        assert!(mgr.submit_queued(refused).is_err());
+        assert!(matches!(mgr.lookup(refused_id), ApprovalLookup::Missing));
+        assert_eq!(mgr.pending_count(), MAX_QUEUED_PER_AGENT);
+        // A different agent is unaffected.
+        let other = make_request("agent-2", "design_approval", 60);
+        assert!(mgr.submit_queued(other).is_ok());
+    }
+
+    #[test]
+    fn test_queued_resolve_is_idempotent() {
+        let mgr = default_manager();
+        let req = make_request("agent-1", "design_approval", 60);
+        let id = req.id;
+        mgr.submit_queued(req).unwrap();
+
+        let first = mgr
+            .resolve(id, ApprovalDecision::Approved, Some("api".to_string()))
+            .unwrap();
+        assert_eq!(first.decision, ApprovalDecision::Approved);
+        match mgr.lookup(id) {
+            ApprovalLookup::Decided(record) => {
+                assert_eq!(record.decision, ApprovalDecision::Approved)
+            }
+            other => panic!("expected Decided, got {other:?}"),
+        }
+
+        // A repeated decide — even one asking for the opposite outcome —
+        // returns the stored decision and changes nothing.
+        let second = mgr
+            .resolve(id, ApprovalDecision::Denied, Some("api".to_string()))
+            .unwrap();
+        assert_eq!(second.decision, ApprovalDecision::Approved);
+        assert_eq!(second.decided_at, first.decided_at);
+        assert_eq!(mgr.list_recent(10).len(), 1);
+        assert_eq!(mgr.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_lookup_missing() {
+        let mgr = default_manager();
+        assert!(matches!(
+            mgr.lookup(Uuid::new_v4()),
+            ApprovalLookup::Missing
+        ));
     }
 
     // -----------------------------------------------------------------------
