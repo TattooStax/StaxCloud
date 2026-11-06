@@ -3912,16 +3912,13 @@ impl OpenFangKernel {
                 heartbeat_interval_secs: def.agent.heartbeat_interval_secs.unwrap_or(30),
                 ..Default::default()
             }),
-            // Autonomous hands must run in Continuous mode so the background loop picks them up.
-            // Reactive (default) only fires on incoming messages, so autonomous hands would be inert.
-            // Default to 3600s (1 hour) to avoid wasting credits — see issue #848.
-            schedule: if def.agent.max_iterations.is_some() {
-                ScheduleMode::Continuous {
-                    check_interval_secs: 3600,
-                }
-            } else {
-                ScheduleMode::default()
-            },
+            // Hands wake on events — incoming messages, triggers, and the
+            // sidecar wakegate — never on a self-prompt loop. A Continuous
+            // schedule here re-arms an hourly model turn for every hand on
+            // every boot; that loop is a burn source with no product
+            // function in this deployment. The autonomous turn budget above
+            // still comes from the hand's max_iterations.
+            schedule: ScheduleMode::default(),
             skills: def.skills.clone(),
             mcp_servers: def.mcp_servers.clone(),
             // Hands are curated packages — if they declare shell_exec, grant full exec access
