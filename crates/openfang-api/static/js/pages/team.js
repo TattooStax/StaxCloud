@@ -42,6 +42,17 @@ function teamPage() {
         this.loadError = e.message || 'Could not load the team channel.';
       }
       this.loading = false;
+      this.scrollToNewest();
+    },
+
+    // The message list is its own scroll region now; land on the
+    // newest message whenever the channel (re)loads or a post lands.
+    scrollToNewest() {
+      var self = this;
+      this.$nextTick(function() {
+        var el = self.$refs.teamScroll;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
     },
 
     initials(name) {
@@ -73,6 +84,7 @@ function teamPage() {
           encodeURIComponent('teammsg/' + stamp + '-' + uuid.slice(0, 8)), { value: rec });
         this.messages.push({ key: 'teammsg/' + stamp, author: rec.author, body: rec.body, ts: rec.ts });
         this.draft = '';
+        this.scrollToNewest();
       } catch(e) {
         OpenFangToast.error(e.message || 'Could not post. Try again.');
       }

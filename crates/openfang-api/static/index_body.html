@@ -6472,7 +6472,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <h2>Texts</h2>
           <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
         </div>
-        <div class="page-body">
+        <div class="page-body" :class="{ 'sms-body': tab === 'inbox' && !!selected }">
           <div x-show="loading" class="text-dim" style="padding:12px">Loading texts...</div>
           <div x-show="!loading && loadError" class="error-state">
             <h3 style="color:var(--error)">Could not load texts</h3>
@@ -6480,7 +6480,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
           </div>
 
-          <div x-show="!loading && !loadError && tab === 'inbox'">
+          <div class="sms-main" x-show="!loading && !loadError && tab === 'inbox'">
             <div x-show="threads.length === 0" class="empty-state">
               <h4>No texts yet</h4>
               <p class="hint">When the modem bridge is connected, conversations from the studio line land here — and replies you approve go out from here.</p>
@@ -6488,7 +6488,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
             <div class="people-list" x-show="!selected">
               <template x-for="th in threads" :key="th.key">
-                <button class="thread-row" @click="selectedKey = th.key">
+                <button class="thread-row" @click="openThread(th)">
                   <span class="thread-avatar" x-text="(th.name || th.number || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
                   <span class="thread-copy">
                     <span class="thread-name" x-text="th.name || prettyNumber(th.number)"></span>
@@ -6502,30 +6502,30 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               </template>
             </div>
 
-            <div x-show="selected">
-              <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px">&larr; All conversations</button>
-              <div class="card" x-show="selected">
-                <div style="font-weight:700;font-size:15px" x-text="selected ? (selected.name || prettyNumber(selected.number)) : ''"></div>
+            <div class="sms-thread" x-show="selected">
+              <div class="sms-thread-head">
+                <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="min-height:44px">&larr; All conversations</button>
+                <div style="font-weight:700;font-size:15px;margin-top:6px" x-text="selected ? (selected.name || prettyNumber(selected.number)) : ''"></div>
                 <div class="text-xs text-dim" x-text="selected ? prettyNumber(selected.number) : ''"></div>
-                <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
-                  <template x-for="(m, i) in (selected ? selected.messages : [])" :key="i">
-                    <div :style="m.dir === 'out' ? 'align-self:flex-end;background:var(--accent);color:#fff' : 'align-self:flex-start;background:var(--surface-2)'" style="max-width:82%;border-radius:14px;padding:8px 12px">
-                      <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
-                      <div class="text-sm" x-show="m.media && m.media.length && !(m.body || '').trim()" x-text="m.media.some(function(x){ return (x.mime || '').indexOf('image/') === 0; }) ? 'Photo' : 'Attachment'"></div>
-                      <div style="font-size:10px;opacity:.75;margin-top:3px" x-text="fmtTs(m.ts) + (m.dir === 'out' && m.status ? ' - ' + m.status : '')"></div>
-                    </div>
-                  </template>
-                </div>
-                <div style="margin-top:14px">
-                  <textarea class="form-textarea" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
-                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="holdReply()" :disabled="holding">Hold reply for approval</button>
-                </div>
-                <div style="margin-top:14px" x-show="outbox.length">
+              </div>
+              <div class="sms-thread-scroll" x-ref="threadScroll">
+                <template x-for="(m, i) in (selected ? selected.messages : [])" :key="i">
+                  <div :style="m.dir === 'out' ? 'align-self:flex-end;background:var(--accent);color:#fff' : 'align-self:flex-start;background:var(--surface-2)'" style="max-width:82%;border-radius:14px;padding:8px 12px">
+                    <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
+                    <div class="text-sm" x-show="m.media && m.media.length && !(m.body || '').trim()" x-text="m.media.some(function(x){ return (x.mime || '').indexOf('image/') === 0; }) ? 'Photo' : 'Attachment'"></div>
+                    <div style="font-size:10px;opacity:.75;margin-top:3px" x-text="fmtTs(m.ts) + (m.dir === 'out' && m.status ? ' - ' + m.status : '')"></div>
+                  </div>
+                </template>
+                <div style="margin-top:6px" x-show="outbox.length">
                   <div style="font-weight:600;font-size:13px;margin-bottom:6px">Outbox</div>
                   <template x-for="o in outbox" :key="o.key">
                     <div class="text-sm" style="display:flex;gap:8px"><span class="badge" :class="o.status === 'delivered' ? 'badge-success' : (o.status === 'failed' ? 'badge-dim' : 'badge-warn')" style="font-size:10px" x-text="o.status"></span><span style="flex:1;min-width:0" x-text="o.body"></span></div>
                   </template>
                 </div>
+              </div>
+              <div class="sms-thread-compose">
+                <textarea class="form-textarea" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
+                <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="holdReply()" :disabled="holding">Hold reply for approval</button>
               </div>
             </div>
           </div>
@@ -6540,8 +6540,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <h2>Team</h2>
           <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh team channel">Refresh</button>
         </div>
-        <div class="page-body">
-          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px" role="list" aria-label="Team members">
+        <div class="page-body team-body">
+          <div class="team-people" style="display:flex;gap:14px;flex-wrap:wrap" role="list" aria-label="Team members">
             <template x-for="p in people" :key="p.name">
               <span style="display:inline-flex;align-items:center;gap:8px" role="listitem">
                 <span class="stax-side-avatar" aria-hidden="true">
@@ -6553,6 +6553,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </template>
           </div>
 
+          <div class="team-scroll" x-ref="teamScroll">
           <div x-show="loading" class="text-dim" style="padding:12px">Loading the team channel...</div>
           <div x-show="!loading && loadError" class="error-state">
             <h3 style="color:var(--error)">Could not load the team channel</h3>
@@ -6578,11 +6579,12 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 </div>
               </template>
             </div>
-            <div style="margin-top:16px">
-              <label class="text-xs text-dim" for="team-compose">Message the team</label>
-              <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
-              <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="post()" :disabled="posting || !draft.trim()" aria-label="Post message to the team">Post</button>
-            </div>
+          </div>
+          </div>
+          <div class="team-compose" x-show="!loading && !loadError">
+            <label class="text-xs text-dim" for="team-compose">Message the team</label>
+            <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
+            <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="post()" :disabled="posting || !draft.trim()" aria-label="Post message to the team">Post</button>
           </div>
         </div>
       </div>
@@ -6598,8 +6600,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-primary btn-sm" style="min-height:44px" @click="startCompose()" aria-label="Write a new email">New email</button>
           </div>
         </div>
-        <div class="page-body">
-          <p class="text-xs text-dim" style="margin-bottom:12px" x-show="status">
+        <div class="page-body" :class="{ 'email-body': composing }">
+          <p class="text-xs text-dim" style="margin-bottom:12px" x-show="status && !composing">
             <span x-text="status ? status.address : ''"></span>
             <span x-show="status && status.last_run"> · checked <span x-text="fmtTs(status.last_run)"></span></span>
             <span x-show="unreadCount"> · <span x-text="unreadCount"></span> unread</span>
@@ -6646,31 +6648,35 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
           </div>
 
-          <div x-show="!loading && !loadError && composing">
-            <button class="btn btn-ghost btn-sm" @click="cancelCompose()" style="margin-bottom:10px;min-height:44px">&larr; Back</button>
-            <div class="card">
-              <div style="display:flex;flex-direction:column;gap:10px">
-                <div>
-                  <label class="text-xs text-dim" for="email-to">To</label>
-                  <input id="email-to" class="input" style="width:100%;margin-top:4px;min-height:44px" type="email" autocomplete="off" placeholder="name@example.com" x-model="to">
-                </div>
-                <div>
-                  <label class="text-xs text-dim" for="email-subject">Subject</label>
-                  <input id="email-subject" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" x-model="subject">
-                </div>
-                <div>
-                  <label class="text-xs text-dim" for="email-body">Message</label>
-                  <textarea id="email-body" class="input" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                  <button class="btn btn-primary" style="min-height:44px" @click="holdSend()" :disabled="holding || !to.trim() || !body.trim()" aria-label="Hold this email for approval">Hold for approval</button>
-                  <span class="text-xs text-dim">It waits in Needs you; nothing sends until you approve it there.</span>
+          <div class="email-compose" x-show="!loading && !loadError && composing">
+            <div class="email-compose-head">
+              <button class="btn btn-ghost btn-sm" @click="cancelCompose()" style="min-height:44px">&larr; Back</button>
+            </div>
+            <div class="email-compose-scroll">
+              <div class="card">
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <div>
+                    <label class="text-xs text-dim" for="email-to">To</label>
+                    <input id="email-to" class="input" style="width:100%;margin-top:4px;min-height:44px" type="email" autocomplete="off" placeholder="name@example.com" x-model="to">
+                  </div>
+                  <div>
+                    <label class="text-xs text-dim" for="email-subject">Subject</label>
+                    <input id="email-subject" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" x-model="subject">
+                  </div>
+                  <div>
+                    <label class="text-xs text-dim" for="email-body">Message</label>
+                    <textarea id="email-body" class="input" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
+                  </div>
                 </div>
               </div>
             </div>
+            <div class="email-compose-bar">
+              <button class="btn btn-primary" style="min-height:44px" @click="holdSend()" :disabled="holding || !to.trim() || !body.trim()" aria-label="Hold this email for approval">Hold for approval</button>
+              <span class="text-xs text-dim">It waits in Needs you; nothing sends until you approve it there.</span>
+            </div>
           </div>
 
-          <div x-show="!loading && !loadError && outbox.length" style="margin-top:16px">
+          <div x-show="!loading && !loadError && !composing && outbox.length" style="margin-top:16px">
             <div style="font-weight:600;font-size:13px;margin-bottom:6px">Outbox</div>
             <template x-for="o in outbox" :key="o.key">
               <div class="text-sm" style="display:flex;gap:8px;align-items:baseline">

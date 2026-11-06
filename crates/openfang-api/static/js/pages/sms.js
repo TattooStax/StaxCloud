@@ -54,9 +54,25 @@ function smsPage() {
         this.loadError = e.message || 'Could not load texts.';
       }
       this.loading = false;
+      if (this.selectedKey) this.scrollThread();
     },
 
     get tab() { return Alpine.store('app').smsTab; },
+
+    openThread(th) {
+      this.selectedKey = th.key;
+      this.scrollThread();
+    },
+
+    // The thread's message region scrolls on its own now; land on
+    // the newest message when a thread opens.
+    scrollThread() {
+      var self = this;
+      this.$nextTick(function() {
+        var el = self.$refs.threadScroll;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
 
     get selected() {
       var k = this.selectedKey;
