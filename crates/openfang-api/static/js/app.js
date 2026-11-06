@@ -213,8 +213,9 @@ document.addEventListener('alpine:init', function() {
     // refreshed last. A failed read is 'unknown', never a guess.
     async refreshTextGate() {
       try {
-        var agents = this.agents && this.agents.length ? this.agents
-          : await OpenFangAPI.get('/api/agents');
+        // Always the live registry, never the store's cached list —
+        // a snapshot that can go stale is a second source of truth.
+        var agents = await OpenFangAPI.get('/api/agents');
         var list = Array.isArray(agents) ? agents : [];
         var aid = (list[0] && list[0].id) || 'shared';
         var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv?prefix=' + encodeURIComponent('draft/'));
