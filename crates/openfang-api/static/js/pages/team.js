@@ -50,15 +50,27 @@ function teamPage() {
     scrollToNewest() {
       var self = this;
       this.$nextTick(function() {
-        // On open the load can finish before the page is laid out
-        // (scroll region still zero-height); retry across frames
-        // until it has a real height, then land on the newest message.
-        var tries = 0;
+        // On open the fetched rows paint after this runs: the region
+        // has its layout height immediately, but scrollHeight keeps
+        // growing as rows render, so a single set lands on the empty
+        // region's height and sticks at the top. Keep setting the
+        // scroll each frame until the content height is stable
+        // across consecutive frames AND the scroll verifies at the
+        // bottom; exit only on a landed scroll. The frame bound is
+        // the fallback exit for a list with no overflow.
+        var tries = 0, lastHeight = -1, stableFrames = 0;
         var go = function() {
           var el = self.$refs.teamScroll;
           if (!el) return;
-          if (el.clientHeight > 0) { el.scrollTop = el.scrollHeight; return; }
-          if (++tries < 12) requestAnimationFrame(go);
+          var h = el.scrollHeight;
+          el.scrollTop = h;
+          var overflows = h > el.clientHeight;
+          if (overflows && h === lastHeight) stableFrames++;
+          else stableFrames = 0;
+          lastHeight = h;
+          var atBottom = (h - el.clientHeight - el.scrollTop) <= 2;
+          if (overflows && stableFrames >= 2 && atBottom) return;
+          if (++tries < 45) requestAnimationFrame(go);
         };
         go();
       });

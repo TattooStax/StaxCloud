@@ -69,14 +69,22 @@ function smsPage() {
     scrollThread() {
       var self = this;
       this.$nextTick(function() {
-        // Same zero-height-on-open case as the Team channel: retry
-        // across frames until the region is laid out.
-        var tries = 0;
+        // Same late-paint case as the Team channel: retry across
+        // frames until the content height is stable and the scroll
+        // verifies at the bottom (see scrollToNewest in team.js).
+        var tries = 0, lastHeight = -1, stableFrames = 0;
         var go = function() {
           var el = self.$refs.threadScroll;
           if (!el) return;
-          if (el.clientHeight > 0) { el.scrollTop = el.scrollHeight; return; }
-          if (++tries < 12) requestAnimationFrame(go);
+          var h = el.scrollHeight;
+          el.scrollTop = h;
+          var overflows = h > el.clientHeight;
+          if (overflows && h === lastHeight) stableFrames++;
+          else stableFrames = 0;
+          lastHeight = h;
+          var atBottom = (h - el.clientHeight - el.scrollTop) <= 2;
+          if (overflows && stableFrames >= 2 && atBottom) return;
+          if (++tries < 45) requestAnimationFrame(go);
         };
         go();
       });
