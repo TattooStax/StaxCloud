@@ -50,8 +50,17 @@ function teamPage() {
     scrollToNewest() {
       var self = this;
       this.$nextTick(function() {
-        var el = self.$refs.teamScroll;
-        if (el) el.scrollTop = el.scrollHeight;
+        // On open the load can finish before the page is laid out
+        // (scroll region still zero-height); retry across frames
+        // until it has a real height, then land on the newest message.
+        var tries = 0;
+        var go = function() {
+          var el = self.$refs.teamScroll;
+          if (!el) return;
+          if (el.clientHeight > 0) { el.scrollTop = el.scrollHeight; return; }
+          if (++tries < 12) requestAnimationFrame(go);
+        };
+        go();
       });
     },
 

@@ -69,8 +69,16 @@ function smsPage() {
     scrollThread() {
       var self = this;
       this.$nextTick(function() {
-        var el = self.$refs.threadScroll;
-        if (el) el.scrollTop = el.scrollHeight;
+        // Same zero-height-on-open case as the Team channel: retry
+        // across frames until the region is laid out.
+        var tries = 0;
+        var go = function() {
+          var el = self.$refs.threadScroll;
+          if (!el) return;
+          if (el.clientHeight > 0) { el.scrollTop = el.scrollHeight; return; }
+          if (++tries < 12) requestAnimationFrame(go);
+        };
+        go();
       });
     },
 
