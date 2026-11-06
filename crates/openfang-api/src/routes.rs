@@ -12812,13 +12812,12 @@ pub async fn auth_login(
             .unwrap();
     }
 
-    // Derive the session secret the same way as server.rs
-    let api_key = state.kernel.config.api_key.trim().to_string();
-    let secret = if !api_key.is_empty() {
-        api_key
-    } else {
-        auth_cfg.password_hash.clone()
-    };
+    // The session-signing secret is the daemon's own persisted
+    // secret (see session_auth::load_or_create_session_secret) —
+    // never the API key or the password hash, which API-token
+    // holders can read.
+    let secret =
+        crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
 
     let token =
         crate::session_auth::create_session_token(username, &secret, auth_cfg.session_ttl_hours);
@@ -12871,13 +12870,10 @@ pub async fn auth_check(
         }));
     }
 
-    // Derive the session secret the same way as server.rs
-    let api_key = state.kernel.config.api_key.trim().to_string();
-    let secret = if !api_key.is_empty() {
-        api_key
-    } else {
-        auth_cfg.password_hash.clone()
-    };
+    // Same single source as login and the middleware: the daemon's
+    // persisted session secret.
+    let secret =
+        crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
 
     // Check session cookie
     let session_user = crate::session_auth::extract_session_cookie(request.headers())
