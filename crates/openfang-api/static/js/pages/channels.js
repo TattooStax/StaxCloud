@@ -332,9 +332,26 @@ function connectionsPage() {
     loadError: '',
     checkedAt: '',
     texts: null,
-    replies: null,
+    // The replies row is a getter, not a load-time field: it derives
+    // from the store's one gate snapshot at render time — the same
+    // derive-at-render pattern as the drawer's staxStatus() — so a
+    // gate refresh (drawer open, login, page load) updates this row
+    // in place and it can never sit stale beside a fresher drawer.
+    get replies() { return this.gateRow(Alpine.store('app').textGate); },
     email: null,
     team: null,
+
+    gateRow(gate) {
+      if (!gate || gate.mode === 'unknown') {
+        return { tone: 'warn', status: "Couldn't check", sub: 'The reply setting did not load — try again in a moment' };
+      }
+      if (gate.mode === 'paused') {
+        return { tone: 'quiet', status: 'Paused', sub: 'No replies are being drafted right now' };
+      }
+      var rsub = 'Replies wait in Needs you until you approve them';
+      if (gate.held) rsub += ' · ' + gate.held + (gate.held === 1 ? ' reply' : ' replies') + ' waiting now';
+      return { tone: 'ok', status: 'You approve', sub: rsub };
+    },
 
     fmtTs(ts) {
       var t = tsOf(ts);
@@ -406,16 +423,11 @@ function connectionsPage() {
         this.texts = { tone: 'ok', status: 'Connected', sub: sub };
       }
 
-      // ── Text replies: the one gate snapshot ──
-      if (!gate || gate.mode === 'unknown') {
-        this.replies = { tone: 'warn', status: "Couldn't check", sub: 'The reply setting did not load — try again in a moment' };
-      } else if (gate.mode === 'paused') {
-        this.replies = { tone: 'quiet', status: 'Paused', sub: 'No replies are being drafted right now' };
-      } else {
-        var rsub = 'Replies wait in Needs you until you approve them';
-        if (gate.held) rsub += ' · ' + gate.held + (gate.held === 1 ? ' reply' : ' replies') + ' waiting now';
-        this.replies = { tone: 'ok', status: 'You approve', sub: rsub };
-      }
+      // ── Text replies: no row is built here — the `replies` getter
+      // renders the store snapshot (refreshed by the refreshTextGate
+      // call in the Promise.all above) live, exactly as the drawer
+      // and the Home pill do. `gate` is still used below for the
+      // all-legs-failed error line.
 
       // ── Email: the mailbox's own status stamp ──
       if (!mbR.ok || !mbR.v) {
