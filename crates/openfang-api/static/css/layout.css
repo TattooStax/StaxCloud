@@ -603,6 +603,16 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .people-error { margin: 10px 12px; padding: 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); background: color-mix(in srgb, var(--error) 6%, transparent); }
 .people-error-msg { font-size: 12px; font-weight: 700; color: var(--error); margin: 0; }
 .people-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--text-on-accent); font-size: 20px; font-weight: 700; }
+.people-metas { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.people-kind { background: var(--surface2); color: var(--text-dim); }
+.people-prep-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #FF9800; margin-right: 6px; vertical-align: 1px; }
+.people-alert { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, #e8590c 38%, transparent); background: color-mix(in srgb, #e8590c 6%, transparent); }
+.people-alert-sm { margin: 12px 0 0; }
+.people-alert-title { font-size: 12px; font-weight: 700; margin: 0 0 4px; }
+.people-alert-row { display: block; width: 100%; padding: 4px 0; background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.people-alert-row:hover { text-decoration: underline; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.detail-actions .btn { min-height: 44px; display: inline-flex; align-items: center; }
 
 /* Conversation rows (V4 adoption C): Texts uses the Inbox variant of the
    same grammar — a 72px grid row where the avatar belongs (conversations

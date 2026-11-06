@@ -1333,6 +1333,54 @@ function boardAgo(ts) {
   var m = Math.max(0, Math.round((Date.now() - t) / 60000));
   return 'updated ' + (m < 1 ? 'just now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago');
 }
+
+/*PURE-BEGIN staxvalue*/
+// One value renderer for every surface that prints form answers
+// (Contacts detail, Forms submissions): any stored answer value —
+// a typed line, a checkbox set, a signature blob — becomes plain
+// owner language. Raw field keys and "[object Object]" are
+// impossible by construction: objects never reach String(), and a
+// key with no label in any form def is humanized, never printed raw.
+function staxRenderValue(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'string') return v.trim() ? v : '—';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if (Array.isArray(v)) {
+    if (!v.length) return '—';
+    return v.map(staxRenderValue).join(', ');
+  }
+  if (typeof v === 'object') {
+    if (v._data_uri || v._bytes !== undefined || v.signature || v.strokes || v.dataUrl) return 'Signed on the form';
+    if (v.url || v.href || v.path) return 'A file sent on the form';
+    return 'Sent on the form';
+  }
+  return String(v);
+}
+// A stored answer key with no label anywhere still reads as words:
+// f_<ts>_<rand>_draw → "Signature", piece_idea → "Piece idea".
+function staxHumanKey(key) {
+  var k = String(key || '');
+  var m = k.match(/^f_\d+_[a-z0-9]+_(.+)$/i);
+  if (m) k = m[1];
+  if (k === 'draw' || k === 'signature') return 'Signature';
+  k = k.replace(/[_-]+/g, ' ').trim();
+  if (!k) return 'Answer';
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+// Rows for one submission: the label comes from the form's own def
+// first, then any def that knows the key, then the humanized key.
+function staxAnswerRows(data, fields, labelMap) {
+  var own = {};
+  (fields || []).forEach(function(f) { if (f && f.key) own[f.key] = f.label || ''; });
+  var rows = [];
+  Object.keys(data || {}).forEach(function(key) {
+    var label = own[key] || (labelMap && labelMap[key]) || staxHumanKey(key);
+    rows.push({ label: label, text: staxRenderValue(data[key]) });
+  });
+  return rows;
+}
+/*PURE-END staxvalue*/
 function boardsPage() {
   return {
     surfaces: [],
