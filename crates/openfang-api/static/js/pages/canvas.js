@@ -248,7 +248,7 @@ function canvasPage() {
         // early jobs as history, not as its state: the versions
         // landed, so no failure banner rides on the finished card.
         var req = this.cvRequests[reqId];
-        if (req && (req.status === 'artist_approved' || req.status === 'sent_to_customer' || req.status === 'customer_approved')) return null;
+        if (req && this.cvClosed(req)) return null;
         return { phase: 'error', text: 'The last try didn\'t finish — ' + cvPlainErr(job.error) + ' You can try again.' };
       }
       if (job.status === 'done') {
@@ -732,7 +732,11 @@ function canvasPage() {
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
           if (r.role === 'user' && (/^\[AUTONOMOUS TICK\]/.test(r.text) || /^Designer sidecar finished job\(s\)\./.test(r.text))) {
-            if (i + 1 < rows.length && rows[i + 1].role === 'agent') i++;
+            // A machine turn can answer itself in several agent rows
+            // (text alongside tool calls, then the final response) —
+            // the whole run belongs to the machine turn, not just the
+            // first reply.
+            while (i + 1 < rows.length && rows[i + 1].role === 'agent') i++;
             continue;
           }
           kept.push(r);

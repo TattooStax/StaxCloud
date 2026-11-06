@@ -318,6 +318,17 @@ impl ApprovalManager {
             .lineage
             .as_ref()
             .map(|l| (l.draft_key.clone(), l.round));
+        // A lineage submission must not interleave with a terminal
+        // transition (resolve/supersede hold decide_lock for their
+        // whole transition, including a failed write's restore): take
+        // decide_lock first, then the lineage lock — the same order
+        // everywhere, so the check-and-insert below is atomic against
+        // terminalization (PR #1 review).
+        let _decide_guard = if lineage_key.is_some() {
+            Some(self.decide_lock.lock().unwrap_or_else(|e| e.into_inner()))
+        } else {
+            None
+        };
         let _lineage_guard = if lineage_key.is_some() {
             Some(self.lineage_lock.lock().unwrap_or_else(|e| e.into_inner()))
         } else {
@@ -1096,10 +1107,12 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_ledger_write_failure_keeps_the_hold_pending() {
         // /dev/full accepts opens and fails every write (ENOSPC) —
         // the failure-injection stand-in for an unavailable store.
+        // Unix-only: /dev/full does not exist on Windows (PR #1 review).
         let mut mgr = default_manager();
         mgr.attach_ledger(std::path::Path::new("/dev/full")).unwrap();
         let req = make_request("agent-1", "design_approval", 60);
