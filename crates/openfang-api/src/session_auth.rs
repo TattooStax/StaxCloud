@@ -37,7 +37,10 @@ pub fn load_or_create_session_secret(data_dir: &std::path::Path) -> String {
         }
     }
     let mut buf = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::rng(), &mut buf);
+    {
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut buf);
+    }
     let secret = hex::encode(buf);
     let write = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(data_dir)?;
