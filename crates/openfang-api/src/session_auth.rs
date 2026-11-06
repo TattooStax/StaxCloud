@@ -17,6 +17,55 @@ pub fn create_session_token(username: &str, secret: &str, ttl_hours: u64) -> Str
     base64::engine::general_purpose::STANDARD.encode(format!("{payload}:{signature}"))
 }
 
+/// Load the daemon's session-signing secret, creating it on first use.
+///
+/// The secret is independent of every other credential by design: it
+/// is NOT the API key and NOT derived from the dashboard password
+/// hash. Approval provenance stamps `owner_session` only for requests
+/// carrying a cookie signed with this secret, and the carriers that
+/// legitimately hold the API token (they read it from config) must
+/// never be able to construct such a cookie. The secret persists in
+/// the daemon's data dir (0600) so owner sessions survive restarts;
+/// if it cannot be persisted, an ephemeral secret is used — sessions
+/// then die with the process, which is degraded but never unsafe.
+pub fn load_or_create_session_secret(data_dir: &std::path::Path) -> String {
+    let path = data_dir.join("session_secret");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let existing = existing.trim().to_string();
+        if !existing.is_empty() {
+            return existing;
+        }
+    }
+    let mut buf = [0u8; 32];
+    {
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut buf);
+    }
+    let secret = hex::encode(buf);
+    let write = (|| -> std::io::Result<()> {
+        std::fs::create_dir_all(data_dir)?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&path)?;
+        use std::io::Write;
+        f.write_all(secret.as_bytes())?;
+        f.sync_all()
+    })();
+    match write {
+        Ok(()) => secret,
+        Err(e) => {
+            tracing::warn!(error = %e, path = %path.display(),
+                "session secret could not be persisted; sessions will not survive restart");
+            secret
+        }
+    }
+}
+
 /// Extract the `openfang_session` cookie value from a `Cookie` header string.
 ///
 /// Returns `None` if the header is absent or the cookie is not present.
@@ -141,6 +190,32 @@ mod tests {
         let token = create_session_token("admin", "my-secret", 1);
         let user = verify_session_token(&token, "wrong-secret");
         assert_eq!(user, None);
+    }
+
+    #[test]
+    fn test_session_secret_is_independent_and_persistent() {
+        // Review finding (PR #1): the signing secret must not be the
+        // API key (or derivable from it) — a token holder forging a
+        // cookie with the API key as the HMAC secret must fail.
+        let dir = std::env::temp_dir().join(format!(
+            "openfang-session-secret-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let secret = load_or_create_session_secret(&dir);
+        assert!(!secret.is_empty());
+        // Stable across calls (persisted), so sessions survive restarts.
+        assert_eq!(secret, load_or_create_session_secret(&dir));
+        // A cookie signed with some other credential (the stand-in
+        // API key) does not verify against the real secret.
+        let forged = create_session_token("admin", "the-api-key", 1);
+        assert_eq!(verify_session_token(&forged, &secret), None);
+        let real = create_session_token("admin", &secret, 1);
+        assert_eq!(
+            verify_session_token(&real, &secret),
+            Some("admin".to_string())
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

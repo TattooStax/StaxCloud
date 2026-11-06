@@ -148,13 +148,14 @@ pub async fn build_router(
     let auth_state = crate::middleware::AuthState {
         api_key: api_key.clone(),
         auth_enabled: state.kernel.config.auth.enabled,
-        session_secret: if !api_key.is_empty() {
-            api_key.clone()
-        } else if state.kernel.config.auth.enabled {
-            state.kernel.config.auth.password_hash.clone()
-        } else {
-            String::new()
-        },
+        // The session-signing secret is independent of the API key
+        // and the password hash: both of those are readable by the
+        // on-box carriers that hold the API token, and a token holder
+        // must never be able to mint a dashboard session cookie —
+        // approval provenance (decided_via) depends on that wall.
+        session_secret: crate::session_auth::load_or_create_session_secret(
+            &state.kernel.config.data_dir,
+        ),
         allow_no_auth,
     };
     let gcra_limiter = rate_limiter::create_rate_limiter();
@@ -548,6 +549,10 @@ pub async fn build_router(
         .route(
             "/api/approvals/{id}/reject",
             axum::routing::post(routes::reject_request),
+        )
+        .route(
+            "/api/approvals/{id}/supersede",
+            axum::routing::post(routes::supersede_request),
         )
         // Usage endpoints
         .route("/api/usage", axum::routing::get(routes::usage_stats))

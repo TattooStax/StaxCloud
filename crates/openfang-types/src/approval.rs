@@ -65,6 +65,27 @@ pub enum ApprovalDecision {
     Approved,
     Denied,
     TimedOut,
+    /// Administrative terminal state (Work build §12): the approval was
+    /// superseded by a canonical carry or orphaned, and was closed by the
+    /// reconciliation mechanism without any consumer effect. Distinct
+    /// from a human approve/reject — no decider ever chose this outcome
+    /// for the underlying work.
+    Superseded,
+}
+
+/// Lineage of a queued approval: the durable records it was carried
+/// from, so cross-carrier dedupe is a lookup instead of prose matching
+/// (Work build §6.2). Additive — legacy submissions carry none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalLineage {
+    /// The kv draft key this approval carries (e.g. `draft/sms-…`).
+    pub draft_key: String,
+    /// The originating request key/id, where the draft carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_key: Option<String>,
+    /// The draft's round, where rounds exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +105,10 @@ pub struct ApprovalRequest {
     pub requested_at: DateTime<Utc>,
     /// Auto-deny timeout in seconds.
     pub timeout_secs: u64,
+    /// Carrier lineage for queued holds (Work build §6.2). `None` for
+    /// tool-gate requests and legacy submissions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<ApprovalLineage>,
 }
 
 impl ApprovalRequest {
@@ -156,6 +181,12 @@ pub struct ApprovalResponse {
     pub decision: ApprovalDecision,
     pub decided_at: DateTime<Utc>,
     pub decided_by: Option<String>,
+    /// Server-stamped provenance of the decision — the authenticated
+    /// session class that decided (`owner_session`, `api_token`,
+    /// `agent`, `system`), written by the daemon from the auth
+    /// context, never from the caller (Work build §3, Consult 12 Q3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decided_via: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +330,7 @@ mod tests {
             risk_level: RiskLevel::High,
             requested_at: Utc::now(),
             timeout_secs: 60,
+            lineage: None,
         }
     }
 
@@ -506,6 +538,7 @@ mod tests {
             decision: ApprovalDecision::Approved,
             decided_at: Utc::now(),
             decided_by: Some("admin@example.com".into()),
+            decided_via: Some("owner_session".into()),
         };
         let json = serde_json::to_string(&resp).unwrap();
         let back: ApprovalResponse = serde_json::from_str(&json).unwrap();
@@ -521,6 +554,7 @@ mod tests {
             decision: ApprovalDecision::TimedOut,
             decided_at: Utc::now(),
             decided_by: None,
+            decided_via: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         let back: ApprovalResponse = serde_json::from_str(&json).unwrap();

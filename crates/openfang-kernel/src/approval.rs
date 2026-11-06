@@ -6,6 +6,7 @@ use openfang_types::approval::{
     ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalResponse, RiskLevel,
 };
 use std::collections::VecDeque;
+use std::io::Write;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -24,6 +25,21 @@ pub struct ApprovalManager {
     pending: DashMap<Uuid, PendingRequest>,
     recent: std::sync::Mutex<VecDeque<ApprovalRecord>>,
     policy: std::sync::RwLock<ApprovalPolicy>,
+    /// Durable decision ledger (Work build §5): the daemon-owned,
+    /// append-only record of every decision, attached by the kernel
+    /// at boot. Without one (unit tests, embedded use) decisions are
+    /// in-memory only, exactly as before this build.
+    ledger: Option<std::sync::Arc<DecisionLedger>>,
+    /// Lineage index for queued holds (Work build §6.4): draft key +
+    /// round → the live approval carrying it. Makes queue submission
+    /// idempotent on lineage across carriers and races.
+    lineage_index: DashMap<(String, Option<u32>), Uuid>,
+    /// Serializes decide/supersede so a decision is ledger-first
+    /// (§5.2.3): no second decider can observe the gap between the
+    /// pending removal and the ledger append.
+    decide_lock: std::sync::Mutex<()>,
+    /// Serializes lineage check-and-insert in `submit_queued`.
+    lineage_lock: std::sync::Mutex<()>,
 }
 
 struct PendingRequest {
@@ -31,12 +47,159 @@ struct PendingRequest {
     sender: tokio::sync::oneshot::Sender<ApprovalDecision>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApprovalRecord {
     pub request: ApprovalRequest,
     pub decision: ApprovalDecision,
     pub decided_at: chrono::DateTime<Utc>,
     pub decided_by: Option<String>,
+    /// Server-stamped decision provenance (Work build §3): the
+    /// authenticated session class that decided, from the daemon's
+    /// auth context — `owner_session`, `api_token`, `agent`, or
+    /// `system`. Never caller-supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decided_via: Option<String>,
+}
+
+/// Why a queued submission was refused. The queue cap is the only
+/// refusal today; it is typed so carriers can count it without
+/// parsing prose (Work build §4.5 — the API renders it as
+/// `reason: "queue_full"`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubmitQueuedError {
+    QueueFull { agent_id: String },
+}
+
+impl std::fmt::Display for SubmitQueuedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubmitQueuedError::QueueFull { agent_id } => write!(
+                f,
+                "Too many pending approvals for agent {agent_id} (max {MAX_QUEUED_PER_AGENT})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SubmitQueuedError {}
+
+/// Append-only durable decision ledger (Work build §5.2): one JSON
+/// record per line in a daemon-owned file under the data dir. A
+/// decision is written and synced here before `resolve` reports it,
+/// so decided history survives restarts while the pending store
+/// stays in-memory by design. Append-only: no eviction, no rewrite.
+pub struct DecisionLedger {
+    inner: std::sync::Mutex<LedgerInner>,
+}
+
+struct LedgerInner {
+    file: std::fs::File,
+    records: std::collections::HashMap<Uuid, ApprovalRecord>,
+    order: Vec<Uuid>,
+}
+
+impl DecisionLedger {
+    /// Open (creating if needed) the ledger at `path` and load every
+    /// record it already holds. A torn final line — the signature of
+    /// a crash mid-append, whose decision was never reported — is
+    /// skipped with a warning rather than failing the daemon.
+    pub fn open(path: &std::path::Path) -> std::io::Result<Self> {
+        let mut records = std::collections::HashMap::new();
+        let mut order = Vec::new();
+        if path.is_file() {
+            // Repair a torn tail before anything else: a crash
+            // mid-append leaves a partial final line with no newline.
+            // Its decision was never reported (the append never
+            // synced), so truncating it loses nothing acknowledged —
+            // and leaving it would glue the NEXT appended record onto
+            // the fragment, silently losing that one too.
+            let bytes = std::fs::read(path)?;
+            if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                let keep = bytes
+                    .iter()
+                    .rposition(|b| *b == b'\n')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                warn!(path = %path.display(), dropped = bytes.len() - keep,
+                      "decision ledger: truncating torn tail");
+                let f = std::fs::OpenOptions::new().write(true).open(path)?;
+                f.set_len(keep as u64)?;
+                f.sync_all()?;
+            }
+            let text = std::fs::read_to_string(path)?;
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                match serde_json::from_str::<ApprovalRecord>(line) {
+                    Ok(record) => {
+                        let id = record.request.id;
+                        if records.insert(id, record).is_none() {
+                            order.push(id);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(path = %path.display(), error = %e,
+                              "decision ledger: skipping unreadable line");
+                    }
+                }
+            }
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        info!(path = %path.display(), records = order.len(),
+              "decision ledger opened");
+        Ok(Self {
+            inner: std::sync::Mutex::new(LedgerInner {
+                file,
+                records,
+                order,
+            }),
+        })
+    }
+
+    /// Append one decision and sync it to disk before returning.
+    pub fn append(&self, record: &ApprovalRecord) -> std::io::Result<()> {
+        let mut line = serde_json::to_string(record)
+            .map_err(std::io::Error::from)?;
+        line.push('\n');
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.file.write_all(line.as_bytes())?;
+        inner.file.sync_all()?;
+        let id = record.request.id;
+        if inner.records.insert(id, record.clone()).is_none() {
+            inner.order.push(id);
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, id: &Uuid) -> Option<ApprovalRecord> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.records.get(id).cloned()
+    }
+
+    /// All ledger records, newest first.
+    pub fn list(&self) -> Vec<ApprovalRecord> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner
+            .order
+            .iter()
+            .rev()
+            .filter_map(|id| inner.records.get(id).cloned())
+            .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.order.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// One read of the store by id: a queued/tool request still waiting,
@@ -54,7 +217,24 @@ impl ApprovalManager {
             pending: DashMap::new(),
             recent: std::sync::Mutex::new(VecDeque::new()),
             policy: std::sync::RwLock::new(policy),
+            ledger: None,
+            lineage_index: DashMap::new(),
+            decide_lock: std::sync::Mutex::new(()),
+            lineage_lock: std::sync::Mutex::new(()),
         }
+    }
+
+    /// Attach the durable decision ledger (Work build §5). Called
+    /// once by the kernel at boot with a path under its data dir.
+    pub fn attach_ledger(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        let ledger = DecisionLedger::open(path)?;
+        self.ledger = Some(std::sync::Arc::new(ledger));
+        Ok(())
+    }
+
+    /// Number of decisions in the durable ledger (0 without one).
+    pub fn ledger_len(&self) -> usize {
+        self.ledger.as_ref().map(|l| l.len()).unwrap_or(0)
     }
 
     /// Check if a tool requires approval based on current policy.
@@ -102,7 +282,13 @@ impl ApprovalManager {
                     .remove(&id)
                     .map(|(_, pending)| pending.request)
                     .unwrap_or(req_for_timeout);
-                self.push_recent(request, ApprovalDecision::TimedOut, None, Utc::now());
+                self.push_recent(
+                    request,
+                    ApprovalDecision::TimedOut,
+                    None,
+                    Some("system".to_string()),
+                    Utc::now(),
+                );
                 warn!(request_id = %id, "Approval request timed out");
                 ApprovalDecision::TimedOut
             }
@@ -119,7 +305,44 @@ impl ApprovalManager {
     /// caller is handed always names a record that exists; refusing a
     /// submission (per-agent queue cap) is an error here, never an id
     /// that was never stored.
-    pub fn submit_queued(&self, req: ApprovalRequest) -> Result<Uuid, String> {
+    pub fn submit_queued(
+        &self,
+        req: ApprovalRequest,
+    ) -> Result<Uuid, SubmitQueuedError> {
+        // Lineage idempotency (Work build §6.4): a submission whose
+        // draft key + round already has a LIVE approval returns that
+        // approval's id — two carriers, or two racing submissions,
+        // resolve to one hold. Check-and-insert runs under a lock so
+        // simultaneity cannot split it.
+        let lineage_key = req
+            .lineage
+            .as_ref()
+            .map(|l| (l.draft_key.clone(), l.round));
+        // A lineage submission must not interleave with a terminal
+        // transition (resolve/supersede hold decide_lock for their
+        // whole transition, including a failed write's restore): take
+        // decide_lock first, then the lineage lock — the same order
+        // everywhere, so the check-and-insert below is atomic against
+        // terminalization (PR #1 review).
+        let _decide_guard = if lineage_key.is_some() {
+            Some(self.decide_lock.lock().unwrap_or_else(|e| e.into_inner()))
+        } else {
+            None
+        };
+        let _lineage_guard = if lineage_key.is_some() {
+            Some(self.lineage_lock.lock().unwrap_or_else(|e| e.into_inner()))
+        } else {
+            None
+        };
+        if let Some(key) = &lineage_key {
+            if let Some(existing) = self.lineage_index.get(key).map(|e| *e.value()) {
+                if matches!(self.lookup(existing), ApprovalLookup::Pending(_)) {
+                    debug!(request_id = %existing,
+                           "Queued submission already carried under this lineage");
+                    return Ok(existing);
+                }
+            }
+        }
         let agent_pending = self
             .pending
             .iter()
@@ -127,10 +350,9 @@ impl ApprovalManager {
             .count();
         if agent_pending >= MAX_QUEUED_PER_AGENT {
             warn!(agent_id = %req.agent_id, "Queued approval rejected: too many pending");
-            return Err(format!(
-                "Too many pending approvals for agent {} (max {MAX_QUEUED_PER_AGENT})",
-                req.agent_id
-            ));
+            return Err(SubmitQueuedError::QueueFull {
+                agent_id: req.agent_id.clone(),
+            });
         }
         let id = req.id;
         // No waiter exists for a queued hold; the sender is kept so
@@ -144,16 +366,25 @@ impl ApprovalManager {
                 sender: tx,
             },
         );
+        if let Some(key) = lineage_key {
+            self.lineage_index.insert(key, id);
+        }
         info!(request_id = %id, "Queued approval submitted");
         Ok(id)
     }
 
     /// Look up one request by id across the pending map and the
     /// decided history, so a caller holding an id reads the same fact
-    /// the list views are built from.
+    /// the list views are built from. The durable ledger outranks the
+    /// in-memory recent list: decisions win (Work build §5.2.4).
     pub fn lookup(&self, request_id: Uuid) -> ApprovalLookup {
         if let Some(entry) = self.pending.get(&request_id) {
             return ApprovalLookup::Pending(entry.value().request.clone());
+        }
+        if let Some(ledger) = &self.ledger {
+            if let Some(record) = ledger.get(&request_id) {
+                return ApprovalLookup::Decided(record);
+            }
         }
         let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
         match recent.iter().find(|r| r.request.id == request_id) {
@@ -169,47 +400,152 @@ impl ApprovalManager {
     /// decide (a second tap, a retried caller) must never produce a
     /// second effect. A timed-out request is refused as timed out —
     /// its waiter already received that outcome.
+    ///
+    /// Ledger-first (Work build §5.2.3): with a ledger attached, the
+    /// decision is appended and synced there before it is applied or
+    /// reported; if the write fails the approval stays pending and
+    /// the decider gets an error — never an in-memory-only decision.
+    /// `decided_via` is the daemon-stamped provenance of the deciding
+    /// session class (Consult 12 Q3); callers pass the auth context's
+    /// class, never a caller-supplied value.
     pub fn resolve(
         &self,
         request_id: Uuid,
         decision: ApprovalDecision,
         decided_by: Option<String>,
+        decided_via: Option<String>,
     ) -> Result<ApprovalResponse, String> {
+        let _decide_guard = self.decide_lock.lock().unwrap_or_else(|e| e.into_inner());
         match self.pending.remove(&request_id) {
             Some((_, pending)) => {
-                let response = ApprovalResponse {
-                    request_id,
+                let record = ApprovalRecord {
+                    request: pending.request.clone(),
                     decision,
                     decided_at: Utc::now(),
-                    decided_by,
+                    decided_by: decided_by.clone(),
+                    decided_via: decided_via.clone(),
                 };
-                self.push_recent(
-                    pending.request.clone(),
-                    decision,
-                    response.decided_by.clone(),
-                    response.decided_at,
-                );
+                if let Some(ledger) = &self.ledger {
+                    if let Err(e) = ledger.append(&record) {
+                        // Not applied: the hold goes back to pending
+                        // untouched and the decider sees the failure.
+                        self.pending.insert(request_id, pending);
+                        return Err(format!(
+                            "decision ledger write failed: {e}"
+                        ));
+                    }
+                }
+                self.push_recent_record(&record);
+                self.clear_lineage(&pending.request);
                 // Send decision to waiting agent (ignore error if receiver dropped)
                 let _ = pending.sender.send(decision);
                 info!(request_id = %request_id, ?decision, "Approval request resolved");
-                Ok(response)
+                Ok(ApprovalResponse {
+                    request_id,
+                    decision,
+                    decided_at: record.decided_at,
+                    decided_by,
+                    decided_via,
+                })
             }
             None => match self.lookup(request_id) {
                 ApprovalLookup::Decided(record) => match record.decision {
-                    ApprovalDecision::Approved | ApprovalDecision::Denied => {
-                        Ok(ApprovalResponse {
-                            request_id,
-                            decision: record.decision,
-                            decided_at: record.decided_at,
-                            decided_by: record.decided_by,
-                        })
-                    }
+                    ApprovalDecision::Approved
+                    | ApprovalDecision::Denied
+                    | ApprovalDecision::Superseded => Ok(ApprovalResponse {
+                        request_id,
+                        decision: record.decision,
+                        decided_at: record.decided_at,
+                        decided_by: record.decided_by,
+                        decided_via: record.decided_via,
+                    }),
                     ApprovalDecision::TimedOut => Err(format!(
                         "Approval request {request_id} already timed out"
                     )),
                 },
                 _ => Err(format!("No pending approval request with id {request_id}")),
             },
+        }
+    }
+
+    /// Administratively terminalize a pending queued hold as
+    /// superseded (Work build §12.2.4): the reconciliation
+    /// mechanism's verb, distinct from approve/reject. Writes the
+    /// same durable ledger record a decision writes, but fires no
+    /// waiter and no consumer effect — consumers reading the record
+    /// see a terminal `superseded`, never an outcome they act on.
+    /// Idempotent for an already-superseded id; a real human
+    /// decision (approved/denied) is never overwritten by it.
+    pub fn supersede(
+        &self,
+        request_id: Uuid,
+        decided_by: Option<String>,
+        decided_via: Option<String>,
+    ) -> Result<ApprovalResponse, String> {
+        let _decide_guard = self.decide_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let ApprovalLookup::Decided(record) = self.lookup(request_id) {
+            return match record.decision {
+                ApprovalDecision::Superseded => Ok(ApprovalResponse {
+                    request_id,
+                    decision: record.decision,
+                    decided_at: record.decided_at,
+                    decided_by: record.decided_by,
+                    decided_via: record.decided_via,
+                }),
+                ApprovalDecision::TimedOut => Err(format!(
+                    "Approval request {request_id} already timed out"
+                )),
+                _ => Err(format!(
+                    "Approval request {request_id} already decided; supersede cannot override a decision"
+                )),
+            };
+        }
+        let Some((_, pending)) = self.pending.remove(&request_id) else {
+            return Err(format!("No pending approval request with id {request_id}"));
+        };
+        let record = ApprovalRecord {
+            request: pending.request.clone(),
+            decision: ApprovalDecision::Superseded,
+            decided_at: Utc::now(),
+            decided_by: decided_by.clone(),
+            decided_via: decided_via.clone(),
+        };
+        if let Some(ledger) = &self.ledger {
+            if let Err(e) = ledger.append(&record) {
+                self.pending.insert(request_id, pending);
+                return Err(format!("decision ledger write failed: {e}"));
+            }
+        }
+        self.push_recent_record(&record);
+        self.clear_lineage(&pending.request);
+        info!(request_id = %request_id, "Approval request superseded");
+        Ok(ApprovalResponse {
+            request_id,
+            decision: ApprovalDecision::Superseded,
+            decided_at: record.decided_at,
+            decided_by,
+            decided_via,
+        })
+    }
+
+    fn clear_lineage(&self, request: &ApprovalRequest) {
+        if let Some(l) = &request.lineage {
+            // Remove only the entry that still names THIS hold: a
+            // racing submission may already have replaced it with a
+            // fresh hold for the same lineage, and that replacement's
+            // index entry is what keeps its next submission idempotent.
+            self.lineage_index.remove_if(
+                &(l.draft_key.clone(), l.round),
+                |_, indexed| *indexed == request.id,
+            );
+        }
+    }
+
+    fn push_recent_record(&self, record: &ApprovalRecord) {
+        let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+        recent.push_front(record.clone());
+        while recent.len() > MAX_RECENT_APPROVALS {
+            recent.pop_back();
         }
     }
 
@@ -225,6 +561,32 @@ impl ApprovalManager {
     pub fn list_recent(&self, limit: usize) -> Vec<ApprovalRecord> {
         let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
         recent.iter().take(limit).cloned().collect()
+    }
+
+    /// All decided records, newest first — the Finished view's
+    /// source (Work build §5.2.4). The durable ledger is the spine;
+    /// in-memory recent records the ledger does not hold (decided
+    /// before a ledger attached, or timed out) merge in, deduplicated
+    /// by id, the ledger's copy winning any conflict. Not truncated
+    /// at the recent-list limits: counts of this list are counts of
+    /// the ledger.
+    pub fn list_decided(&self) -> Vec<ApprovalRecord> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<ApprovalRecord> = Vec::new();
+        if let Some(ledger) = &self.ledger {
+            for record in ledger.list() {
+                if seen.insert(record.request.id) {
+                    out.push(record);
+                }
+            }
+        }
+        for record in self.list_recent(usize::MAX) {
+            if seen.insert(record.request.id) {
+                out.push(record);
+            }
+        }
+        out.sort_by_key(|r| std::cmp::Reverse(r.decided_at));
+        out
     }
 
     /// Number of pending requests.
@@ -260,18 +622,16 @@ impl ApprovalManager {
         request: ApprovalRequest,
         decision: ApprovalDecision,
         decided_by: Option<String>,
+        decided_via: Option<String>,
         decided_at: chrono::DateTime<Utc>,
     ) {
-        let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
-        recent.push_front(ApprovalRecord {
+        self.push_recent_record(&ApprovalRecord {
             request,
             decision,
             decided_at,
             decided_by,
+            decided_via,
         });
-        while recent.len() > MAX_RECENT_APPROVALS {
-            recent.pop_back();
-        }
     }
 }
 
@@ -299,6 +659,7 @@ mod tests {
             risk_level: RiskLevel::High,
             requested_at: Utc::now(),
             timeout_secs,
+            lineage: None,
         }
     }
 
@@ -368,7 +729,7 @@ mod tests {
     #[test]
     fn test_resolve_nonexistent() {
         let mgr = default_manager();
-        let result = mgr.resolve(Uuid::new_v4(), ApprovalDecision::Approved, None);
+        let result = mgr.resolve(Uuid::new_v4(), ApprovalDecision::Approved, None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No pending approval request"));
     }
@@ -422,7 +783,7 @@ mod tests {
         mgr.submit_queued(req).unwrap();
 
         let first = mgr
-            .resolve(id, ApprovalDecision::Approved, Some("api".to_string()))
+            .resolve(id, ApprovalDecision::Approved, Some("api".to_string()), Some("api_token".to_string()))
             .unwrap();
         assert_eq!(first.decision, ApprovalDecision::Approved);
         match mgr.lookup(id) {
@@ -435,7 +796,7 @@ mod tests {
         // A repeated decide — even one asking for the opposite outcome —
         // returns the stored decision and changes nothing.
         let second = mgr
-            .resolve(id, ApprovalDecision::Denied, Some("api".to_string()))
+            .resolve(id, ApprovalDecision::Denied, Some("api".to_string()), Some("api_token".to_string()))
             .unwrap();
         assert_eq!(second.decision, ApprovalDecision::Approved);
         assert_eq!(second.decided_at, first.decided_at);
@@ -535,6 +896,7 @@ mod tests {
                 request_id,
                 ApprovalDecision::Approved,
                 Some("admin".to_string()),
+                Some("owner_session".to_string()),
             );
             assert!(result.is_ok());
             let resp = result.unwrap();
@@ -563,7 +925,7 @@ mod tests {
         let mgr2 = Arc::clone(&mgr);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            let result = mgr2.resolve(request_id, ApprovalDecision::Denied, None);
+            let result = mgr2.resolve(request_id, ApprovalDecision::Denied, None, None);
             assert!(result.is_ok());
         });
 
@@ -614,9 +976,9 @@ mod tests {
 
         // Cleanup: resolve all pending to avoid hanging tasks
         for id in &ids {
-            let _ = mgr.resolve(*id, ApprovalDecision::Denied, None);
+            let _ = mgr.resolve(*id, ApprovalDecision::Denied, None, None);
         }
-        let _ = mgr.resolve(other_id, ApprovalDecision::Denied, None);
+        let _ = mgr.resolve(other_id, ApprovalDecision::Denied, None, None);
     }
 
     // -----------------------------------------------------------------------
@@ -630,5 +992,251 @@ mod tests {
         assert_eq!(policy.require_approval, vec!["shell_exec".to_string()]);
         assert_eq!(policy.timeout_secs, 60);
         assert!(!policy.auto_approve_autonomous);
+    }
+
+    // -----------------------------------------------------------------------
+    // Work build §5 — the decision ledger
+    // -----------------------------------------------------------------------
+
+    fn manager_with_ledger(path: &std::path::Path) -> ApprovalManager {
+        let mut mgr = default_manager();
+        mgr.attach_ledger(path).unwrap();
+        mgr
+    }
+
+    #[test]
+    fn test_decisions_survive_a_fresh_manager() {
+        let dir = std::env::temp_dir().join(format!(
+            "fang-ledger-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("decisions.jsonl");
+        let (id_a, id_b, id_c) = {
+            let mgr = manager_with_ledger(&path);
+            let a = make_request("agent-1", "design_approval", 60);
+            let b = make_request("agent-1", "sms_reply", 60);
+            let c = make_request("agent-1", "sms_reply", 60);
+            let (ia, ib, ic) = (a.id, b.id, c.id);
+            mgr.submit_queued(a).unwrap();
+            mgr.submit_queued(b).unwrap();
+            mgr.submit_queued(c).unwrap();
+            mgr.resolve(ia, ApprovalDecision::Approved,
+                        Some("admin".to_string()),
+                        Some("owner_session".to_string())).unwrap();
+            mgr.resolve(ib, ApprovalDecision::Denied,
+                        Some("api".to_string()),
+                        Some("api_token".to_string())).unwrap();
+            assert_eq!(mgr.ledger_len(), 2);
+            (ia, ib, ic)
+        };
+        // A fresh manager over the same file = a daemon restart.
+        let mgr = manager_with_ledger(&path);
+        match mgr.lookup(id_a) {
+            ApprovalLookup::Decided(r) => {
+                assert_eq!(r.decision, ApprovalDecision::Approved);
+                assert_eq!(r.decided_by.as_deref(), Some("admin"));
+                assert_eq!(r.decided_via.as_deref(), Some("owner_session"));
+            }
+            other => panic!("expected Decided, got {other:?}"),
+        }
+        match mgr.lookup(id_b) {
+            ApprovalLookup::Decided(r) => {
+                assert_eq!(r.decision, ApprovalDecision::Denied);
+                assert_eq!(r.decided_via.as_deref(), Some("api_token"));
+            }
+            other => panic!("expected Decided, got {other:?}"),
+        }
+        assert!(matches!(mgr.lookup(id_c), ApprovalLookup::Missing));
+        assert_eq!(mgr.list_decided().len(), 2);
+        // Re-deciding after the restart returns the stored decision,
+        // even with the opposite verb — no second ledger record.
+        let again = mgr
+            .resolve(id_a, ApprovalDecision::Denied, None, None)
+            .unwrap();
+        assert_eq!(again.decision, ApprovalDecision::Approved);
+        assert_eq!(mgr.ledger_len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_ledger_torn_tail_does_not_swallow_the_next_decision() {
+        // Review finding (PR #1): a crash mid-append leaves a partial
+        // final line; the next append must not glue onto it and lose
+        // an acknowledged decision.
+        let dir = std::env::temp_dir().join(format!(
+            "openfang-ledger-torn-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("decisions.jsonl");
+        let id_a = {
+            let mgr = manager_with_ledger(&path);
+            let a = make_request("agent-1", "sms_reply", 60);
+            let ia = a.id;
+            mgr.submit_queued(a).unwrap();
+            mgr.resolve(ia, ApprovalDecision::Approved,
+                        Some("api".to_string()),
+                        Some("api_token".to_string())).unwrap();
+            ia
+        };
+        // Simulate the crash: a partial record, never newline-ended.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true).open(&path).unwrap();
+            f.write_all(b"{\"request\":{\"id\":\"torn").unwrap();
+            f.sync_all().unwrap();
+        }
+        // Restart: the torn tail is truncated; a new decision appends
+        // cleanly and survives a second restart alongside the first.
+        let id_c = {
+            let mgr = manager_with_ledger(&path);
+            let c = make_request("agent-1", "sms_reply", 60);
+            let ic = c.id;
+            mgr.submit_queued(c).unwrap();
+            mgr.resolve(ic, ApprovalDecision::Denied,
+                        Some("admin".to_string()),
+                        Some("owner_session".to_string())).unwrap();
+            ic
+        };
+        let mgr = manager_with_ledger(&path);
+        assert!(matches!(mgr.lookup(id_a), ApprovalLookup::Decided(_)));
+        assert!(matches!(mgr.lookup(id_c), ApprovalLookup::Decided(_)));
+        assert_eq!(mgr.ledger_len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_ledger_write_failure_keeps_the_hold_pending() {
+        // /dev/full accepts opens and fails every write (ENOSPC) —
+        // the failure-injection stand-in for an unavailable store.
+        // Unix-only: /dev/full does not exist on Windows (PR #1 review).
+        let mut mgr = default_manager();
+        mgr.attach_ledger(std::path::Path::new("/dev/full")).unwrap();
+        let req = make_request("agent-1", "design_approval", 60);
+        let id = req.id;
+        mgr.submit_queued(req).unwrap();
+        let result = mgr.resolve(
+            id,
+            ApprovalDecision::Approved,
+            Some("admin".to_string()),
+            Some("owner_session".to_string()),
+        );
+        assert!(result.is_err(), "resolve must fail when the ledger does");
+        assert!(result.unwrap_err().contains("decision ledger"));
+        // The decision was NOT applied: still pending, still decidable
+        // in the store's own view, nothing in the decided list.
+        assert!(matches!(mgr.lookup(id), ApprovalLookup::Pending(_)));
+        assert_eq!(mgr.pending_count(), 1);
+        assert!(mgr.list_decided().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Work build §6.4 — lineage-idempotent submission
+    // -----------------------------------------------------------------------
+
+    fn lineage_request(agent: &str, draft_key: &str, round: Option<u32>) -> ApprovalRequest {
+        let mut req = make_request(agent, "design_approval", 60);
+        req.lineage = Some(openfang_types::approval::ApprovalLineage {
+            draft_key: draft_key.to_string(),
+            request_key: Some("req-1".to_string()),
+            round,
+        });
+        req
+    }
+
+    #[test]
+    fn test_lineage_submission_is_idempotent() {
+        let mgr = default_manager();
+        let first = mgr
+            .submit_queued(lineage_request("agent-1", "draft/design-req-1", Some(1)))
+            .unwrap();
+        // A second carrier submitting the same draft + round gets
+        // the same approval back — no second mint.
+        let second = mgr
+            .submit_queued(lineage_request("agent-1", "draft/design-req-1", Some(1)))
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(mgr.pending_count(), 1);
+        // A different round is a different hold.
+        let third = mgr
+            .submit_queued(lineage_request("agent-1", "draft/design-req-1", Some(2)))
+            .unwrap();
+        assert_ne!(first, third);
+        assert_eq!(mgr.pending_count(), 2);
+        // Once decided, the lineage frees: a fresh submission mints.
+        mgr.resolve(first, ApprovalDecision::Approved, None, None)
+            .unwrap();
+        let fourth = mgr
+            .submit_queued(lineage_request("agent-1", "draft/design-req-1", Some(1)))
+            .unwrap();
+        assert_ne!(first, fourth);
+        assert!(matches!(mgr.lookup(fourth), ApprovalLookup::Pending(_)));
+    }
+
+    #[test]
+    fn test_cap_error_is_typed_queue_full() {
+        let mgr = default_manager();
+        for _ in 0..MAX_QUEUED_PER_AGENT {
+            mgr.submit_queued(make_request("agent-1", "design_approval", 60))
+                .unwrap();
+        }
+        let err = mgr
+            .submit_queued(make_request("agent-1", "design_approval", 60))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            SubmitQueuedError::QueueFull {
+                agent_id: "agent-1".to_string()
+            }
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Work build §12 — supersede
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_supersede_is_terminal_idempotent_and_never_overrides() {
+        let dir = std::env::temp_dir().join(format!(
+            "fang-supersede-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mgr = manager_with_ledger(&dir.join("decisions.jsonl"));
+        let req = lineage_request("agent-1", "draft/sms-1", None);
+        let id = req.id;
+        mgr.submit_queued(req).unwrap();
+        let resp = mgr
+            .supersede(id, Some("cleanup".to_string()), Some("api_token".to_string()))
+            .unwrap();
+        assert_eq!(resp.decision, ApprovalDecision::Superseded);
+        assert_eq!(mgr.pending_count(), 0);
+        match mgr.lookup(id) {
+            ApprovalLookup::Decided(r) => {
+                assert_eq!(r.decision, ApprovalDecision::Superseded)
+            }
+            other => panic!("expected Decided, got {other:?}"),
+        }
+        // Idempotent: a second supersede returns the stored record.
+        let again = mgr.supersede(id, None, None).unwrap();
+        assert_eq!(again.decision, ApprovalDecision::Superseded);
+        assert_eq!(mgr.ledger_len(), 1);
+        // A human decision cannot be superseded after the fact.
+        let req2 = make_request("agent-1", "sms_reply", 60);
+        let id2 = req2.id;
+        mgr.submit_queued(req2).unwrap();
+        mgr.resolve(id2, ApprovalDecision::Approved, None, None)
+            .unwrap();
+        assert!(mgr.supersede(id2, None, None).is_err());
+        match mgr.lookup(id2) {
+            ApprovalLookup::Decided(r) => {
+                assert_eq!(r.decision, ApprovalDecision::Approved)
+            }
+            other => panic!("expected Decided, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

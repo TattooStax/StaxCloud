@@ -197,7 +197,8 @@ pub(crate) struct WsAuthCtx<'a> {
     pub api_key: &'a str,
     /// Whether dashboard session login is enabled in config.
     pub auth_enabled: bool,
-    /// Secret used to verify session cookies (api_key when set, else password hash).
+    /// Secret used to verify session cookies (the daemon's own
+    /// persisted session secret — never the API key).
     pub session_secret: &'a str,
     /// Whether the request originated from a loopback address.
     pub is_loopback: bool,
@@ -285,9 +286,9 @@ pub(crate) fn check_ws_auth(ctx: &WsAuthCtx<'_>) -> Result<(), axum::http::Statu
         return Ok(());
     }
 
-    // Dashboard session cookie (issue #1085). When auth_enabled is on the
-    // session_secret is set by server.rs to either the api_key or the
-    // configured password hash, mirroring the HTTP auth middleware.
+    // Dashboard session cookie (issue #1085). The session secret is
+    // the daemon's own persisted secret, mirroring the HTTP auth
+    // middleware — never the API key or the password hash.
     if ctx.auth_enabled && !ctx.session_secret.is_empty() {
         if let Some(token) = crate::session_auth::extract_session_cookie(ctx.headers) {
             if crate::session_auth::verify_session_token(&token, ctx.session_secret).is_some() {
@@ -323,16 +324,13 @@ pub async fn agent_ws(
         .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "on"))
         .unwrap_or(false);
 
-    // Mirror the session_secret derivation in server.rs::AuthState so cookies
-    // issued by /api/auth/login verify the same way over HTTP and WS.
+    // The daemon's persisted session secret — the same single
+    // source login and the HTTP middleware use, so cookies verify
+    // identically over HTTP and WS. Never derived from the API key:
+    // a token holder must not be able to mint a session cookie.
     let auth_enabled = state.kernel.config.auth.enabled;
-    let session_secret_owned: String = if !api_key.is_empty() {
-        api_key.to_string()
-    } else if auth_enabled {
-        state.kernel.config.auth.password_hash.clone()
-    } else {
-        String::new()
-    };
+    let session_secret_owned: String =
+        crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
 
     let auth_ctx = WsAuthCtx {
         api_key,

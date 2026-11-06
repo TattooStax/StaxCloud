@@ -243,7 +243,14 @@ function canvasPage() {
       })[0];
       if (!job) return null;
       if (job.status === 'queued') return { phase: 'working', text: 'Making the versions…' };
-      if (job.status === 'error') return { phase: 'error', text: 'The last try didn\'t finish — ' + cvPlainErr(job.error) + ' You can try again.' };
+      if (job.status === 'error') {
+        // A request that went on to complete carries its errored
+        // early jobs as history, not as its state: the versions
+        // landed, so no failure banner rides on the finished card.
+        var req = this.cvRequests[reqId];
+        if (req && this.cvClosed(req)) return null;
+        return { phase: 'error', text: 'The last try didn\'t finish — ' + cvPlainErr(job.error) + ' You can try again.' };
+      }
       if (job.status === 'done') {
         var when = job.result && job.result.finished_ts ? Date.parse(job.result.finished_ts) : NaN;
         if (!isNaN(when) && Date.now() - when < 60000) return { phase: 'done', text: 'Fresh versions are on the canvas.' };
@@ -716,7 +723,25 @@ function canvasPage() {
             return { role: m.role === 'User' ? 'user' : 'agent',
                      text: self.cvStripContext(typeof m.content === 'string' ? m.content : '') };
           }).filter(function(r) { return r.text.trim(); });
-        this.cvThread = rows.slice(-8);
+        // Machine turns are not conversation: an autonomous tick or a
+        // sidecar completion report is the engine talking to itself,
+        // and the reply it provoked belongs to it. Drop both BEFORE
+        // the tail slice, so a busy engine can't crowd the artist's
+        // own words out of the visible thread.
+        var kept = [];
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          if (r.role === 'user' && (/^\[AUTONOMOUS TICK\]/.test(r.text) || /^Designer sidecar finished job\(s\)\./.test(r.text))) {
+            // A machine turn can answer itself in several agent rows
+            // (text alongside tool calls, then the final response) —
+            // the whole run belongs to the machine turn, not just the
+            // first reply.
+            while (i + 1 < rows.length && rows[i + 1].role === 'agent') i++;
+            continue;
+          }
+          kept.push(r);
+        }
+        this.cvThread = kept.slice(-8);
       } catch (e) { /* the thread just stays as it was */ }
     },
     cvAddFiles(files) {
@@ -936,6 +961,12 @@ function canvasPage() {
 function cvPlainErr(msg) {
   var s = String(msg || '').trim();
   if (!s) return 'Something went wrong.';
-  if (/traceback|errno|exception|stack|panic|\.py\b|line \d+/i.test(s)) return 'Something went wrong on our side.';
+  // A generation that produced nothing gets its own plain sentence —
+  // the engine's phrasing ("RuntimeError: generation model … returned
+  // no image") names machinery the artist never needs to see.
+  if (/returned no image|no image (was )?(returned|produced|generated)/i.test(s)) return 'The picture maker didn\'t return a picture.';
+  if (/traceback|errno|exception|runtimeerror|stack|panic|\.py\b|line \d+/i.test(s)) return 'Something went wrong on our side.';
+  // Model slugs (vendor/name-with-a-version) are machinery too.
+  if (/\b[a-z][a-z0-9-]*\/[a-z0-9][a-z0-9.\-]*\d/i.test(s)) return 'Something went wrong on our side.';
   return s.replace(/\.$/, '') + '.';
 }
