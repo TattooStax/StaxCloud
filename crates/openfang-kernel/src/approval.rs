@@ -107,6 +107,25 @@ impl DecisionLedger {
         let mut records = std::collections::HashMap::new();
         let mut order = Vec::new();
         if path.is_file() {
+            // Repair a torn tail before anything else: a crash
+            // mid-append leaves a partial final line with no newline.
+            // Its decision was never reported (the append never
+            // synced), so truncating it loses nothing acknowledged —
+            // and leaving it would glue the NEXT appended record onto
+            // the fragment, silently losing that one too.
+            let bytes = std::fs::read(path)?;
+            if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                let keep = bytes
+                    .iter()
+                    .rposition(|b| *b == b'\n')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                warn!(path = %path.display(), dropped = bytes.len() - keep,
+                      "decision ledger: truncating torn tail");
+                let f = std::fs::OpenOptions::new().write(true).open(path)?;
+                f.set_len(keep as u64)?;
+                f.sync_all()?;
+            }
             let text = std::fs::read_to_string(path)?;
             for line in text.lines() {
                 let line = line.trim();
@@ -144,11 +163,11 @@ impl DecisionLedger {
 
     /// Append one decision and sync it to disk before returning.
     pub fn append(&self, record: &ApprovalRecord) -> std::io::Result<()> {
-        let line = serde_json::to_string(record)
+        let mut line = serde_json::to_string(record)
             .map_err(std::io::Error::from)?;
+        line.push('\n');
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.file.write_all(line.as_bytes())?;
-        inner.file.write_all(b"\n")?;
         inner.file.sync_all()?;
         let id = record.request.id;
         if inner.records.insert(id, record.clone()).is_none() {
@@ -500,8 +519,14 @@ impl ApprovalManager {
 
     fn clear_lineage(&self, request: &ApprovalRequest) {
         if let Some(l) = &request.lineage {
-            self.lineage_index
-                .remove(&(l.draft_key.clone(), l.round));
+            // Remove only the entry that still names THIS hold: a
+            // racing submission may already have replaced it with a
+            // fresh hold for the same lineage, and that replacement's
+            // index entry is what keeps its next submission idempotent.
+            self.lineage_index.remove_if(
+                &(l.draft_key.clone(), l.round),
+                |_, indexed| *indexed == request.id,
+            );
         }
     }
 
@@ -1019,6 +1044,54 @@ mod tests {
             .resolve(id_a, ApprovalDecision::Denied, None, None)
             .unwrap();
         assert_eq!(again.decision, ApprovalDecision::Approved);
+        assert_eq!(mgr.ledger_len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_ledger_torn_tail_does_not_swallow_the_next_decision() {
+        // Review finding (PR #1): a crash mid-append leaves a partial
+        // final line; the next append must not glue onto it and lose
+        // an acknowledged decision.
+        let dir = std::env::temp_dir().join(format!(
+            "openfang-ledger-torn-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("decisions.jsonl");
+        let id_a = {
+            let mgr = manager_with_ledger(&path);
+            let a = make_request("agent-1", "sms_reply", 60);
+            let ia = a.id;
+            mgr.submit_queued(a).unwrap();
+            mgr.resolve(ia, ApprovalDecision::Approved,
+                        Some("api".to_string()),
+                        Some("api_token".to_string())).unwrap();
+            ia
+        };
+        // Simulate the crash: a partial record, never newline-ended.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true).open(&path).unwrap();
+            f.write_all(b"{\"request\":{\"id\":\"torn").unwrap();
+            f.sync_all().unwrap();
+        }
+        // Restart: the torn tail is truncated; a new decision appends
+        // cleanly and survives a second restart alongside the first.
+        let id_c = {
+            let mgr = manager_with_ledger(&path);
+            let c = make_request("agent-1", "sms_reply", 60);
+            let ic = c.id;
+            mgr.submit_queued(c).unwrap();
+            mgr.resolve(ic, ApprovalDecision::Denied,
+                        Some("admin".to_string()),
+                        Some("owner_session".to_string())).unwrap();
+            ic
+        };
+        let mgr = manager_with_ledger(&path);
+        assert!(matches!(mgr.lookup(id_a), ApprovalLookup::Decided(_)));
+        assert!(matches!(mgr.lookup(id_c), ApprovalLookup::Decided(_)));
         assert_eq!(mgr.ledger_len(), 2);
         std::fs::remove_dir_all(&dir).ok();
     }
