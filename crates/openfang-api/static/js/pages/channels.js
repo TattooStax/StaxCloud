@@ -307,3 +307,151 @@ function channelsPage() {
     }
   };
 }
+
+// ── StaxCloud Connections — the owner page (System > Connections) ────
+// Reports the product's own connections from the same records the
+// Texts, Email and Team surfaces read: sms/ thread records and
+// attention/sms for the text line, mailbox/status for email, teammsg/
+// for the team channel, and the store's one gate snapshot for the
+// text-reply mode. Daemon channel config (channelsPage above) is not
+// a product connection and stays in Advanced. A leg whose record
+// cannot be read says "Couldn't check" — this page never states a
+// connection state the underlying record does not prove.
+function connectionsPage() {
+  function parseVal(v) {
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { return null; } }
+    return v && typeof v === 'object' ? v : null;
+  }
+  function tsOf(x) {
+    if (!x) return 0;
+    var t = new Date(x).getTime();
+    return isNaN(t) ? 0 : t;
+  }
+  return {
+    loading: true,
+    loadError: '',
+    checkedAt: '',
+    texts: null,
+    replies: null,
+    email: null,
+    team: null,
+
+    fmtTs(ts) {
+      var t = tsOf(ts);
+      if (!t) return '';
+      var d = new Date(t);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+             d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    },
+
+    fmtClock(ts) {
+      var t = tsOf(ts);
+      if (!t) return '';
+      return new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    },
+
+    async loadData() { return this.loadFacts(); },
+
+    async loadFacts() {
+      this.loading = true;
+      this.loadError = '';
+      var store = Alpine.store('app');
+      var agentId = (store.agents[0] || {}).id || 'shared';
+      var base = '/api/memory/agents/' + agentId + '/kv';
+      var self = this;
+
+      async function pairs(prefix) {
+        var d = await OpenFangAPI.get(base + '?prefix=' + encodeURIComponent(prefix));
+        return ((d && d.kv_pairs) || []).map(function(pr) {
+          return { key: pr.key, value: parseVal(pr.value) };
+        }).filter(function(pr) { return pr.value; });
+      }
+      async function one(key) {
+        var d = await OpenFangAPI.get(base + '/' + encodeURIComponent(key));
+        return parseVal(d && d.value);
+      }
+      // Each leg reads independently: one leg's failed read marks only
+      // that leg "Couldn't check", never the whole page.
+      async function leg(fn) {
+        try { return { ok: true, v: await fn() }; }
+        catch(e) { return { ok: false, v: null }; }
+      }
+
+      var results = await Promise.all([
+        leg(function() { return pairs('sms/'); }),
+        leg(function() { return one('attention/sms'); }),
+        leg(function() { return one('mailbox/status'); }),
+        leg(function() { return pairs('teammsg/'); }),
+        store.refreshTextGate()
+      ]);
+      var smsR = results[0], attR = results[1], mbR = results[2], teamR = results[3], gate = results[4];
+
+      // ── Text line: the shop's texting, from its thread records ──
+      if (!smsR.ok) {
+        this.texts = { tone: 'warn', status: "Couldn't check", sub: 'The text records did not load — try again in a moment' };
+      } else if (!smsR.v.length) {
+        this.texts = { tone: 'quiet', status: 'No texts yet', sub: 'Customer texts to the shop line land in Texts' };
+      } else {
+        var lastTs = 0;
+        smsR.v.forEach(function(pr) {
+          (Array.isArray(pr.value.messages) ? pr.value.messages : []).forEach(function(m) {
+            var t = tsOf(m && m.ts); if (t > lastTs) lastTs = t;
+          });
+        });
+        var sub = lastTs ? 'Last text ' + this.fmtTs(lastTs) : 'Texts are flowing to the shop line';
+        if (attR.ok && attR.v && Array.isArray(attR.v.threads) && attR.v.threads.length) {
+          var n = attR.v.threads.length;
+          sub += ' · ' + n + (n === 1 ? ' conversation' : ' conversations') + ' waiting for a reply';
+        }
+        this.texts = { tone: 'ok', status: 'Connected', sub: sub };
+      }
+
+      // ── Text replies: the one gate snapshot ──
+      if (!gate || gate.mode === 'unknown') {
+        this.replies = { tone: 'warn', status: "Couldn't check", sub: 'The reply setting did not load — try again in a moment' };
+      } else if (gate.mode === 'paused') {
+        this.replies = { tone: 'quiet', status: 'Paused', sub: 'No replies are being drafted right now' };
+      } else {
+        var rsub = 'Replies wait in Needs you until you approve them';
+        if (gate.held) rsub += ' · ' + gate.held + (gate.held === 1 ? ' reply' : ' replies') + ' waiting now';
+        this.replies = { tone: 'ok', status: 'You approve', sub: rsub };
+      }
+
+      // ── Email: the mailbox's own status stamp ──
+      if (!mbR.ok || !mbR.v) {
+        this.email = { tone: 'warn', status: "Couldn't check", sub: 'The mailbox check did not load — try again in a moment' };
+      } else {
+        var mb = mbR.v;
+        var addr = mb.address || 'Shop email';
+        var runT = tsOf(mb.last_run);
+        if (!runT) {
+          this.email = { tone: 'warn', status: "Couldn't check", sub: addr + ' · no check time on record' };
+        } else {
+          var esub = addr + ' · last checked ' + this.fmtTs(mb.last_run);
+          if (mb.waiting_to_send) esub += ' · ' + mb.waiting_to_send + ' waiting to send';
+          var fresh = (Date.now() - runT) <= 20 * 60000;
+          this.email = fresh
+            ? { tone: 'ok', status: 'Connected', sub: esub }
+            : { tone: 'warn', status: 'Needs attention', sub: esub };
+        }
+      }
+
+      // ── Team: the shop's channel, from its message records ──
+      if (!teamR.ok) {
+        this.team = { tone: 'warn', status: "Couldn't check", sub: 'The team channel did not load — try again in a moment' };
+      } else if (!teamR.v.length) {
+        this.team = { tone: 'ok', status: 'Connected', sub: 'The team channel is ready — no messages yet' };
+      } else {
+        var tTs = 0;
+        teamR.v.forEach(function(pr) { var t = tsOf(pr.value.ts); if (t > tTs) tTs = t; });
+        this.team = { tone: 'ok', status: 'Connected', sub: tTs ? 'Last message ' + this.fmtTs(tTs) : 'The team channel is in use' };
+      }
+
+      this.checkedAt = new Date().toISOString();
+      if (!smsR.ok && !mbR.ok && !teamR.ok && (!gate || gate.mode === 'unknown')) {
+        this.loadError = 'Your connections did not load. Check that StaxCloud is online, then try again.';
+      }
+      this.loading = false;
+    }
+  };
+}

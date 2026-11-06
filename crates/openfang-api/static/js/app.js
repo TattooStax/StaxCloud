@@ -174,6 +174,10 @@ document.addEventListener('alpine:init', function() {
     ownerName: 'Shawn',
     morningBrief: null,
     smsThreadCount: 0,
+    // The text-reply gate snapshot (see refreshTextGate). One computed
+    // value rendered by the Home pill, the drawer's Stax row and the
+    // Connections page, so the reply mode can never read two ways.
+    textGate: null,
     showAllHelpers: false,
     crewNames: ['stax', 'forms', 'sms', 'surface-builder', 'deep-work'],
     formsNewCount: 0,
@@ -197,6 +201,35 @@ document.addEventListener('alpine:init', function() {
         this.agents = Array.isArray(agents) ? agents : [];
         this.agentCount = this.agents.length;
       } catch(e) { /* silent */ }
+    },
+
+    // The text-reply gate, computed once from the records the send
+    // gate itself lives by: held sms_reply drafts in kv (the Texts
+    // surface's own records — a reply only sends when the owner
+    // approves its draft) plus the crew registry. The paused fact is
+    // the texts helper's ABSENCE from the registry; its runtime state
+    // is never read — the state oscillates with the helper's turns,
+    // which is what flipped this wording by whichever surface had
+    // refreshed last. A failed read is 'unknown', never a guess.
+    async refreshTextGate() {
+      try {
+        var agents = this.agents && this.agents.length ? this.agents
+          : await OpenFangAPI.get('/api/agents');
+        var list = Array.isArray(agents) ? agents : [];
+        var aid = (list[0] && list[0].id) || 'shared';
+        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv?prefix=' + encodeURIComponent('draft/'));
+        var held = 0;
+        ((d && d.kv_pairs) || []).forEach(function(pr) {
+          var v = pr.value;
+          if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+          if (v && v.kind === 'sms_reply' && v.status === 'held') held++;
+        });
+        var hasSms = list.some(function(a) { return a.name === 'sms'; });
+        this.textGate = { mode: hasSms ? 'approve' : 'paused', held: held, checkedAt: new Date().toISOString() };
+      } catch(e) {
+        this.textGate = { mode: 'unknown', held: 0, checkedAt: new Date().toISOString() };
+      }
+      return this.textGate;
     },
 
     async loadSetup() {
@@ -500,6 +533,7 @@ document.addEventListener('alpine:init', function() {
       this.showAuthPrompt = false;
       window.location.hash = 'chat';
       this.refreshAgents();
+      this.refreshTextGate();
     },
 
     async sessionLogin(username, password) {
@@ -511,6 +545,7 @@ document.addEventListener('alpine:init', function() {
           // Fresh login always lands on home.
           window.location.hash = 'chat';
           this.refreshAgents();
+          this.refreshTextGate();
           // The thread read before sign-in was refused: read the record again
           this.homeReload++;
         } else {
@@ -985,6 +1020,9 @@ function staxDrawer() {
         if (isOpen) self.placeHeld();
         self.handOffFocus(isOpen);
         if (!isOpen) return;
+        // The drawer's Stax row words the text-reply mode; re-read the
+        // one gate snapshot each time the drawer opens.
+        Alpine.store('app').refreshTextGate();
         if (!self._dragOpened) self.collapseAll();
         self._dragOpened = false;
         self.loadChats();

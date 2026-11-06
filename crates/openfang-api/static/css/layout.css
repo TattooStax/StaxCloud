@@ -518,6 +518,8 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .sys-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
 .sys-status[data-tone="warn"] .sys-dot { background: var(--warning); }
 .sys-status[data-tone="warn"] { color: var(--warning); }
+.sys-status[data-tone="quiet"] .sys-dot { background: var(--text-muted); }
+.sys-status[data-tone="quiet"] { color: var(--text-secondary); }
 .sys-ident { margin: 18px 4px 0; font-size: 13.5px; color: var(--text-muted); }
 [data-theme="dark"] .sys-ident { color: var(--text-dim); }
 /* System > Advanced: the old circular-arrow identity mark, kept here only */

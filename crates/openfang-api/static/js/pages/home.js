@@ -86,20 +86,26 @@ async function homeFreshConversation(chat) {
   }
 }
 
-// Status in plain words, from real state: the daemon connection and the
-// texts helper. Its replies are held drafts that wait for the owner's
-// approval (see the sms hand), so "you approve" is the true mode.
+// Status in plain words, from real state: the daemon connection and
+// the store's text-reply gate snapshot (refreshTextGate in app.js —
+// the one source the Connections page also renders, computed from the
+// records the send gate lives by). The helper's runtime state is never
+// read here: it oscillates with the helper's turns, which flipped this
+// wording by whichever surface had refreshed last.
 // Shared by the Home pill and the drawer's Stax row (one source, one wording).
 function staxStatus() {
   var s = Alpine.store('app');
   if (!s.connected && !s.booting) return { tone: 'warn', words: 'Reconnecting' };
   if (s.booting) return { tone: 'quiet', words: 'Waking up' };
-  var agents = s.agents || [];
-  var sms = agents.find(function(a) { return a.name === 'sms'; });
-  if (sms) {
-    var on = (sms.state || '').toLowerCase() === 'running';
-    return { tone: on ? 'ok' : 'quiet', words: on ? 'Text replies: You approve' : 'Text replies: Paused' };
+  var g = s.textGate;
+  if (g) {
+    if (g.mode === 'approve') return { tone: 'ok', words: 'Text replies: You approve' };
+    if (g.mode === 'paused') return { tone: 'quiet', words: 'Text replies: Paused' };
+    return { tone: 'warn', words: "Text replies: Couldn't check" };
   }
+  // First paint before the snapshot lands: start the read and show
+  // the plain Stax line rather than guessing a reply mode.
+  if (typeof s.refreshTextGate === 'function') s.refreshTextGate();
   var ready = !!findStaxAgent();
   return { tone: ready ? 'ok' : 'quiet', words: ready ? 'Stax is on' : 'Stax is getting ready' };
 }

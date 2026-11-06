@@ -2500,24 +2500,39 @@
       </div>
     </template>
 
+    <!-- Connections: the product's own connections, read from the same
+         records the Texts, Email and Team surfaces live by (connectionsPage
+         in channels.js). Daemon channel config is not shown here; it lives
+         in Advanced > Integrations catalog. -->
     <template x-if="page === 'channels'">
-      <div class="sys-page" x-data="channelsPage">
+      <div class="sys-page" x-data="connectionsPage">
         <div class="page-header"><h2>Connections</h2></div>
-        <div class="page-body" x-init="loadChannels()">
+        <div class="page-body" x-init="loadFacts()">
           <p class="sys-lede" x-show="loading">Checking your connections&hellip;</p>
           <p class="sys-lede" x-show="!loading && loadError">Your connections did not load. Check that StaxCloud is online, then try again. <button class="sys-link" @click="loadData()">Try again</button></p>
           <template x-if="!loading && !loadError">
             <div>
-              <p class="sys-lede" x-text="configuredCount === 0 ? 'Nothing is connected yet. Stax can set up texting, chat apps, and email for you.' : 'Where your shop talks to people.'"></p>
+              <p class="sys-lede">Where your shop talks to people.</p>
               <ul class="sys-list" aria-label="Connections">
-                <template x-for="ch in allChannels.filter(c => c.configured)" :key="ch.name">
-                  <li class="sys-row">
-                    <span class="sys-text"><span class="sys-name" x-text="ch.display_name"></span></span>
-                    <span class="sys-status" :data-tone="ch.connected ? 'ok' : 'warn'"><span class="sys-dot" aria-hidden="true"></span><span x-text="ch.connected ? 'Connected' : 'Needs attention'"></span></span>
-                  </li>
-                </template>
+                <li class="sys-row">
+                  <span class="sys-text"><span class="sys-name">Text line</span><span class="sys-sub" x-text="texts.sub"></span></span>
+                  <span class="sys-status" :data-tone="texts.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="texts.status"></span></span>
+                </li>
+                <li class="sys-row">
+                  <span class="sys-text"><span class="sys-name">Text replies</span><span class="sys-sub" x-text="replies.sub"></span></span>
+                  <span class="sys-status" :data-tone="replies.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="replies.status"></span></span>
+                </li>
+                <li class="sys-row">
+                  <span class="sys-text"><span class="sys-name">Email</span><span class="sys-sub" x-text="email.sub"></span></span>
+                  <span class="sys-status" :data-tone="email.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="email.status"></span></span>
+                </li>
+                <li class="sys-row">
+                  <span class="sys-text"><span class="sys-name">Team</span><span class="sys-sub" x-text="team.sub"></span></span>
+                  <span class="sys-status" :data-tone="team.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="team.status"></span></span>
+                </li>
                 <li><button class="sys-row" @click="askStax('I want to connect something new so customers can reach the shop.')"><span class="sys-text"><span class="sys-name">Connect something new</span><span class="sys-sub">Texting, chat apps, email</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
               </ul>
+              <p class="sys-ident" x-show="checkedAt">Checked <span x-text="fmtClock(checkedAt)"></span></p>
             </div>
           </template>
         </div>
