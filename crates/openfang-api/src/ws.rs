@@ -197,7 +197,8 @@ pub(crate) struct WsAuthCtx<'a> {
     pub api_key: &'a str,
     /// Whether dashboard session login is enabled in config.
     pub auth_enabled: bool,
-    /// Secret used to verify session cookies (api_key when set, else password hash).
+    /// Secret used to verify session cookies (the daemon's own
+    /// persisted session secret — never the API key).
     pub session_secret: &'a str,
     /// Whether the request originated from a loopback address.
     pub is_loopback: bool,
