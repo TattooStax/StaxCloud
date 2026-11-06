@@ -148,8 +148,8 @@
               <div style="display:flex;flex-direction:column;gap:10px">
                 <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                   <div class="card approval-card pending">
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
-                    <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked($store.app.fmtPhones(a.description))"></div>
+                    <div class="text-xs text-dim"><span x-text="$store.app.crewLabel(a)"></span> is asking first</div>
                     <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                       <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
                       <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
@@ -1051,8 +1051,8 @@
             <div style="display:flex;flex-direction:column;gap:10px">
               <template x-for="a in $store.app.pendingApprovals.slice(0, 3)" :key="a.id">
                 <div class="card approval-card pending">
-                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
-                  <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+                  <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked($store.app.fmtPhones(a.description))"></div>
+                  <div class="text-xs text-dim"><span x-text="$store.app.crewLabel(a)"></span> is asking first</div>
                   <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                     <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
                     <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
@@ -1554,17 +1554,41 @@
                       <span class="badge badge-warn">Waiting for you</span>
                       <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                     </div>
-                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
-                    <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first &middot; <span x-text="a.action"></span></div>
-                    <button class="btn btn-ghost btn-sm" style="margin-top:8px" x-show="previewLines(a).length" @click="expandedId = expandedId === a.id ? '' : a.id" :aria-expanded="expandedId === a.id" x-text="expandedId === a.id ? 'Hide the details' : 'See what happens'"></button>
+                    <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(cardTitle(a))"></div>
+                    <div class="text-xs text-dim"><span x-text="bylineName(a)"></span> is asking first &middot; <span x-text="a.action"></span></div>
+                    <button class="btn btn-ghost btn-sm" style="margin-top:8px" x-show="previewLines(a).length" @click="toggleExpand(a)" :aria-expanded="expandedId === a.id" x-text="expandedId === a.id ? 'Hide the details' : 'See what happens'"></button>
                     <div x-show="expandedId === a.id" style="margin-top:8px">
+                      <template x-if="designOf(a) && designOf(a).state === 'loading'">
+                        <p class="text-sm text-dim" style="margin:0 0 6px">Getting the picture\u2026</p>
+                      </template>
+                      <template x-if="designOf(a) && designOf(a).state === 'ready'">
+                        <div style="margin-bottom:8px">
+                          <img :src="designOf(a).img" :alt="designOf(a).title || 'The design'" style="display:block;max-width:100%;border-radius:10px;border:1px solid var(--border,#3a3f4a)">
+                          <p class="text-sm" style="margin:6px 0 2px;line-height:1.5" x-text="designOf(a).title"></p>
+                          <p class="text-xs text-dim" style="margin:0 0 2px" x-text="designOf(a).versions + (designOf(a).versions === 1 ? ' version' : ' versions') + ' \u2014 this is the newest one'"></p>
+                          <p class="text-xs text-dim" style="margin:0 0 6px" x-show="designOf(a).customer" x-text="'Customer: ' + $store.app.fmtPhones(designOf(a).customer)"></p>
+                          <button class="btn btn-ghost btn-sm" @click="openInCanvas(a)">Open in Canvas</button>
+                        </div>
+                      </template>
+                      <template x-if="designOf(a) && designOf(a).state === 'none'">
+                        <div style="margin-bottom:8px">
+                          <p class="text-sm" style="margin:0 0 6px">No picture stored for this one.</p>
+                          <button class="btn btn-ghost btn-sm" x-show="designOf(a).latestId" @click="openInCanvas(a)">Open in Canvas</button>
+                        </div>
+                      </template>
+                      <template x-if="designOf(a) && designOf(a).state === 'error'">
+                        <div style="margin-bottom:8px">
+                          <p class="text-sm" style="margin:0 0 6px">The picture couldn't load just now.</p>
+                          <button class="btn btn-ghost btn-sm" x-show="designOf(a).latestId" @click="openInCanvas(a)">Open in Canvas</button>
+                        </div>
+                      </template>
                       <template x-for="line in previewLines(a)" :key="line">
                         <p class="text-sm" style="margin:0 0 4px;line-height:1.5;word-break:break-word" x-text="line"></p>
                       </template>
                     </div>
                     <div class="approval-actions" style="display:flex;gap:8px;margin-top:12px">
                       <button class="btn btn-success" @click="approve(a.id)">Approve</button>
-                      <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="reject(a.id)">Reject</button>
+                      <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="reject(a)">Reject</button>
                     </div>
                   </div>
                 </template>
@@ -1600,8 +1624,8 @@
                           <span class="badge" :class="{ 'badge-success': a.status === 'approved', 'badge-error': a.status === 'rejected', 'badge-muted': a.status === 'expired' }" x-text="a.status"></span>
                           <span class="text-xs text-dim" x-text="timeAgo(a.created_at)"></span>
                         </div>
-                        <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(a.description)"></div>
-                        <div class="text-xs text-dim"><span x-text="a.agent_name"></span> asked first &middot; <span x-text="a.action"></span></div>
+                        <div style="font-size:15px;font-weight:600;line-height:1.45;margin-bottom:4px" x-html="$store.app.plainLinked(cardTitle(a))"></div>
+                        <div class="text-xs text-dim"><span x-text="bylineName(a)"></span> asked first &middot; <span x-text="a.action"></span></div>
                       </div>
                     </template>
                   </div>
@@ -7199,8 +7223,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Needs you</div>
       <template x-for="a in $store.app.pendingApprovals.slice(0, 5)" :key="a.id">
         <div style="border-top:1px solid var(--border);padding:10px 0">
-          <div style="font-size:14px;font-weight:600;line-height:1.4" x-html="$store.app.plainLinked(a.description)"></div>
-          <div class="text-xs text-dim"><span x-text="a.agent_name"></span> is asking first</div>
+          <div style="font-size:14px;font-weight:600;line-height:1.4" x-html="$store.app.plainLinked($store.app.fmtPhones(a.description))"></div>
+          <div class="text-xs text-dim"><span x-text="$store.app.crewLabel(a)"></span> is asking first</div>
           <div class="approval-actions" style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
             <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>

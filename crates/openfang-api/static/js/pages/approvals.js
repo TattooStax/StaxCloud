@@ -84,7 +84,151 @@ function approvalsPage() {
           lines.push(k + ': ' + s);
         });
       }
-      return lines;
+      var fmt = Alpine.store('app').fmtPhones;
+      return lines.map(function(l) { return fmt(l); });
+    },
+
+    // ---- Design approvals: show the work (Wave 1.1) ----------------
+    // A design approval's lineage names its draft record; the draft
+    // names the request; the request's design records carry the
+    // picture (preview_b64 — the same records Canvas reads). Loaded
+    // once per held item, keyed by the item's fingerprint so a
+    // re-carry under a fresh approval id reuses the read.
+    designInfo: {},
+
+    setDesignInfo(key, info) {
+      var next = Object.assign({}, this.designInfo);
+      next[key] = info;
+      this.designInfo = next;
+    },
+
+    kvAgentId() {
+      var agents = (Alpine.store('app') && Alpine.store('app').agents) || [];
+      var designer = agents.filter(function(x) { return x.name === 'designer'; })[0];
+      if (designer) return designer.id;
+      return (agents[0] || {}).id || 'shared';
+    },
+
+    kvParse(v) {
+      if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } }
+      return (v && typeof v === 'object') ? v : null;
+    },
+
+    async kvGet(key) {
+      var rec = await OpenFangAPI.get('/api/memory/agents/' + this.kvAgentId() + '/kv/' + encodeURIComponent(key));
+      return this.kvParse(rec && rec.value);
+    },
+
+    async kvList(prefix, strip) {
+      var url = '/api/memory/agents/' + this.kvAgentId() + '/kv?prefix=' + encodeURIComponent(prefix);
+      if (strip) url += '&strip=' + encodeURIComponent(strip);
+      var data = await OpenFangAPI.get(url);
+      var out = {};
+      (data.kv_pairs || []).forEach(function(pr) { out[pr.key] = pr.value; });
+      return out;
+    },
+
+    _designLoading: {},
+
+    async loadDesign(a) {
+      var dk = a.lineage && a.lineage.draft_key;
+      if (!dk) return;
+      var key = this.fingerprint(a);
+      var cur = this.designInfo[key];
+      if (cur && cur.state !== 'error') return;
+      if (this._designLoading[key]) return;
+      this._designLoading[key] = true;
+      // State stays unset until the draft proves to be a design
+      // draft: a text reply's card must never flash a picture state.
+      var info = { state: 'na', requestId: '', latestId: '', versions: 0, title: '', artistName: '', customer: '' };
+      try {
+        var draft = await this.kvGet(dk);
+        if (!draft || draft.kind !== 'design_approval' || !draft.request_id) {
+          this.setDesignInfo(key, info);
+          delete this._designLoading[key];
+          return;
+        }
+        info.state = 'loading';
+        this.setDesignInfo(key, Object.assign({}, info));
+        info.requestId = draft.request_id;
+        info.customer = draft.customer_id || '';
+        if (draft.artist_id) {
+          var art = await this.kvGet('artist/' + draft.artist_id);
+          if (art && art.display_name) info.artistName = art.display_name;
+        }
+        var designs = await this.kvList('design/', 'preview_b64,bundle_b64');
+        var vers = [];
+        Object.keys(designs).forEach(function(k) {
+          var d = this.kvParse(designs[k]);
+          if (d && d.request_id === info.requestId) vers.push(d);
+        }, this);
+        vers.sort(function(x, y) { return (parseInt(x.version, 10) || 0) - (parseInt(y.version, 10) || 0); });
+        if (!vers.length) { info.state = 'none'; this.setDesignInfo(key, info); delete this._designLoading[key]; return; }
+        var latest = vers[vers.length - 1];
+        info.versions = vers.length;
+        info.latestId = latest.id || '';
+        info.title = latest.title || '';
+        var full = info.latestId ? await this.kvGet('design/' + info.latestId) : null;
+        if (full) {
+          if (full.title) info.title = full.title;
+          if (full.preview_b64) {
+            info.state = 'ready';
+            info.img = 'data:' + (full.preview_mime || 'image/jpeg') + ';base64,' + full.preview_b64;
+          }
+        }
+        // No picture on the newest version (or the record itself did
+        // not come back): the honest end state is the plain line,
+        // never a stuck 'loading'.
+        if (info.state !== 'ready') info.state = 'none';
+        this.setDesignInfo(key, info);
+      } catch (e) {
+        info.state = 'error';
+        this.setDesignInfo(key, info);
+      }
+      delete this._designLoading[key];
+    },
+
+    designOf(a) {
+      return this.designInfo[this.fingerprint(a)] || null;
+    },
+
+    toggleExpand(a) {
+      this.expandedId = this.expandedId === a.id ? '' : a.id;
+      if (this.expandedId === a.id) this.loadDesign(a);
+    },
+
+    openInCanvas(a) {
+      var info = this.designOf(a);
+      if (!info || !info.latestId) return;
+      var store = Alpine.store('app');
+      if (!store.canvasCv) {
+        store.canvasCv = { openId: '', sel: {}, note: {}, brief: '', artist: '', fileId: '', client: '', bg: 'white', setArtist: '', scroll: {}, layerSel: {}, msgDraft: '' };
+      }
+      store.canvasCv.openId = info.latestId;
+      if (info.requestId) store.canvasCv.sel[info.requestId] = info.latestId;
+      // Page navigation lives in the shell component's template scope,
+      // not on the store; page components route by setting the hash
+      // (the same pattern chat.js / wizard.js use).
+      window.location.hash = 'canvas';
+    },
+
+    // Who is asking, in the artist's words (One Face) — the store
+    // resolver, shared with the Home strips.
+    bylineName(a) {
+      return Alpine.store('app').crewLabel(a);
+    },
+
+    // The card's title: the item's own words, phones formatted,
+    // and — once the design read lands — the artist's real name
+    // where the held text carries the artist's slug ("Design for
+    // shawn:" becomes "Design for Shawn Lowe:").
+    cardTitle(a) {
+      var t = a.description || '';
+      var info = this.designOf(a);
+      if (info && info.artistName) {
+        t = t.replace(/^Design for [a-z][a-z0-9_-]*:/i, 'Design for ' + info.artistName + ':');
+      }
+      return Alpine.store('app').fmtPhones(t);
     },
 
     // Held-back items (Work build §4): when the queue is full the
@@ -108,6 +252,12 @@ function approvalsPage() {
       try {
         var data = await OpenFangAPI.get('/api/approvals');
         this.approvals = data.approvals || [];
+        // Design reads for the decision cards (titles carry the
+        // artist's name; the expanded card carries the picture).
+        // Guarded inside loadDesign — a 5s refresh does not refetch.
+        this.pendingList.forEach(function(a) {
+          if (a.lineage && a.lineage.draft_key) this.loadDesign(a);
+        }, this);
       } catch(e) {
         this.loadError = e.message || 'Could not load approvals.';
       }
@@ -143,11 +293,12 @@ function approvalsPage() {
       }
     },
 
-    async reject(id) {
+    async reject(a) {
       var self = this;
-      OpenFangToast.confirm('Reject Action', 'Are you sure you want to reject this action?', async function() {
+      var words = Alpine.store('app').rejectWords(a, this.cardTitle(a));
+      OpenFangToast.confirm(words.title, words.message, async function() {
         try {
-          await OpenFangAPI.post('/api/approvals/' + id + '/reject', {});
+          await OpenFangAPI.post('/api/approvals/' + a.id + '/reject', {});
           OpenFangToast.success('Rejected');
           await self.loadData();
         } catch(e) {

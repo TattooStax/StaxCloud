@@ -256,6 +256,56 @@ document.addEventListener('alpine:init', function() {
       if (a.name === 'forms') return 'Forms';
       return a.name;
     },
+
+    // One Face for approvals: who is asking, in the words the artist
+    // knows. Known crew route through displayName(); anything else —
+    // an unmapped slug, a retired agent's leftover, an id-shaped
+    // name — falls back to the one face, Stax. Never a slug, never
+    // a UUID.
+    crewLabel(a) {
+      if (!a) return 'Stax';
+      var name = a.agent_name || '';
+      var agent = null;
+      (this.agents || []).forEach(function(x) { if (a.agent_id && x.id === a.agent_id) agent = x; });
+      if (agent && agent.name) name = agent.name;
+      if (!name || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(name)) return 'Stax';
+      var mapped = { stax: 1, sms: 1, forms: 1, 'surface-builder': 1, 'deep-work': 1 };
+      return mapped[name] ? this.displayName({ name: name }) : 'Stax';
+    },
+
+    // Phone numbers in owner text, formatted: a standalone 10-digit
+    // run (or 11 with the leading 1) becomes (701) 831-7231. Runs
+    // glued to words or dashes are left alone — a design id like
+    // design-req-sms-7018317231-mms46a3fc3f is not a phone number.
+    fmtPhones(text) {
+      // A number already wrapped in parens keeps its own pair: the
+      // source's '(' opens and its trailing ')' is dropped, so the
+      // result is "(701) 555-0177", never "((701) 555-0177)".
+      return String(text || '').replace(/(^|[^\w-])(1?\d{10})(\)?)(?![\w-])/g, function(m, pre, d, closeParen) {
+        var core = d.length === 11 ? d.slice(1) : d;
+        var pretty = core.slice(0, 3) + ') ' + core.slice(3, 6) + '-' + core.slice(6);
+        if (pre === '(') return pre + pretty;
+        return pre + '(' + pretty + (closeParen || '');
+      });
+    },
+
+    // An approval named in one short line, for dialogs that must
+    // say WHAT is being decided: its own title text, phones
+    // formatted, trimmed to a nameable length.
+    approvalName(a, titleOverride) {
+      var t = this.fmtPhones(titleOverride || (a && a.description) || '').replace(/\s+/g, ' ').trim();
+      if (!t) return 'this item';
+      return t.length > 72 ? t.slice(0, 72).trimEnd() + '\u2026' : t;
+    },
+
+    // The reject dialog's words, one home for both reject paths
+    // (Work and the Home strips): the dialog names the item.
+    rejectWords(a, titleOverride) {
+      return {
+        title: 'Reject this item?',
+        message: 'You are about to reject \u201c' + this.approvalName(a, titleOverride) + '\u201d. It will not be sent or posted.'
+      };
+    },
     displayRole(a) {
       if (!a) return '';
       var roles = { stax: 'Your lead', forms: 'Forms & intake', sms: 'Texts', 'surface-builder': 'Boards & SEO', 'deep-work': 'Research & hard problems' };
@@ -360,7 +410,9 @@ document.addEventListener('alpine:init', function() {
 
     async rejectApproval(id) {
       var self = this;
-      OpenFangToast.confirm('Reject Action', 'Are you sure you want to reject this action?', async function() {
+      var item = (this.pendingApprovals || []).filter(function(x) { return x.id === id; })[0] || null;
+      var words = this.rejectWords(item);
+      OpenFangToast.confirm(words.title, words.message, async function() {
         try {
           await OpenFangAPI.post('/api/approvals/' + id + '/reject', {});
           OpenFangToast.success('Rejected');
