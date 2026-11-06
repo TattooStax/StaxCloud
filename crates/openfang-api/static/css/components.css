@@ -237,6 +237,54 @@ tr:hover td { background: var(--surface2); }
   accent-color: var(--accent);
 }
 
+/* Forms Preview (W2.3): faithful per-kind controls */
+.pv-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 24px;
+}
+.pv-check input[type="checkbox"], .pv-check input[type="radio"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: none;
+}
+.pv-standin-box {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+  background: var(--bg);
+}
+.pv-text { line-height: 1.55; }
+.pv-text p { margin: 0 0 8px; }
+.pv-text ul, .pv-text ol { margin: 0 0 8px; padding-left: 20px; }
+.pv-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+}
+.pv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.pv-pill input[type="checkbox"], .pv-pill input[type="radio"] {
+  accent-color: var(--accent);
+}
+
 /* Modals */
 .modal-overlay {
   position: fixed;

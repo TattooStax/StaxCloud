@@ -6155,7 +6155,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <div class="text-sm text-dim" style="margin-top:4px" x-text="d.fields.length + ' fields - ' + subsOf(d.slug).length + ' submission(s)'"></div>
                   <div x-show="d.public_url" class="text-xs" style="margin-top:6px"><a :href="d.public_url" target="_blank" rel="noopener" style="color:var(--accent)">Public form</a></div>
                   <div style="display:flex;gap:8px;margin-top:10px">
-                    <button class="btn btn-ghost btn-sm" @click="previewSlug = d.slug; $store.app.formsTab = 'preview'">Preview</button>
+                    <button class="btn btn-ghost btn-sm" @click="setPreview(d.slug); $store.app.formsTab = 'preview'">Preview</button>
                     <button class="btn btn-ghost btn-sm" @click="$store.app.formsTab = 'subs'">Submissions</button>
                   </div>
                 </div>
@@ -6201,24 +6201,258 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <div x-show="defs.length > 0">
               <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
                 <template x-for="d in defs" :key="d.slug">
-                  <button class="stax-chip" :class="{ active: previewSlug === d.slug }" @click="previewSlug = d.slug; submitted = false" x-text="d.title"></button>
+                  <button class="stax-chip" :class="{ active: previewSlug === d.slug }" @click="setPreview(d.slug)" x-text="d.title"></button>
                 </template>
               </div>
               <div class="card" x-show="previewDef">
                 <div class="card-header" style="margin:0 0 4px;font-size:16px;font-weight:700" x-text="previewDef ? previewDef.title : ''"></div>
-                <p class="text-xs text-dim" style="margin:0 0 12px">This is a test — submitting saves a test submission your team can see.</p>
-                <div style="display:flex;flex-direction:column;gap:12px">
+                <p class="text-xs text-dim" style="margin:0 0 12px">This is a test — submitting saves a test submission your team can see. What you see here is what a client sees on the real form.</p>
+                <p class="text-sm text-dim" x-show="previewDef && previewDef.fields.length === 0">This form has no fields yet — there is nothing to test.</p>
+                <div style="display:flex;flex-direction:column;gap:14px">
                   <template x-for="f in (previewDef ? previewDef.fields : [])" :key="f.key">
-                    <div>
-                      <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="f.label + (f.required ? ' *' : '')"></label>
-                      <input x-show="f.type === 'text' || f.type === 'email' || f.type === 'phone'" :type="f.type === 'text' ? 'text' : (f.type === 'email' ? 'email' : 'tel')" class="form-input" style="width:100%" x-model="previewData[f.key]">
-                      <textarea x-show="f.type === 'textarea'" class="form-textarea" style="width:100%" rows="4" x-model="previewData[f.key]"></textarea>
-                      <select x-show="f.type === 'select'" class="form-select" style="width:100%" x-model="previewData[f.key]">
-                        <option value="">Choose...</option>
-                        <template x-for="o in (f.options || [])" :key="o">
-                          <option :value="o" x-text="o"></option>
-                        </template>
-                      </select>
+                    <div class="pv-field" :data-pv-kind="pvKind(f)" :data-pv-key="f.key">
+                      <!-- Heading -->
+                      <template x-if="pvKind(f) === 'heading'">
+                        <h3 style="margin:2px 0;font-size:15px" x-text="pvText(f) || f.label"></h3>
+                      </template>
+                      <!-- Paragraph / rich text -->
+                      <template x-if="pvKind(f) === 'paragraph'">
+                        <div class="pv-text text-sm" x-html="pvRich(pvText(f) || f.label || '')"></div>
+                      </template>
+                      <!-- Hidden -->
+                      <template x-if="pvKind(f) === 'hidden'">
+                        <p class="text-xs text-dim" style="margin:0">Hidden field — clients don&rsquo;t see this one. <span x-text="f.label"></span></p>
+                      </template>
+                      <!-- Every visible, labeled kind -->
+                      <template x-if="!['heading','paragraph','hidden'].includes(pvKind(f))">
+                        <div>
+                          <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="(pvTitle(f) || f.label) + (f.required && !pvExempt(f) ? ' *' : '')"></label>
+                          <p class="text-xs text-dim" style="margin:0 0 6px" x-show="pvHelp(f)" x-text="pvHelp(f)"></p>
+
+                          <!-- Simple inputs -->
+                          <template x-if="['text','email','phone','website','number','date','initials'].includes(pvKind(f))">
+                            <input :type="pvInputType(f)" class="form-input" style="width:100%" :placeholder="pvPlaceholder(f)" x-model="previewData[f.key]">
+                          </template>
+                          <template x-if="pvKind(f) === 'textarea'">
+                            <textarea class="form-textarea" style="width:100%" rows="4" :placeholder="pvPlaceholder(f)" x-model="previewData[f.key]"></textarea>
+                          </template>
+
+                          <!-- Dropdown -->
+                          <template x-if="pvKind(f) === 'dropdown'">
+                            <select class="form-select" style="width:100%" x-model="previewData[f.key]">
+                              <option value="">Choose...</option>
+                              <template x-for="(o, oi) in pvOptions(f)" :key="oi">
+                                <option :value="o.label" x-text="o.label"></option>
+                              </template>
+                            </select>
+                          </template>
+
+                          <!-- Choice: radio or checkbox group -->
+                          <template x-if="pvKind(f) === 'choice'">
+                            <div style="display:flex;flex-direction:column;gap:6px">
+                              <template x-for="(o, oi) in pvOptions(f)" :key="oi">
+                                <label class="pv-check">
+                                  <input :type="pvCfg(f).allow_multiple ? 'checkbox' : 'radio'" :value="o.label" x-model="previewData[f.key]">
+                                  <span x-text="o.label"></span>
+                                </label>
+                              </template>
+                            </div>
+                          </template>
+
+                          <!-- Image choice -->
+                          <template x-if="pvKind(f) === 'image-choice'">
+                            <div style="display:flex;flex-wrap:wrap;gap:8px">
+                              <template x-for="(o, oi) in pvOptions(f)" :key="oi">
+                                <label class="pv-pill">
+                                  <input :type="pvCfg(f).allow_multiple ? 'checkbox' : 'radio'" :value="o.label" x-model="previewData[f.key]">
+                                  <img x-show="o.image" :src="o.image" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">
+                                  <span x-text="o.label"></span>
+                                </label>
+                              </template>
+                            </div>
+                          </template>
+
+                          <!-- Scales -->
+                          <template x-if="['scale-number','scale-star','scale-thumbs'].includes(pvKind(f))">
+                            <div style="display:flex;flex-wrap:wrap;gap:6px">
+                              <template x-for="(o, oi) in pvScaleOpts(f)" :key="oi">
+                                <label class="pv-pill">
+                                  <input type="radio" :value="o.value" x-model="previewData[f.key]">
+                                  <span x-text="o.label"></span>
+                                </label>
+                              </template>
+                            </div>
+                          </template>
+
+                          <!-- Checkbox groups (medical, allergy, photo, aftercare list) -->
+                          <template x-if="['checks-medical','checks-allergy','checks-photo','checks-photo-sig','checks-list'].includes(pvKind(f))">
+                            <div>
+                              <div style="display:flex;flex-direction:column;gap:6px">
+                                <template x-for="(c, ci) in pvChecksItems(f)" :key="ci">
+                                  <label class="pv-check">
+                                    <input type="checkbox" :value="c" x-model="previewData[f.key]">
+                                    <span x-text="c"></span>
+                                  </label>
+                                </template>
+                              </div>
+                              <textarea x-show="['checks-medical','checks-allergy'].includes(pvKind(f))" class="form-textarea" style="width:100%;margin-top:8px" rows="2" placeholder="Anything else we should know?" x-model="previewData[f.key + '_notes']"></textarea>
+                              <div x-show="pvKind(f) === 'checks-photo-sig'" class="pv-standin-box" style="margin-top:8px">Signature — clients sign on the real form.</div>
+                            </div>
+                          </template>
+
+                          <!-- Medical disclosure: two sections -->
+                          <template x-if="pvKind(f) === 'disclosure'">
+                            <div>
+                              <div style="display:flex;flex-direction:column;gap:6px">
+                                <template x-for="(c, ci) in pvSec1(f)" :key="ci">
+                                  <label class="pv-check">
+                                    <input type="checkbox" :value="c" x-model="previewData[f.key + '_conditions']">
+                                    <span x-text="c"></span>
+                                  </label>
+                                </template>
+                              </div>
+                              <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+                                <template x-for="(it, ii) in pvSec2(f)" :key="ii">
+                                  <p class="text-sm" style="margin:0"><strong x-show="it.head" x-text="it.head + ': '"></strong><span x-text="it.body"></span></p>
+                                </template>
+                              </div>
+                              <textarea class="form-textarea" style="width:100%;margin-top:8px" rows="2" placeholder="Details" x-model="previewData[f.key + '_details']"></textarea>
+                            </div>
+                          </template>
+
+                          <!-- Agreements (legal, aftercare, touch-up, deposit, plain consent) -->
+                          <template x-if="['agree','consent-agree'].includes(pvKind(f))">
+                            <div>
+                              <div class="pv-text text-sm" x-show="pvText(f)" x-html="pvRich(pvText(f))" style="margin-bottom:8px"></div>
+                              <div style="display:flex;flex-direction:column;gap:6px">
+                                <template x-for="(p, pi) in pvAgreeParts(f)" :key="pi">
+                                  <label class="pv-check">
+                                    <input type="checkbox" x-model="previewData[f.key + p.suffix]">
+                                    <span x-text="p.label"></span>
+                                  </label>
+                                </template>
+                              </div>
+                            </div>
+                          </template>
+
+                          <!-- Composites: client info, tattoo details, description, booking, age check -->
+                          <template x-if="['composite-info','composite-details','composite-desc','booking','composite-age'].includes(pvKind(f))">
+                            <div>
+                              <div style="display:flex;flex-direction:column;gap:10px">
+                                <template x-for="(s, si) in pvSubFields(f)" :key="si">
+                                  <div>
+                                    <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="s.label"></label>
+                                    <input x-show="['text','tel','email','date'].includes(s.control)" :type="s.control" class="form-input" style="width:100%" :placeholder="s.placeholder" x-model="previewData[f.key + '_' + s.suffix]">
+                                    <textarea x-show="s.control === 'textarea'" class="form-textarea" style="width:100%" rows="3" :placeholder="s.placeholder" x-model="previewData[f.key + '_' + s.suffix]"></textarea>
+                                    <select x-show="s.control === 'select'" class="form-select" style="width:100%" x-model="previewData[f.key + '_' + s.suffix]">
+                                      <option value="">Choose...</option>
+                                      <template x-for="(o, oi) in (s.options || [])" :key="oi">
+                                        <option :value="o.value" x-text="o.label"></option>
+                                      </template>
+                                    </select>
+                                  </div>
+                                </template>
+                              </div>
+                              <p class="pv-note" x-show="pvKind(f) === 'composite-age'" x-text="pvAgeNote(f)"></p>
+                              <div x-show="pvKind(f) === 'booking'" class="pv-standin-box" style="margin-top:8px">Reference photos — clients upload photos on the real form.</div>
+                            </div>
+                          </template>
+
+                          <!-- Previous tattoo: yes/no, then the follow-ups when yes -->
+                          <template x-if="pvKind(f) === 'composite-prev'">
+                            <div style="display:flex;flex-direction:column;gap:10px">
+                              <template x-for="(s, si) in pvSubFields(f)" :key="si">
+                                <div x-show="s.suffix === 'has_prev' || previewData[f.key + '_has_prev'] === 'yes'">
+                                  <label class="text-xs text-dim" style="display:block;margin-bottom:4px" x-text="s.label"></label>
+                                  <div x-show="s.control === 'radio-yn'" style="display:flex;gap:14px">
+                                    <label class="pv-check"><input type="radio" value="yes" x-model="previewData[f.key + '_has_prev']"><span>Yes</span></label>
+                                    <label class="pv-check"><input type="radio" value="no" x-model="previewData[f.key + '_has_prev']"><span>No</span></label>
+                                  </div>
+                                  <input x-show="s.control === 'text'" type="text" class="form-input" style="width:100%" :placeholder="s.placeholder" x-model="previewData[f.key + '_' + s.suffix]">
+                                  <textarea x-show="s.control === 'textarea'" class="form-textarea" style="width:100%" rows="3" :placeholder="s.placeholder" x-model="previewData[f.key + '_' + s.suffix]"></textarea>
+                                </div>
+                              </template>
+                            </div>
+                          </template>
+
+                          <!-- Parent consent for a minor -->
+                          <template x-if="pvKind(f) === 'minor'">
+                            <div>
+                              <div class="pv-text text-sm" x-show="pvText(f)" x-html="pvRich(pvText(f))" style="margin-bottom:8px"></div>
+                              <p class="pv-note" x-show="pvMinorCfg(f).help" x-text="pvMinorCfg(f).help"></p>
+                              <div style="display:flex;flex-direction:column;gap:10px">
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Minor&rsquo;s full name</label><input type="text" class="form-input" style="width:100%" x-model="previewData[f.key + '_minor_name']"></div>
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Minor&rsquo;s date of birth</label><input type="date" class="form-input" style="width:100%" x-model="previewData[f.key + '_minor_dob']"></div>
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Parent or guardian name</label><input type="text" class="form-input" style="width:100%" x-model="previewData[f.key + '_parent_name']"></div>
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Relationship to minor</label><input type="text" class="form-input" style="width:100%" x-model="previewData[f.key + '_parent_relationship']"></div>
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Parent date of birth</label><input type="date" class="form-input" style="width:100%" x-model="previewData[f.key + '_parent_dob']"></div>
+                                <div><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Parent phone</label><input type="tel" class="form-input" style="width:100%" x-model="previewData[f.key + '_parent_phone']"></div>
+                                <div x-show="pvMinorCfg(f).requireParentId"><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Parent ID type</label>
+                                  <select class="form-select" style="width:100%" x-model="previewData[f.key + '_parent_id_type']">
+                                    <option value="">Choose...</option>
+                                    <option value="drivers_license">Driver&rsquo;s License</option>
+                                    <option value="passport">Passport</option>
+                                    <option value="state_id">State ID</option>
+                                    <option value="military_id">Military ID</option>
+                                  </select>
+                                </div>
+                                <div x-show="pvMinorCfg(f).requireParentId"><label class="text-xs text-dim" style="display:block;margin-bottom:4px">Parent ID number</label><input type="text" class="form-input" style="width:100%" x-model="previewData[f.key + '_parent_id_number']"></div>
+                              </div>
+                              <div class="pv-standin-box" style="margin-top:8px">Signatures — the minor and parent sign on the real form.</div>
+                              <label class="pv-check" style="margin-top:8px">
+                                <input type="checkbox" x-model="previewData[f.key + '_parent_agree']">
+                                <span>I am the parent or legal guardian and I consent</span>
+                              </label>
+                            </div>
+                          </template>
+
+                          <!-- Artist picker -->
+                          <template x-if="pvKind(f) === 'artist'">
+                            <div>
+                              <p class="text-sm" x-show="pvArtistFixed(f, artists)" x-text="pvArtistFixed(f, artists) ? ('With ' + pvArtistFixed(f, artists).name) : ''"></p>
+                              <select x-show="!pvArtistFixed(f, artists)" class="form-select" style="width:100%" x-model="previewData[f.key]">
+                                <option value="">Choose...</option>
+                                <template x-for="(a, ai) in artists" :key="ai">
+                                  <option :value="a.id" x-text="a.name"></option>
+                                </template>
+                              </select>
+                            </div>
+                          </template>
+
+                          <!-- Signature: stand-in pad, typed name when the block allows it -->
+                          <template x-if="pvKind(f) === 'signature'">
+                            <div>
+                              <div x-show="pvSigMode(f) !== 'typed'" class="pv-standin-box">Sign here on the real form</div>
+                              <p class="pv-note" x-text="pvStandinNote(f)"></p>
+                              <div x-show="pvSigMode(f) !== 'draw'" style="margin-top:8px">
+                                <input type="text" class="form-input" style="width:100%" placeholder="Type your full name" x-model="previewData[f.key + '_typed']">
+                                <label class="pv-check" style="margin-top:6px">
+                                  <input type="checkbox" x-model="previewData[f.key + '_typed_agree']">
+                                  <span>My typed name is my signature</span>
+                                </label>
+                              </div>
+                            </div>
+                          </template>
+
+                          <!-- Upload -->
+                          <template x-if="pvKind(f) === 'upload'">
+                            <div>
+                              <div class="pv-standin-box">Upload on the real form</div>
+                              <p class="pv-note" x-text="pvStandinNote(f)"></p>
+                            </div>
+                          </template>
+
+                          <!-- Live widgets render as labeled stand-ins -->
+                          <template x-if="pvKind(f) === 'widget'">
+                            <div class="pv-standin-box" x-text="pvWidgetLine(f)"></div>
+                          </template>
+
+                          <!-- Fallback for any kind not listed above: a plain input, never blank -->
+                          <template x-if="!['text','email','phone','website','number','date','initials','textarea','dropdown','choice','image-choice','scale-number','scale-star','scale-thumbs','checks-medical','checks-allergy','checks-photo','checks-photo-sig','checks-list','disclosure','agree','consent-agree','composite-info','composite-details','composite-desc','booking','composite-age','composite-prev','minor','artist','signature','upload','widget'].includes(pvKind(f))">
+                            <input type="text" class="form-input" style="width:100%" :placeholder="pvPlaceholder(f)" x-model="previewData[f.key]">
+                          </template>
+                        </div>
+                      </template>
                     </div>
                   </template>
                 </div>
