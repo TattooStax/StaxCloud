@@ -18,6 +18,9 @@ function contactsPage() {
     newName: '',
     newEmail: '',
     newPhone: '',
+    newKind: 'Lead',
+    newStage: 'New',
+    newArtist: '',
     savingNew: false,
 
     async loadData() {
@@ -61,6 +64,18 @@ function contactsPage() {
         subs.sort(function(a, b) { return new Date(b.ts || 0) - new Date(a.ts || 0); });
         this.contacts = contacts;
         this.subs = subs;
+        // A deep link from another surface (Leads opens the person
+        // here) names the record to open; consume it once, on arrival.
+        var want = '';
+        try { want = Alpine.store('app').contactOpenKey || ''; } catch(e) { want = ''; }
+        if (want) {
+          try { Alpine.store('app').contactOpenKey = ''; } catch(e) {}
+          if (contacts.some(function(c) { return c.key === want; })) {
+            this.artistFilter = 'all';
+            this.query = '';
+            this.selectedKey = want;
+          }
+        }
       } catch(e) {
         this.loadError = e.message || 'Could not load contacts.';
       }
@@ -201,14 +216,24 @@ function contactsPage() {
       this.savingNew = true;
       try {
         var idKey = email ? email.toLowerCase() : this.digits(phone);
+        // Kind, stage and artist are written in the same fields the
+        // pipeline reads — a lead added by hand is a lead everywhere,
+        // Leads included, from the moment it is saved.
         var rec = {
           name: name, email: email, phone: phone,
           source_form: 'manual', first_seen: new Date().toISOString(),
-          last_seen: '', visits: 1, notes: []
+          last_seen: '', visits: 1, notes: [],
+          kind: this.newKind || 'Lead'
         };
+        if (rec.kind === 'Lead') rec.stage = this.newStage || 'New';
+        if (this.newArtist === 'shawn' || this.newArtist === 'leni') {
+          rec.artist = this.newArtist;
+          rec.artists = [this.newArtist];
+        }
         await this.putRecord('contact/' + idKey, rec);
         this.showNew = false;
         this.newName = ''; this.newEmail = ''; this.newPhone = '';
+        this.newKind = 'Lead'; this.newStage = 'New'; this.newArtist = '';
         OpenFangToast.success('Contact saved');
         await this.loadData();
         this.selectedKey = 'contact/' + idKey;

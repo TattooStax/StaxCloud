@@ -4965,18 +4965,22 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <div x-show="openStages[stage]">
                   <div class="lead-list" x-show="stageCount(stage) > 0">
                     <template x-for="lead in byStage(stage)" :key="lead._key">
-                      <article class="lead-card">
+                      <article class="lead-card" @click="openPerson(lead)">
                         <div class="lead-card-top">
-                          <span class="lead-name" x-text="lead.name"></span>
-                          <span class="lead-temp" :data-temp="lead._temp" x-text="lead._temp"></span>
+                          <button class="lead-name lead-open" @click.stop="openPerson(lead)" :aria-label="'Open ' + lead.name + ' in Contacts'" x-text="lead.name"></button>
+                          <span class="lead-temp" x-show="lead._temp" :data-temp="lead._temp" x-text="lead._temp"></span>
                         </div>
                         <p class="lead-idea" x-show="lead._idea" x-text="'&ldquo;' + lead._idea + '&rdquo;'"></p>
                         <div class="lead-meta">
                           <span x-text="lead._artistLabel"></span>
                           <span aria-hidden="true">·</span>
-                          <span>Last contact <span x-text="lead._lastLabel"></span></span>
+                          <span x-show="lead._lastLabel">Last contact <span x-text="lead._lastLabel"></span></span>
+                          <span x-show="!lead._lastLabel">No contact yet</span>
                         </div>
                         <p class="lead-next" x-text="lead._next"></p>
+                        <div class="lead-actions" x-show="lead._action">
+                          <button class="btn btn-primary btn-sm lead-act" @click.stop="runAction(lead)" :disabled="lead._holding || lead._held" x-text="lead._held ? 'Held in Needs you' : (lead._action ? lead._action.label : '')"></button>
+                        </div>
                       </article>
                     </template>
                     <button class="btn btn-ghost lead-more" x-show="moreCount(stage) > 0" @click="showMore(stage)">Show more · <span x-text="moreCount(stage)"></span> more</button>
@@ -5023,6 +5027,33 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 <div>
                   <label class="stax-field-label" for="nc-phone">Phone</label>
                   <input id="nc-phone" class="form-input" style="width:100%" placeholder="Phone" type="tel" x-model="newPhone">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-kind">Kind</label>
+                  <select id="nc-kind" class="form-input" style="width:100%" x-model="newKind">
+                    <option value="Lead">Lead</option>
+                    <option value="Client">Client</option>
+                    <option value="Contact-only">Contact only</option>
+                  </select>
+                </div>
+                <div x-show="newKind === 'Lead'">
+                  <label class="stax-field-label" for="nc-stage">Stage</label>
+                  <select id="nc-stage" class="form-input" style="width:100%" x-model="newStage">
+                    <option value="New">New</option>
+                    <option value="Talking">Talking</option>
+                    <option value="Waiting on an artist">Waiting on an artist</option>
+                    <option value="Booked">Booked</option>
+                    <option value="Gone quiet">Gone quiet</option>
+                    <option value="Not a fit">Not a fit</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-artist">Artist</label>
+                  <select id="nc-artist" class="form-input" style="width:100%" x-model="newArtist">
+                    <option value="">Unassigned</option>
+                    <option value="shawn">Shawn</option>
+                    <option value="leni">Leni</option>
+                  </select>
                 </div>
               </div>
               <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>

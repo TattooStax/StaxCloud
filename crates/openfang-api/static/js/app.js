@@ -155,6 +155,11 @@ document.addEventListener('alpine:init', function() {
     // A board to open on arrival at Boards.
     boardPick: '',
     smsTab: 'inbox',
+    // A person or thread another surface asked to open on arrival
+    // (Leads opens the person in Contacts; a card's Reply opens the
+    // Texts thread). The target page consumes the key once, on load.
+    contactOpenKey: '',
+    smsOpenKey: '',
     canvasTab: 'canvas',
     canvasPanel: '',
     canvasTopNonce: 0,

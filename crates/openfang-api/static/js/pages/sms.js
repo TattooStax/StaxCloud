@@ -44,6 +44,12 @@ function smsPage() {
         this.threads = threads;
         this.outbox = outbox;
         Alpine.store('app').smsThreadCount = threads.length;
+        var wantThread = '';
+        try { wantThread = Alpine.store('app').smsOpenKey || ''; } catch(e) { wantThread = ''; }
+        if (wantThread) {
+          try { Alpine.store('app').smsOpenKey = ''; } catch(e) {}
+          if (threads.some(function(t) { return t.key === wantThread; })) this.selectedKey = wantThread;
+        }
       } catch(e) {
         this.loadError = e.message || 'Could not load texts.';
       }
