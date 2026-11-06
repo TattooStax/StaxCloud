@@ -1,18 +1,20 @@
 // StaxCloud Texts — Channels module over kv thread records (sms/<digits>)
-// mirrored from the studio's modem line. Replies are held as draft records
-// (draft/<uuid>, kind sms_reply) and only reach the outbox after the owner
-// approves them in Needs you; the modem bridge sends from there.
+// mirrored from the studio's modem line. The thread view is the shared
+// conversation view (js/conversation.js): its composer emits to this
+// page's onDraft, which holds the reply as a draft record (draft/<uuid>,
+// kind sms_reply) — it only reaches the outbox after the owner approves
+// it in Needs you, and the modem bridge sends from there. Held replies
+// show in the thread itself, marked held, so the conversation reads
+// whole: what the customer said, and what is waiting on approval.
 'use strict';
 
 function smsPage() {
-  return {
+  return staxWithConversationView({
     threads: [],
     outbox: [],
     loading: true,
     loadError: '',
     selectedKey: '',
-    replyText: '',
-    holding: false,
 
     async loadData() {
       this.loading = true;
@@ -23,6 +25,7 @@ function smsPage() {
         var pairs = data.kv_pairs || [];
         var threads = [];
         var outbox = [];
+        var held = {};
         pairs.forEach(function(pr) {
           if (!pr.key) return;
           var v = pr.value;
@@ -34,6 +37,16 @@ function smsPage() {
             threads.push({ key: pr.key, number: v.number || pr.key.slice(4), name: v.name || '', test: !!v.test, messages: msgs });
           } else if (pr.key.indexOf('smsout/') === 0) {
             outbox.push({ key: pr.key, to: v.to || '', body: v.body || '', ts: v.ts || '', status: v.status || 'queued' });
+          } else if (pr.key.indexOf('draft/') === 0 && v.kind === 'sms_reply' && v.thread && v.body &&
+                     (v.status === 'held' || v.status === 'in-needs-you')) {
+            (held[v.thread] || (held[v.thread] = [])).push({ dir: 'out', body: v.body, ts: v.ts || '', status: 'held', held: true });
+          }
+        });
+        threads.forEach(function(t) {
+          var extra = held[t.key];
+          if (extra && extra.length) {
+            t.messages = t.messages.concat(extra);
+            t.messages.sort(function(a, b) { return new Date(a.ts || 0) - new Date(b.ts || 0); });
           }
         });
         threads.sort(function(a, b) {
@@ -54,40 +67,14 @@ function smsPage() {
         this.loadError = e.message || 'Could not load texts.';
       }
       this.loading = false;
-      if (this.selectedKey) this.scrollThread();
+      if (this.selectedKey) this.convScrollToNewest();
     },
 
     get tab() { return Alpine.store('app').smsTab; },
 
     openThread(th) {
       this.selectedKey = th.key;
-      this.scrollThread();
-    },
-
-    // The thread's message region scrolls on its own now; land on
-    // the newest message when a thread opens.
-    scrollThread() {
-      var self = this;
-      this.$nextTick(function() {
-        // Same late-paint case as the Team channel: retry across
-        // frames until the content height is stable and the scroll
-        // verifies at the bottom (see scrollToNewest in team.js).
-        var tries = 0, lastHeight = -1, stableFrames = 0;
-        var go = function() {
-          var el = self.$refs.threadScroll;
-          if (!el) return;
-          var h = el.scrollHeight;
-          el.scrollTop = h;
-          var overflows = h > el.clientHeight;
-          if (overflows && h === lastHeight) stableFrames++;
-          else stableFrames = 0;
-          lastHeight = h;
-          var atBottom = (h - el.clientHeight - el.scrollTop) <= 2;
-          if (overflows && stableFrames >= 2 && atBottom) return;
-          if (++tries < 45) requestAnimationFrame(go);
-        };
-        go();
-      });
+      this.convScrollToNewest();
     },
 
     get selected() {
@@ -123,30 +110,26 @@ function smsPage() {
       return n;
     },
 
-    async holdReply() {
+    // The conversation view's send handler (see conversation.js):
+    // a Texts reply is held for approval, exactly as before — the
+    // draft waits in Needs you and nothing reaches the outbox here.
+    async onDraft(body) {
       var t = this.selected;
-      var body = (this.replyText || '').trim();
-      if (!t || !body || this.holding) return;
-      this.holding = true;
-      try {
-        var uuid = (crypto.randomUUID ? crypto.randomUUID() : 'sms-' + Date.now());
-        var rec = {
-          kind: 'sms_reply',
-          to: t.number,
-          to_name: t.name || '',
-          body: body,
-          thread: t.key,
-          status: 'held',
-          ts: new Date().toISOString()
-        };
-        var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
-        await OpenFangAPI.put('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('draft/' + uuid), { value: rec });
-        this.replyText = '';
-        OpenFangToast.success('Reply held — it is waiting in Needs you');
-      } catch(e) {
-        OpenFangToast.error(e.message);
-      }
-      this.holding = false;
+      if (!t) throw new Error('No conversation is open.');
+      var uuid = (crypto.randomUUID ? crypto.randomUUID() : 'sms-' + Date.now());
+      var rec = {
+        kind: 'sms_reply',
+        to: t.number,
+        to_name: t.name || '',
+        body: body,
+        thread: t.key,
+        status: 'held',
+        ts: new Date().toISOString()
+      };
+      var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
+      await OpenFangAPI.put('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('draft/' + uuid), { value: rec });
+      t.messages.push({ dir: 'out', body: body, ts: rec.ts, status: 'held', held: true });
+      OpenFangToast.success('Reply held — it is waiting in Needs you');
     }
-  };
+  });
 }

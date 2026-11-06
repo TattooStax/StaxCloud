@@ -6502,18 +6502,25 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               </template>
             </div>
 
-            <div class="sms-thread" x-show="selected">
-              <div class="sms-thread-head">
+            <div class="conv-wrap" x-show="selected">
+              <div class="conv-head">
                 <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="min-height:44px">&larr; All conversations</button>
                 <div style="font-weight:700;font-size:15px;margin-top:6px" x-text="selected ? (selected.name || prettyNumber(selected.number)) : ''"></div>
                 <div class="text-xs text-dim" x-text="selected ? prettyNumber(selected.number) : ''"></div>
               </div>
-              <div class="sms-thread-scroll" x-ref="threadScroll">
+              <div class="conv-scroll" x-ref="convScroll">
                 <template x-for="(m, i) in (selected ? selected.messages : [])" :key="i">
-                  <div :style="m.dir === 'out' ? 'align-self:flex-end;background:var(--accent);color:#fff' : 'align-self:flex-start;background:var(--surface-2)'" style="max-width:82%;border-radius:14px;padding:8px 12px">
-                    <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
-                    <div class="text-sm" x-show="m.media && m.media.length && !(m.body || '').trim()" x-text="m.media.some(function(x){ return (x.mime || '').indexOf('image/') === 0; }) ? 'Photo' : 'Attachment'"></div>
-                    <div style="font-size:10px;opacity:.75;margin-top:3px" x-text="fmtTs(m.ts) + (m.dir === 'out' && m.status ? ' - ' + m.status : '')"></div>
+                  <div class="conv-row" :class="m.dir === 'out' ? 'conv-row-own' : ''">
+                    <div class="conv-meta">
+                      <span class="conv-author" x-text="m.dir === 'out' ? 'You' : (selected ? (selected.name || prettyNumber(selected.number)) : '')"></span>
+                      <span class="conv-outside" x-show="m.dir !== 'out'">Outside the shop</span>
+                      <span class="conv-time" x-text="fmtTs(m.ts)"></span>
+                      <span class="conv-status" x-text="m.dir === 'out' ? (m.held ? 'Held - in Needs you' : (m.status || '')) : ''"></span>
+                    </div>
+                    <div class="conv-bubble" :class="m.dir === 'out' ? 'conv-bubble-own' : ''">
+                      <div class="conv-body" x-text="m.body"></div>
+                      <div class="conv-body" x-show="m.media && m.media.length && !(m.body || '').trim()" x-text="(m.media && m.media.some(function(x){ return (x.mime || '').indexOf('image/') === 0; })) ? 'Photo' : 'Attachment'"></div>
+                    </div>
                   </div>
                 </template>
                 <div style="margin-top:6px" x-show="outbox.length">
@@ -6523,9 +6530,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   </template>
                 </div>
               </div>
-              <div class="sms-thread-compose">
-                <textarea class="form-textarea" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="replyText"></textarea>
-                <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="holdReply()" :disabled="holding">Hold reply for approval</button>
+              <div class="conv-compose">
+                <textarea class="form-textarea" style="width:100%" rows="3" placeholder="Write a reply - it waits in Needs you before anything is sent" x-model="convDraft"></textarea>
+                <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="convSubmit()" :disabled="convSending || !convDraft.trim()">Hold reply for approval</button>
               </div>
             </div>
           </div>
@@ -6541,50 +6548,89 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh team channel">Refresh</button>
         </div>
         <div class="page-body team-body">
-          <div class="team-people" style="display:flex;gap:14px;flex-wrap:wrap" role="list" aria-label="Team members">
-            <template x-for="p in people" :key="p.name">
-              <span style="display:inline-flex;align-items:center;gap:8px" role="listitem">
-                <span class="stax-side-avatar" aria-hidden="true">
-                  <svg x-show="p.name === 'Stax'" style="width:20px;height:20px"><use href="#stax-reaper"/></svg>
-                  <span x-show="p.name !== 'Stax'" x-text="initials(p.name)"></span>
+          <div class="team-listwrap" x-show="view === 'list'">
+            <div class="team-people" style="display:flex;gap:14px;flex-wrap:wrap" role="list" aria-label="Team members">
+              <template x-for="p in people" :key="p.name">
+                <span style="display:inline-flex;align-items:center;gap:8px" role="listitem">
+                  <span class="stax-side-avatar" aria-hidden="true">
+                    <svg x-show="p.name === 'Stax'" style="width:20px;height:20px"><use href="#stax-reaper"/></svg>
+                    <span x-show="p.name !== 'Stax'" x-text="initials(p.name)"></span>
+                  </span>
+                  <span><span style="display:block;font-weight:600;font-size:14px" x-text="p.name"></span><span style="display:block" class="text-xs text-dim" x-text="p.role"></span></span>
                 </span>
-                <span><span style="display:block;font-weight:600;font-size:14px" x-text="p.name"></span><span style="display:block" class="text-xs text-dim" x-text="p.role"></span></span>
-              </span>
-            </template>
-          </div>
-
-          <div class="team-scroll" x-ref="teamScroll">
-          <div x-show="loading" class="text-dim" style="padding:12px">Loading the team channel...</div>
-          <div x-show="!loading && loadError" class="error-state">
-            <h3 style="color:var(--error)">Could not load the team channel</h3>
-            <p class="text-xs text-dim" x-text="loadError"></p>
-            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
-          </div>
-
-          <div x-show="!loading && !loadError">
-            <div x-show="messages.length === 0" class="empty-state">
-              <h4>No team messages yet</h4>
-              <p class="hint">The first note posted here starts the channel.</p>
+              </template>
             </div>
-            <div style="display:flex;flex-direction:column;gap:10px" aria-live="polite">
-              <template x-for="m in messages" :key="m.key">
-                <div :style="isOwn(m) ? 'align-self:flex-end' : 'align-self:flex-start'" style="max-width:82%">
-                  <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:3px" :style="isOwn(m) ? 'flex-direction:row-reverse' : ''">
-                    <span style="font-weight:700;font-size:13px" x-text="m.author"></span>
-                    <span class="text-xs text-dim" x-text="fmtTs(m.ts)"></span>
+            <p class="text-xs text-dim" style="padding:0 24px;margin:0 0 8px">Everyone on the shared login sees every conversation.</p>
+            <div class="team-list">
+              <div x-show="loading" class="text-dim" style="padding:12px">Loading conversations...</div>
+              <div x-show="!loading && loadError" class="error-state">
+                <h3 style="color:var(--error)">Could not load the team channel</h3>
+                <p class="text-xs text-dim" x-text="loadError"></p>
+                <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
+              </div>
+              <div x-show="!loading && !loadError">
+                <template x-for="c in convList()" :key="c.id">
+                  <button class="thread-row" @click="openConv(c.id)" :aria-label="'Open conversation: ' + c.title">
+                    <span class="thread-avatar" x-text="initials(c.title)"></span>
+                    <span class="thread-copy">
+                      <span class="thread-name" x-text="c.title"></span>
+                      <span class="thread-snippet text-dim" x-text="c.snippet"></span>
+                    </span>
+                    <span class="thread-meta">
+                      <span class="thread-small" x-text="c.lastTs ? fmtTs(c.lastTs) : ''"></span>
+                      <span x-show="c.hasNew" class="conv-new">New</span>
+                    </span>
+                  </button>
+                </template>
+                <button class="btn btn-ghost" style="margin-top:12px;min-height:44px" @click="showCreate = !showCreate">New conversation</button>
+                <div x-show="showCreate" class="card" style="margin-top:10px">
+                  <label class="text-xs text-dim" for="team-group-name">Conversation name</label>
+                  <input id="team-group-name" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" placeholder="Name the conversation" x-model="newName">
+                  <div style="margin-top:10px">
+                    <span class="text-xs text-dim">Who is in it</span>
+                    <template x-for="p in people" :key="p.name">
+                      <label x-show="p.name !== viewer" style="display:flex;gap:8px;align-items:center;margin-top:6px;min-height:32px">
+                        <input type="checkbox" :value="p.name" x-model="newMembers">
+                        <span class="text-sm" x-text="p.name"></span>
+                      </label>
+                    </template>
                   </div>
-                  <div :style="isOwn(m) ? 'background:var(--accent);color:#fff' : 'background:var(--surface-2)'" style="border-radius:14px;padding:9px 13px">
-                    <div class="text-sm" style="white-space:pre-wrap;word-break:break-word" x-text="m.body"></div>
+                  <p class="text-xs text-dim" style="margin-top:8px">Members are set when you start the conversation.</p>
+                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="createGroup()" :disabled="creating || !newName.trim()">Start conversation</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-wrap" x-show="view === 'conv'">
+            <div class="conv-head">
+              <button class="btn btn-ghost btn-sm" @click="backToList()" style="min-height:44px">&larr; All conversations</button>
+              <div style="font-weight:700;font-size:15px;margin-top:6px" x-text="currentTitle()"></div>
+              <div class="text-xs text-dim" x-text="currentMembersLine()"></div>
+            </div>
+            <div class="conv-scroll" x-ref="convScroll" aria-live="polite">
+              <div x-show="currentMessages().length === 0" class="empty-state">
+                <h4>No messages here yet</h4>
+                <p class="hint">The first note posted here starts the conversation.</p>
+              </div>
+              <template x-for="m in currentMessages()" :key="m.key">
+                <div class="conv-row" :class="isOwn(m) ? 'conv-row-own' : ''">
+                  <div class="conv-meta">
+                    <span class="conv-author" x-text="m.author"></span>
+                    <span class="conv-time" x-text="fmtTs(m.ts)"></span>
+                    <span class="conv-status"></span>
+                  </div>
+                  <div class="conv-bubble" :class="isOwn(m) ? 'conv-bubble-own' : ''">
+                    <div class="conv-body" x-text="m.body"></div>
                   </div>
                 </div>
               </template>
             </div>
-          </div>
-          </div>
-          <div class="team-compose" x-show="!loading && !loadError">
-            <label class="text-xs text-dim" for="team-compose">Message the team</label>
-            <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write to the team" x-model="draft" @keydown.ctrl.enter="post()" @keydown.meta.enter="post()"></textarea>
-            <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="post()" :disabled="posting || !draft.trim()" aria-label="Post message to the team">Post</button>
+            <div class="conv-compose" x-show="!loading && !loadError">
+              <label class="text-xs text-dim" for="team-compose" x-text="'Message ' + currentTitle()"></label>
+              <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write a message" x-model="convDraft" @keydown.ctrl.enter="convSubmit()" @keydown.meta.enter="convSubmit()"></textarea>
+              <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="convSubmit()" :disabled="convSending || !convDraft.trim()" aria-label="Post message">Post</button>
+            </div>
           </div>
         </div>
       </div>
@@ -6639,11 +6685,15 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px;min-height:44px">&larr; All mail</button>
             <div class="card" x-show="selected">
               <div style="font-weight:700;font-size:16px" x-text="selected ? selected.subject : ''"></div>
-              <div class="text-xs text-dim" style="margin-top:4px">
-                From <span x-text="selected ? (selected.from_name ? selected.from_name + ' <' + selected.from + '>' : selected.from) : ''"></span>
-                · <span x-text="selected ? fmtTs(selected.ts) : ''"></span>
+              <div class="conv-meta" style="margin-top:6px">
+                <span class="conv-author" x-text="selected ? (selected.from_name ? selected.from_name + ' <' + selected.from + '>' : selected.from) : ''"></span>
+                <span class="conv-outside">Outside the shop</span>
+                <span class="conv-time" x-text="selected ? fmtTs(selected.ts) : ''"></span>
+                <span class="conv-status"></span>
               </div>
-              <div class="text-sm" style="white-space:pre-wrap;word-break:break-word;margin-top:14px;line-height:1.55" x-text="selected ? selected.text : ''"></div>
+              <div class="conv-bubble conv-doc" style="margin-top:8px">
+                <div class="conv-body" style="line-height:1.55" x-text="selected ? selected.text : ''"></div>
+              </div>
               <button class="btn btn-primary" style="margin-top:14px;min-height:44px" @click="startReply()">Reply</button>
             </div>
           </div>
@@ -6665,7 +6715,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   </div>
                   <div>
                     <label class="text-xs text-dim" for="email-body">Message</label>
-                    <textarea id="email-body" class="input" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
+                    <textarea id="email-body" class="form-textarea" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
                   </div>
                 </div>
               </div>

@@ -3439,3 +3439,23 @@ mark.search-highlight {
 /* ── R2: Needs-you ask/confirm cards ──────────────────── */
 .approval-card.pending { border-left: 3px solid var(--accent); }
 .approval-actions .btn { min-height: 44px; padding: 10px 22px; font-size: 14px; border-radius: 10px; }
+
+/* -- Conversation grammar (Channels): one bubble / meta / status
+   treatment for Team, Texts, and Email's reading view. Own messages
+   sit right in the accent fill; everyone else's sit left in
+   --surface-2. The meta line above the bubble carries the author,
+   the outside-the-shop marker, the time, and the status slot
+   (Team's stays empty; Texts shows sent / held there). */
+.conv-row { max-width: 82%; align-self: flex-start; }
+.conv-row-own { align-self: flex-end; }
+.conv-meta { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+.conv-row-own .conv-meta { flex-direction: row-reverse; }
+.conv-author { font-weight: 700; font-size: 13px; }
+.conv-time { font-size: 12px; opacity: .7; }
+.conv-status { font-size: 11px; opacity: .75; }
+.conv-outside { font-size: 10px; font-weight: 600; letter-spacing: .02em; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.conv-bubble { border-radius: 14px; padding: 9px 13px; background: var(--surface-2); }
+.conv-bubble-own { background: var(--accent); color: #fff; }
+.conv-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.conv-doc { max-width: 100%; }
+.conv-new { font-size: 10px; font-weight: 700; color: var(--accent); }
