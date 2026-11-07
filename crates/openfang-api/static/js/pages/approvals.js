@@ -22,6 +22,19 @@ function approvalsPage() {
       this.refreshTimer = setInterval(function() {
         self.loadData();
       }, 5000);
+      // The module dock jumps between this page's three sections:
+      // open the section if it is an accordion, then scroll to it.
+      this._onWorkSection = function(e) {
+        var s = (e && e.detail) || 'needsyou';
+        if (s === 'current') self.showCurrent = true;
+        if (s === 'finished') self.showFinished = true;
+        var tick = self.$nextTick || function(cb) { setTimeout(cb, 0); };
+        tick(function() {
+          var el = document.getElementById('work-' + s);
+          if (el) el.scrollIntoView({ block: 'start' });
+        });
+      };
+      window.addEventListener('stax-work-section', this._onWorkSection);
     },
 
     destroy() {
@@ -29,6 +42,7 @@ function approvalsPage() {
         clearInterval(this.refreshTimer);
         this.refreshTimer = null;
       }
+      if (this._onWorkSection) window.removeEventListener('stax-work-section', this._onWorkSection);
     },
 
     // A held item keeps one identity across re-carries: the daemon

@@ -127,7 +127,10 @@ function contactsPage() {
     loadError: '',
     query: '',
     artistFilter: 'all',
-    view: 'all',
+    // The book view lives in the store: the module dock (outside this
+    // page's scope) reads and writes the same value.
+    get view() { return Alpine.store('app').contactsView; },
+    set view(v) { Alpine.store('app').contactsView = v; },
     visibleCount: 60,
     selectedKey: '',
     noteText: '',
@@ -144,6 +147,22 @@ function contactsPage() {
     editForm: {},
     savingEdit: false,
     helloHeld: false,
+
+    // Arriving by the module dock resets the list the way the old
+    // in-page view control did, and leaves any open record.
+    init() {
+      var self = this;
+      this._onDockView = function() {
+        self.visibleCount = 60;
+        self.selectedKey = '';
+        self.editing = false;
+      };
+      window.addEventListener('stax-contacts-view', this._onDockView);
+    },
+
+    destroy() {
+      if (this._onDockView) window.removeEventListener('stax-contacts-view', this._onDockView);
+    },
 
     async loadData() {
       this.loading = true;
@@ -240,6 +259,9 @@ function contactsPage() {
         });
         people.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
         this.contacts = people;
+        // The module dock's counts are this page's own, mirrored to
+        // the store on every load (mutations all end in a reload).
+        Alpine.store('app').contactsCounts = { all: this.allCount, prep: this.prepCount, archived: this.archivedCount };
         this.subs = subs;
         this.defs = defs;
         this.labelMap = labelMap;

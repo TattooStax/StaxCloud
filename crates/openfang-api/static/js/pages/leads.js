@@ -55,10 +55,25 @@ function leadsPage() {
     threadKeys: {},
     loading: true,
     error: '',
-    artistFilter: 'all',
+    // The artist scope lives in the store: the module dock (outside
+    // this page's scope) reads and writes the same value.
+    get artistFilter() { return Alpine.store('app').leadsArtist; },
+    set artistFilter(v) { Alpine.store('app').leadsArtist = v; },
     shownCounts: {},
     stages: ['Opportunities', NO_STAGE].concat(STAGES),
     openStages: { 'Opportunities': true, 'No stage yet': true, 'New': true, 'Talking': true, 'Waiting on an artist': true, 'Booked': true, 'Gone quiet': false, 'Not a fit': false },
+
+    // Arriving by the module dock re-scopes the board; the per-stage
+    // "show more" counts reset, as the old in-page control did.
+    init() {
+      var self = this;
+      this._onDockArtist = function() { self.shownCounts = {}; };
+      window.addEventListener('stax-leads-artist', this._onDockArtist);
+    },
+
+    destroy() {
+      if (this._onDockArtist) window.removeEventListener('stax-leads-artist', this._onDockArtist);
+    },
 
     async loadData() {
       this.loading = true;
@@ -86,6 +101,9 @@ function leadsPage() {
           out.push(this.decorate(c));
         }
         this.leads = out;
+        // The module dock's counts are this page's own, mirrored to
+        // the store on every load.
+        Alpine.store('app').leadsArtistCounts = { all: this.artistCount('all'), shawn: this.artistCount('shawn'), leni: this.artistCount('leni') };
       } catch (e) {
         this.error = 'Leads could not load. Check the connection, then refresh.';
       }

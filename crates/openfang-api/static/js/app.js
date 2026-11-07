@@ -152,6 +152,14 @@ document.addEventListener('alpine:init', function() {
     // A request drafted by an Ask Stax row, placed in the Home composer.
     askDraft: '',
     formsTab: 'forms',
+    // Module-dock state for the surfaces whose dock lives outside the
+    // page's Alpine scope: the page mirrors its control here, the dock
+    // writes here (via the *Go methods below) and reads here.
+    contactsView: 'all',
+    contactsCounts: { all: 0, prep: 0, archived: 0 },
+    leadsArtist: 'all',
+    leadsArtistCounts: { all: 0, shawn: 0, leni: 0 },
+    workSection: 'needsyou',
     // A board to open on arrival at Boards.
     boardPick: '',
     smsTab: 'inbox',
@@ -438,6 +446,30 @@ document.addEventListener('alpine:init', function() {
     smsAgent() { this.openSideChat('sms'); },
 
     formsAgent() { this.openSideChat('forms'); },
+
+    // The Channels module dock serves Texts, Team and Email from one
+    // bar. Texts has its own helper; Team and Email talk to Stax, the
+    // lead seated in those conversations.
+    channelsAgent(page) { this.openSideChat(page === 'sms' ? 'sms' : 'stax'); },
+
+    // Module-dock navigation for the store-backed surfaces: the tap
+    // lands here, and the page hears it as an event so it can apply
+    // its own side effects (list resets, section opens, scrolling) —
+    // the same split the Contacts open-key handoff already uses.
+    contactsGo(view) {
+      this.contactsView = view;
+      window.dispatchEvent(new CustomEvent('stax-contacts-view', { detail: view }));
+    },
+
+    leadsGo(artist) {
+      this.leadsArtist = artist;
+      window.dispatchEvent(new CustomEvent('stax-leads-artist', { detail: artist }));
+    },
+
+    workGo(section) {
+      this.workSection = section;
+      window.dispatchEvent(new CustomEvent('stax-work-section', { detail: section }));
+    },
 
     async approveApproval(id) {
       try {
