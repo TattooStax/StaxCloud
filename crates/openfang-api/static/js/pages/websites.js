@@ -8,6 +8,11 @@
 // the publisher's code constants — mirrored here ONLY to phrase the
 // "N of M published" line; the publish-time check itself lives in
 // the worker, never here.
+// W-4 (Consult 16): the record also carries the custom-domain
+// state (domain_state) and the rate-limit tri-state fact
+// (ratelimits), both shown VERBATIM — the page derives only
+// the empty-record defaults, the same ones the worker uses
+// (unattached / none).
 'use strict';
 
 var SITE_TIER_CAPS = { tier1: 2, tier2: 5, pro: 7 };
@@ -59,6 +64,8 @@ function websitesPage() {
               status: v.status === 'published' ? 'published' : 'draft',
               url: v.url || '',
               domain: v.domain || '',
+              domainState: v.domain_state || 'unattached',
+              ratelimits: (typeof v.ratelimits === 'string' && v.ratelimits) ? v.ratelimits : 'none',
               fileCount: Array.isArray(v.files) ? v.files.length : 0,
               updated: v.updated || v.created || ''
             });

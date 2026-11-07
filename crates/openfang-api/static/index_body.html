@@ -6174,6 +6174,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   </div>
                   <div class="text-sm text-dim" style="margin-top:4px" x-text="s.fileCount + (s.fileCount === 1 ? ' file' : ' files')"></div>
                   <div x-show="s.status === 'published' && s.url" class="text-xs" style="margin-top:6px"><a :href="s.url" target="_blank" rel="noopener" style="color:var(--accent)" x-text="s.url"></a></div>
+                  <div x-show="s.domain" class="text-xs" style="margin-top:6px"><span class="text-dim">Domain: </span><a x-show="s.domainState === 'attached'" :href="'https://' + s.domain" target="_blank" rel="noopener" style="color:var(--accent)" x-text="s.domain"></a><span x-show="s.domainState !== 'attached'" x-text="s.domain"></span><span class="text-dim"> &middot; </span><span :style="s.domainState.indexOf('failed') === 0 ? 'color:var(--error)' : ''" x-text="s.domainState"></span></div>
+                  <div class="text-xs" style="margin-top:4px"><span class="text-dim">Rate limit: </span><span x-text="s.ratelimits"></span></div>
                   <div x-show="refusalFor(s)" class="text-sm" style="margin-top:8px;color:var(--error)" x-text="refusalFor(s)"></div>
                   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
                     <button class="btn btn-ghost btn-sm" @click="showPreview(s)">Preview</button>
