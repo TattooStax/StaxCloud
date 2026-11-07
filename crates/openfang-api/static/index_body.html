@@ -1546,7 +1546,17 @@
                 <span class="text-xs text-dim" style="margin-left:8px" x-text="heldBackSeats"></span>
                 <p class="hint" style="margin:4px 0 0">Nothing is lost. Each one joins the list above as soon as a decision frees up room.</p>
               </div>
-              <div x-show="pendingList.length === 0" class="empty-state">
+              <div x-show="unownedAsks.length > 0" role="status" aria-live="polite" style="border:1px solid var(--border,#3a3f4a);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+                <span style="font-weight:600" x-text="unownedAsks.length + (unownedAsks.length === 1 ? ' open ask' : ' open asks') + ' — nobody here can do these yet'"></span>
+                <template x-for="ask in unownedAsks" :key="ask.key">
+                  <p class="text-sm" style="margin:8px 0 0;line-height:1.5">
+                    <span x-text="'\u201C' + ask.request + '\u201D'"></span>
+                    <span x-text="' — ' + ask.reason"></span>
+                    <span class="text-xs text-dim" style="display:block;margin-top:2px" x-text="'Logged ' + timeAgo(ask.ts) + ' · stays here until you act on it, decline it, or the capability ships'"></span>
+                  </p>
+                </template>
+              </div>
+              <div x-show="pendingList.length === 0 && unownedAsks.length === 0" class="empty-state">
                 <h4>Nothing needs you</h4>
                 <p class="hint">When a helper wants to do something sensitive, it will ask here first — and on Home, in your conversation with Stax.</p>
               </div>
