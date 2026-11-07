@@ -64,7 +64,7 @@ function websitesPage() {
               status: v.status === 'published' ? 'published' : 'draft',
               url: v.url || '',
               domain: v.domain || '',
-              domainState: v.domain_state || 'unattached',
+              domainState: (typeof v.domain_state === 'string' && v.domain_state) ? v.domain_state : 'unattached',
               ratelimits: (typeof v.ratelimits === 'string' && v.ratelimits) ? v.ratelimits : 'none',
               fileCount: Array.isArray(v.files) ? v.files.length : 0,
               updated: v.updated || v.created || ''
