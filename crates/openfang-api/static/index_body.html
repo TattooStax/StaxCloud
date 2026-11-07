@@ -6138,6 +6138,76 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       </div>
     </template>
 
+    <!-- Page: Websites (Studio module) -->
+    <template x-if="page === 'websites'">
+      <div x-data="websitesPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Websites</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading your websites...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load your websites</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <!-- My Sites -->
+          <div x-show="!loading && !loadError && tab === 'sites'">
+            <p class="text-sm text-dim" style="margin:2px 0 6px">Your websites. Preview any of them here as much as you like — previews are free. Publishing is what your plan counts.</p>
+            <p class="text-sm" style="margin:0 0 16px" x-show="plan" x-text="countLine"></p>
+            <p class="text-sm text-dim" style="margin:0 0 16px" x-show="!plan">Publishing plan is not set yet — ask Stax.</p>
+            <div x-show="sites.length === 0" class="empty-state">
+              <h4>No websites yet</h4>
+              <p class="hint">Ask Stax: &ldquo;Build me a website for the shop.&rdquo;</p>
+            </div>
+            <div class="card-grid">
+              <template x-for="s in sites" :key="s.slug">
+                <div class="card">
+                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                    <span class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="s.title"></span>
+                    <span class="badge" :class="s.status === 'published' ? 'badge-success' : 'badge-dim'" style="font-size:10px" x-text="stateWord(s)"></span>
+                  </div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-text="s.fileCount + (s.fileCount === 1 ? ' file' : ' files')"></div>
+                  <div x-show="s.status === 'published' && s.url" class="text-xs" style="margin-top:6px"><a :href="s.url" target="_blank" rel="noopener" style="color:var(--accent)" x-text="s.url"></a></div>
+                  <div x-show="refusalFor(s)" class="text-sm" style="margin-top:8px;color:var(--error)" x-text="refusalFor(s)"></div>
+                  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                    <button class="btn btn-ghost btn-sm" @click="showPreview(s)">Preview</button>
+                    <button class="btn btn-primary btn-sm" x-show="s.status !== 'published'" :disabled="busySlug === s.slug || !!pendingJob(s.slug)" @click="publishSite(s)">Publish</button>
+                    <button class="btn btn-ghost btn-sm" x-show="s.status === 'published'" :disabled="busySlug === s.slug || !!pendingJob(s.slug)" @click="publishSite(s)">Republish</button>
+                    <button class="btn btn-ghost btn-sm" x-show="s.status === 'published'" :disabled="busySlug === s.slug || !!pendingJob(s.slug)" @click="unpublishSite(s)">Unpublish</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Preview -->
+          <div x-show="!loading && !loadError && tab === 'preview'">
+            <div x-show="sites.length === 0" class="empty-state">
+              <h4>Nothing to preview</h4>
+              <p class="hint">Once a website exists, you can see it here.</p>
+            </div>
+            <div x-show="sites.length > 0">
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+                <template x-for="s in sites" :key="s.slug">
+                  <button class="stax-chip" :class="{ active: previewSlug === s.slug }" @click="previewSlug = s.slug; loadPreview()" x-text="s.title"></button>
+                </template>
+              </div>
+              <p class="text-xs text-dim" style="margin:0 0 10px">This is how the site looks. It is a preview inside the app — nothing here is on the internet.</p>
+              <div x-show="previewBusy" class="text-dim" style="padding:12px">Making the preview...</div>
+              <p class="text-sm" style="color:var(--error)" x-show="!previewBusy && previewNote" x-text="previewNote"></p>
+              <iframe x-show="!previewBusy && previewHtml" :srcdoc="previewHtml" sandbox="allow-scripts" title="Website preview" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- Page: Forms (R7 graft) -->
     <template x-if="page === 'forms'">
       <div x-data="formsPage" x-init="loadData()">
@@ -7396,7 +7466,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
   <!-- Dock: four tabs. Stax is the conversation's only dock home; the
        needs-you badge is the shell fixture after the docks. -->
-  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'sms' && page !== 'team' && page !== 'email' && page !== 'contacts' && page !== 'leads' && page !== 'approvals' && page !== 'canvas' && !inSystemCorner()" aria-label="Primary">
+  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'websites' && page !== 'sms' && page !== 'team' && page !== 'email' && page !== 'contacts' && page !== 'leads' && page !== 'approvals' && page !== 'canvas' && !inSystemCorner()" aria-label="Primary">
       <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" :aria-current="surf() === 'home' ? 'page' : null" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
         <svg class="stax-ic stax-ic--reaper" aria-hidden="true"><use href="#stax-reaper"/></svg>
         <span>Stax</span>
@@ -7475,6 +7545,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span>
+      <span>Preview</span>
+    </button>
+  </nav>
+
+  <!-- Websites module dock: the sites list and its in-app preview.
+       Done is the header exit, not a tab. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'websites'" aria-label="Websites module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.websitesTab === 'sites' }" @click="$store.app.websitesTab = 'sites'" aria-label="My Sites">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span>
+      <span>My Sites</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.websitesTab === 'preview' }" @click="$store.app.websitesTab = 'preview'" aria-label="Preview">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
       <span>Preview</span>
     </button>
   </nav>
@@ -7640,6 +7723,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
         <div class="sd-sec-rows" id="sd-sec-studio" x-show="open.studio">
           <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><span class="sd-ico stax-tile stax-tile--clipboard" aria-hidden="true"></span><span>Forms</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'library' }" :aria-current="page === 'library' ? 'page' : false" @click="navigate('library')"><span class="sd-ico stax-tile stax-tile--book" aria-hidden="true"></span><span>Library</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'websites' }" :aria-current="page === 'websites' ? 'page' : false" @click="navigate('websites')"><span class="sd-ico stax-tile stax-tile--frame-rose" aria-hidden="true"></span><span>Websites</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><span class="sd-ico stax-tile stax-tile--bubble" aria-hidden="true"></span><span>Contacts</span></button>
           <!-- Canvas: the design bench, its own app surface. -->
           <button class="sd-row" :class="{ 'is-here': page === 'canvas' }" :aria-current="page === 'canvas' ? 'page' : false" @click="navigate('canvas')"><span class="sd-ico stax-tile stax-tile--machine" aria-hidden="true"></span><span>Canvas</span></button>
