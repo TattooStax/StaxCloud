@@ -9,6 +9,7 @@ function approvalsPage() {
     approvals: [],
     jobs: [],
     heldBack: [],
+    unownedAsks: [],
     loading: true,
     loadError: '',
     refreshTimer: null,
@@ -290,6 +291,28 @@ function approvalsPage() {
         });
         this.heldBack = held;
       } catch(e) { this.heldBack = []; }
+      // Unowned asks (Q2-A honesty build): asks no seat can do,
+      // logged by Stax as standing records. Like held-back items
+      // they are NOT decisions, so they never join the badge or
+      // the pending count; unlike held-back items they leave only
+      // when a resolution is written into the record itself — an
+      // open record is listed on every load until then.
+      try {
+        var askMap = await this.kvList('ask/unowned');
+        var asks = [];
+        Object.keys(askMap).forEach(function(k) {
+          var v = this.kvParse(askMap[k]);
+          if (!v || typeof v !== 'object') return;
+          if (v.status && v.status !== 'open') return;
+          asks.push({ key: k, request: v.request || '',
+            reason: v.reason || '', seatTried: v.seat_tried || '',
+            ts: v.ts || '' });
+        }, this);
+        asks.sort(function(x, y) {
+          return new Date(x.ts || 0) - new Date(y.ts || 0);
+        });
+        this.unownedAsks = asks;
+      } catch(e) { this.unownedAsks = []; }
       try {
         var jd = await OpenFangAPI.get('/api/cron/jobs');
         this.jobs = jd.jobs || jd || [];
