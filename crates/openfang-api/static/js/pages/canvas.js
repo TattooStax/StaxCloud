@@ -681,6 +681,19 @@ function canvasPage() {
         // request id, so the seat could not act and asked the artist
         // for ids instead).
         parts.push('(design id ' + d.id + ', request id ' + d.request_id + ', version ' + (d.version || 1) + ' of ' + Math.max(this.cvVersions.length, 1) + ', revision ' + (d.revision || 0) + ', its state is ' + this.cvState(req).toLowerCase() + ')');
+        // Shading is planned against the locked structural
+        // outline, so the seat must see whether one exists before
+        // it can act: with the state named here it knows to set
+        // the outline first instead of queueing shading that can
+        // only error. When none is set, the line layer's id rides
+        // along — that is the layer the outline op marks.
+        if (d.outline_layer) {
+          parts.push('its structural outline is set (outline layer ' + d.outline_layer + ')');
+        } else {
+          var lineLayer = null;
+          (d.layers || []).forEach(function(l) { if (!lineLayer && (l.role === 'line' || l.name === 'line')) lineLayer = l; });
+          parts.push('it has no structural outline yet' + (lineLayer ? ' (its line layer is ' + lineLayer.id + ')' : ''));
+        }
         var showing = this.cvLayers.filter(function(l) { return l.visible; }).map(function(l) { return l.name; });
         if (showing.length) parts.push('layers showing: ' + showing.join(', '));
         var sel = this.cvSelLayers;
