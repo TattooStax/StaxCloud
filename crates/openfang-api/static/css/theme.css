@@ -19,7 +19,7 @@
   --text-secondary: #3f3c36;
   --text-dim: #55524b;
   --people-sub: #66625a;
-  --text-muted: #8a867c;
+  --text-muted: #6e6a60;
 
   /* Brand — Orange accent */
   --accent: #146e68;
@@ -52,6 +52,12 @@
   --agent-bg: #f4f2ec;
   --user-bg: #e6f2f0;
   --text-on-accent: #FFFFFF;
+  /* Ink on the dim companion fills (btn-primary:hover, chip.is-on): the dim
+     fills are dark in BOTH themes, so this ink stays light in both. */
+  --text-on-accent-dim: #FFFFFF;
+  --text-on-success: #FFFFFF;
+  --text-on-error: #FFFFFF;
+  --text-on-error-dim: #FFFFFF;
 
   /* Layout */
   --sidebar-width: 240px;
@@ -115,8 +121,14 @@
   --text-secondary: #cac5ba;
   --text-dim: #9a9aa0;
   --people-sub: #8f8c86;
-  --text-muted: #6f6f76;
-  --text-on-accent: #FFFFFF;
+  --text-muted: #8b8b93;
+  /* Dark accent is a light teal: it takes deep ink, not white. The dim
+     companions stay dark fills, so their inks stay light (see light block). */
+  --text-on-accent: #0a2e2a;
+  --text-on-accent-dim: #FFFFFF;
+  --text-on-success: #000000;
+  --text-on-error: #000000;
+  --text-on-error-dim: #FFFFFF;
   --accent: #5cbcae;
   --accent-light: #7fd1c5;
   --accent-dim: #146e68;
