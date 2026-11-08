@@ -135,6 +135,7 @@ document.addEventListener('alpine:init', function() {
     version: '0.1.0',
     agentCount: 0,
     pendingApprovalCount: 0,
+    pendingApprovals: [],
     lastPendingApprovalSignature: '',
     pendingAgent: null,
     focusMode: localStorage.getItem('openfang-focus') === 'true',
@@ -169,8 +170,28 @@ document.addEventListener('alpine:init', function() {
           OpenFangToast.warn('An agent is waiting for approval. Open Approvals to review.');
         }
         this.pendingApprovalCount = pending.length;
+        this.pendingApprovals = pending;
         this.lastPendingApprovalSignature = signature;
       } catch(e) { /* silent */ }
+    },
+
+    async approveApproval(id) {
+      try {
+        await OpenFangAPI.post('/api/approvals/' + id + '/approve', {});
+        OpenFangToast.success('Approved');
+        this.refreshApprovals();
+      } catch(e) { OpenFangToast.error(e.message); }
+    },
+
+    async rejectApproval(id) {
+      var self = this;
+      OpenFangToast.confirm('Reject Action', 'Are you sure you want to reject this action?', async function() {
+        try {
+          await OpenFangAPI.post('/api/approvals/' + id + '/reject', {});
+          OpenFangToast.success('Rejected');
+          self.refreshApprovals();
+        } catch(e) { OpenFangToast.error(e.message); }
+      });
     },
 
     async checkStatus() {
@@ -286,7 +307,9 @@ document.addEventListener('alpine:init', function() {
 // Main app component
 function app() {
   return {
-    page: 'agents',
+    page: 'overview',
+    surfaceOf: { overview: 'home', agents: 'channels', comms: 'channels', approvals: 'work', sessions: 'work', analytics: 'work', workflows: 'studio', scheduler: 'studio', hands: 'studio', skills: 'studio', channels: 'system', settings: 'system', logs: 'system', runtime: 'system', wizard: 'system' },
+    surfaceHome: { home: 'overview', channels: 'agents', work: 'approvals', studio: 'workflows', system: 'channels' },
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -382,6 +405,10 @@ function app() {
       this.page = p;
       window.location.hash = p;
       this.mobileMenuOpen = false;
+    },
+
+    goSurface(s) {
+      this.navigate(this.surfaceHome[s]);
     },
 
     setTheme(mode) {

@@ -335,3 +335,19 @@
 .app-layout.focus-mode .sidebar-overlay { display: none; }
 .app-layout.focus-mode .main-content { max-width: 100%; margin-left: 0; }
 .app-layout.focus-mode .mobile-menu-btn { display: none !important; }
+
+/* ── R1: StaxCloud dock shell ─────────────────────────── */
+.app-layout { flex-direction: column; }
+.sidebar, .sidebar-overlay { display: none !important; }
+.mobile-menu-btn { display: none !important; }
+.stax-dock { flex: none; display: flex; background: var(--bg-primary); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 60; }
+.stax-dock-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 6px 2px; background: none; border: none; color: var(--text-dim); font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; cursor: pointer; position: relative; }
+.stax-dock-btn svg { width: 22px; height: 22px; }
+.stax-dock-btn.active { color: var(--accent); }
+.stax-dock-badge { position: absolute; top: 5px; right: calc(50% - 21px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.stax-chips { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding: 8px 16px; overflow-x: auto; scrollbar-width: none; }
+.stax-chips::-webkit-scrollbar { display: none; }
+.stax-chips-row { display: flex; align-items: center; gap: 8px; }
+.stax-chips-title { font-size: 15px; font-weight: 700; margin-right: 6px; white-space: nowrap; }
+.stax-chip { flex: none; padding: 6px 13px; min-height: 34px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.stax-chip.active { background: rgba(20,110,104,.14); color: var(--accent); border-color: var(--accent); }
