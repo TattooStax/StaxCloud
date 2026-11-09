@@ -325,6 +325,17 @@ pub async fn build_router(
             "/api/templates/{name}",
             axum::routing::get(routes::get_template),
         )
+        // Studio export / import (auth required — not in the public list)
+        .route(
+            "/api/studio/export",
+            axum::routing::get(crate::studio::export_studio),
+        )
+        .route(
+            "/api/studio/import",
+            axum::routing::post(crate::studio::import_studio).layer(
+                axum::extract::DefaultBodyLimit::max(crate::studio::MAX_IMPORT_BYTES),
+            ),
+        )
         // Memory endpoints
         .route(
             "/api/memory/agents/{id}/kv",
@@ -818,6 +829,19 @@ pub async fn run_daemon(
 
     let kernel = Arc::new(kernel);
     kernel.set_self_handle();
+
+    // Uploads live under the data folder, not the OS temp folder (which is
+    // cleared on reboot on many systems). Carry over any files written to
+    // the old temp location before this build.
+    let upload_dir = openfang_types::uploads::init(&kernel.config.data_dir);
+    match openfang_types::uploads::migrate_legacy() {
+        Ok(0) => {}
+        Ok(n) => {
+            info!(count = n, dir = %upload_dir.display(), "Carried legacy uploads into the data folder")
+        }
+        Err(e) => tracing::warn!(error = %e, "Could not carry legacy uploads into the data folder"),
+    }
+
     kernel.start_background_agents();
 
     // Config file hot-reload watcher (polls every 30 seconds)

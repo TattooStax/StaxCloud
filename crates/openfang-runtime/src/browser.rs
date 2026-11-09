@@ -978,8 +978,8 @@ pub async fn tool_browser_screenshot(
     let mut image_urls: Vec<String> = Vec::new();
     if !b64.is_empty() {
         use base64::Engine;
-        let upload_dir = std::env::temp_dir().join("openfang_uploads");
-        let _ = std::fs::create_dir_all(&upload_dir);
+        let upload_dir = openfang_types::uploads::ensure_dir()
+            .unwrap_or_else(|_| openfang_types::uploads::dir());
         let file_id = uuid::Uuid::new_v4().to_string();
         if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(b64) {
             let path = upload_dir.join(&file_id);

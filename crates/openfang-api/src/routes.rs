@@ -256,7 +256,6 @@ pub fn resolve_attachments(
 ) -> Vec<openfang_types::message::ContentBlock> {
     use base64::Engine;
 
-    let upload_dir = std::env::temp_dir().join("openfang_uploads");
     let mut blocks = Vec::new();
 
     for att in attachments {
@@ -280,7 +279,7 @@ pub fn resolve_attachments(
             continue;
         }
 
-        let file_path = upload_dir.join(&att.file_id);
+        let file_path = openfang_types::uploads::resolve(&att.file_id);
         match std::fs::read(&file_path) {
             Ok(data) => {
                 let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
@@ -528,8 +527,8 @@ pub async fn get_agent_session(
                                     // Persist image to upload dir so it can be
                                     // served back when loading session history.
                                     let file_id = uuid::Uuid::new_v4().to_string();
-                                    let upload_dir = std::env::temp_dir().join("openfang_uploads");
-                                    let _ = std::fs::create_dir_all(&upload_dir);
+                                    let upload_dir = openfang_types::uploads::ensure_dir()
+                                        .unwrap_or_else(|_| openfang_types::uploads::dir());
                                     if let Ok(bytes) =
                                         base64::engine::general_purpose::STANDARD.decode(data)
                                     {
@@ -10666,14 +10665,16 @@ pub async fn upload_file(
 
     // Generate file ID and save
     let file_id = uuid::Uuid::new_v4().to_string();
-    let upload_dir = std::env::temp_dir().join("openfang_uploads");
-    if let Err(e) = std::fs::create_dir_all(&upload_dir) {
-        tracing::warn!("Failed to create upload dir: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Failed to create upload directory"})),
-        );
-    }
+    let upload_dir = match openfang_types::uploads::ensure_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("Failed to create upload dir: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Failed to create upload directory"})),
+            );
+        }
+    };
 
     let file_path = upload_dir.join(&file_id);
     if let Err(e) = std::fs::write(&file_path, &body) {
@@ -10748,7 +10749,7 @@ pub async fn serve_upload(Path(file_id): Path<String>) -> impl IntoResponse {
         );
     }
 
-    let file_path = std::env::temp_dir().join("openfang_uploads").join(&file_id);
+    let file_path = openfang_types::uploads::resolve(&file_id);
 
     // Look up metadata from registry; fall back to disk probe for generated images
     // (image_generate saves files without registering in UPLOAD_REGISTRY).

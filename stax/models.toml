@@ -1,0 +1,57 @@
+# StaxCloud model pins — one place for which model does which job.
+#
+# Each role names the hands it drives. `stax/apply-models.py` writes these
+# values into the hands' HAND.toml files (the sources in stax/hands/, and with
+# --installed the live copies in ~/.openfang/hands/). Swapping a model is an
+# edit here plus one run of that script — no hand files edited by hand.
+#
+# "default" means the daemon's default model from config.toml.
+#
+# These are the values the hands ran with before this file existed, except
+# decider and memory, whose placeholder ("PART2-WINNER-SET-AT-ACTIVATION")
+# could not activate; they now use the default until Strike 2's benchmark
+# picks real winners. Candidates per role are listed in the ship plan.
+
+[roles.lead]
+hands = ["stax"]
+provider = "default"
+model = "default"
+
+[roles.workers]
+# background sweeps: form intake, text threads, boards
+hands = ["forms", "sms", "surface-builder"]
+provider = "default"
+model = "default"
+
+[roles.router]
+hands = ["decider"]
+provider = "default"
+model = "default"
+
+[roles.memory]
+hands = ["memory"]
+provider = "default"
+model = "default"
+
+[roles.deep_work]
+hands = ["deep-work"]
+provider = "openrouter"
+model = "moonshotai/kimi-k2-0905"
+
+[roles.vision]
+# reads reference photos and the artist's portfolio
+hands = ["designer"]
+provider = "default"
+model = "google/gemini-2.5-flash"
+
+[roles.upstream]
+# OpenFang's own hands, kept on the default
+hands = ["lead", "researcher"]
+provider = "default"
+model = "default"
+
+[image]
+# Used by the designer sidecar (it reads DESIGNER_GEN_MODEL). apply-models.py
+# prints the line to set; it never edits the sidecar's env file, which also
+# holds the API key.
+model = "google/gemini-2.5-flash-image"

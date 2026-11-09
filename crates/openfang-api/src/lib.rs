@@ -41,6 +41,7 @@ pub mod server;
 pub mod session_auth;
 pub mod stream_chunker;
 pub mod stream_dedup;
+pub mod studio;
 pub mod types;
 pub mod webchat;
 pub mod ws;

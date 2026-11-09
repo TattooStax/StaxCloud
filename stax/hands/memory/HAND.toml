@@ -9,12 +9,12 @@ tools = ["memory_store", "memory_recall", "schedule_list"]
 name = "memory"
 description = "Proposes durable customer facts from conversation records, as approval-gated candidates with verbatim quotes"
 module = "builtin:chat"
-provider = "openrouter"
+provider = "default"
 # MODEL: the same measured winner the Decider Shadow's Part 2 check selects
 # (one measurement serves both seats) — set at activation per
 # ACTIVATION-RUNBOOK.md step 1. Do not install this hand while the
 # placeholder below is still in place.
-model = "PART2-WINNER-SET-AT-ACTIVATION"
+model = "default"
 max_tokens = 4096
 temperature = 0.2
 max_iterations = 20

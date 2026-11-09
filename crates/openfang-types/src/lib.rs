@@ -21,6 +21,7 @@ pub mod serde_compat;
 pub mod taint;
 pub mod tool;
 pub mod tool_compat;
+pub mod uploads;
 pub mod webhook;
 
 /// Safely truncate a string to at most `max_bytes`, never splitting a UTF-8 char.

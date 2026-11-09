@@ -9,13 +9,13 @@ tools = ["memory_store", "memory_recall", "schedule_list"]
 name = "decider"
 description = "Shadow decision-maker for inbound texts — typed decisions stored as records, no actions taken"
 module = "builtin:chat"
-provider = "openrouter"
+provider = "default"
 # MODEL: set from the model measurement (Decider Shadow brief, Part 2) at
 # activation — the cheapest candidate whose p95 total latency over 20 real
 # decision prompts is under 5 s. Do not install this hand while the
 # placeholder below is still in place; ACTIVATION-RUNBOOK.md step 1
 # replaces it in the master and the box copy together.
-model = "PART2-WINNER-SET-AT-ACTIVATION"
+model = "default"
 max_tokens = 4096
 temperature = 0.1
 max_iterations = 15
