@@ -52,6 +52,65 @@ pub struct AuthState {
     /// Set from `OPENFANG_ALLOW_NO_AUTH=1` to permit running without an api_key
     /// on a non-loopback bind. Off by default so empty keys fail closed.
     pub allow_no_auth: bool,
+    /// Set from `OPENFANG_LEGACY_PUBLIC_READS=1` to restore upstream's
+    /// unauthenticated dashboard reads (approvals, sessions, logs, config…).
+    /// Off by default: on an internet-facing box those reads expose
+    /// customer data to anyone with the address.
+    pub legacy_public_reads: bool,
+}
+
+/// Paths anyone may reach without signing in: the login page and its
+/// assets, the login endpoints themselves, liveness, A2A discovery, and
+/// uploaded files (served by unguessable UUID).
+pub fn is_always_public(path: &str, is_get: bool) -> bool {
+    path == "/"
+        || path == "/logo.png"
+        || path == "/favicon.ico"
+        || path == "/manifest.json"
+        || path == "/sw.js"
+        || (path == "/.well-known/agent.json" && is_get)
+        || (path.starts_with("/a2a/") && is_get)
+        || path == "/api/health"
+        || path == "/api/version"
+        || (path.starts_with("/api/uploads/") && is_get)
+        || path.starts_with("/api/providers/github-copilot/oauth/")
+        || path == "/api/auth/login"
+        || path == "/api/auth/logout"
+        || (path == "/api/auth/check" && is_get)
+}
+
+/// Upstream's unauthenticated dashboard reads, so its SPA could render
+/// before a key was entered. Only public when `legacy_public_reads` is on.
+pub fn is_legacy_dashboard_read(path: &str, is_get: bool) -> bool {
+    path == "/api/health/detail"
+        || path == "/api/status"
+        || (path == "/api/agents" && is_get)
+        || (path == "/api/profiles" && is_get)
+        || (path == "/api/config" && is_get)
+        || (path == "/api/config/schema" && is_get)
+        || (path == "/api/models" && is_get)
+        || (path == "/api/models/aliases" && is_get)
+        || (path == "/api/providers" && is_get)
+        || (path == "/api/budget" && is_get)
+        || (path == "/api/budget/agents" && is_get)
+        || (path.starts_with("/api/budget/agents/") && is_get)
+        || (path == "/api/network/status" && is_get)
+        || (path == "/api/a2a/agents" && is_get)
+        || (path == "/api/approvals" && is_get)
+        || (path.starts_with("/api/approvals/") && is_get)
+        || (path == "/api/channels" && is_get)
+        || (path == "/api/hands" && is_get)
+        || (path == "/api/hands/active" && is_get)
+        || (path.starts_with("/api/hands/") && is_get)
+        || (path == "/api/skills" && is_get)
+        || (path.starts_with("/api/skills/") && path.ends_with("/config") && is_get)
+        || (path == "/api/sessions" && is_get)
+        || (path == "/api/integrations" && is_get)
+        || (path == "/api/integrations/available" && is_get)
+        || (path == "/api/integrations/health" && is_get)
+        || (path == "/api/workflows" && is_get)
+        || path == "/api/logs/stream"
+        || (path.starts_with("/api/cron/") && is_get)
 }
 
 /// The authenticated principal class of a request, stamped by the
@@ -109,55 +168,14 @@ pub async fn auth(
         return next.run(request).await;
     }
 
-    // Public endpoints that don't require auth (dashboard needs these).
-    // SECURITY: /api/agents is GET-only (listing). POST (spawn) requires auth.
-    // SECURITY: Public endpoints are GET-only unless explicitly noted.
-    // POST/PUT/DELETE to any endpoint ALWAYS requires auth to prevent
-    // unauthenticated writes (cron job creation, skill install, etc.).
+    // Public endpoints that don't require auth. POST/PUT/DELETE to any
+    // other endpoint ALWAYS requires auth. Upstream also left most dashboard
+    // reads open (approvals, sessions, logs, config…); on a box reachable
+    // from the internet that publishes customer data, so those are behind
+    // sign-in unless OPENFANG_LEGACY_PUBLIC_READS=1.
     let is_get = method == axum::http::Method::GET;
-    let is_public = path == "/"
-        || path == "/logo.png"
-        || path == "/favicon.ico"
-        || (path == "/.well-known/agent.json" && is_get)
-        || (path.starts_with("/a2a/") && is_get)
-        || path == "/api/health"
-        || path == "/api/health/detail"
-        || path == "/api/status"
-        || path == "/api/version"
-        || (path == "/api/agents" && is_get)
-        || (path == "/api/profiles" && is_get)
-        || (path == "/api/config" && is_get)
-        || (path == "/api/config/schema" && is_get)
-        || (path.starts_with("/api/uploads/") && is_get)
-        // Dashboard read endpoints — allow unauthenticated so the SPA can
-        // render before the user enters their API key.
-        || (path == "/api/models" && is_get)
-        || (path == "/api/models/aliases" && is_get)
-        || (path == "/api/providers" && is_get)
-        || (path == "/api/budget" && is_get)
-        || (path == "/api/budget/agents" && is_get)
-        || (path.starts_with("/api/budget/agents/") && is_get)
-        || (path == "/api/network/status" && is_get)
-        || (path == "/api/a2a/agents" && is_get)
-        || (path == "/api/approvals" && is_get)
-        || (path.starts_with("/api/approvals/") && is_get)
-        || (path == "/api/channels" && is_get)
-        || (path == "/api/hands" && is_get)
-        || (path == "/api/hands/active" && is_get)
-        || (path.starts_with("/api/hands/") && is_get)
-        || (path == "/api/skills" && is_get)
-        || (path.starts_with("/api/skills/") && path.ends_with("/config") && is_get)
-        || (path == "/api/sessions" && is_get)
-        || (path == "/api/integrations" && is_get)
-        || (path == "/api/integrations/available" && is_get)
-        || (path == "/api/integrations/health" && is_get)
-        || (path == "/api/workflows" && is_get)
-        || path == "/api/logs/stream"  // SSE stream, read-only
-        || (path.starts_with("/api/cron/") && is_get)
-        || path.starts_with("/api/providers/github-copilot/oauth/")
-        || path == "/api/auth/login"
-        || path == "/api/auth/logout"
-        || (path == "/api/auth/check" && is_get);
+    let is_public = is_always_public(path, is_get)
+        || (auth_state.legacy_public_reads && is_legacy_dashboard_read(path, is_get));
 
     if is_public {
         request.extensions_mut().insert(AuthClass::System);
@@ -327,6 +345,7 @@ mod tests {
             auth_enabled: false,
             session_secret: String::new(),
             allow_no_auth: false,
+            legacy_public_reads: false,
         }
     }
 
@@ -336,6 +355,7 @@ mod tests {
             auth_enabled: false,
             session_secret: key.to_string(),
             allow_no_auth: false,
+            legacy_public_reads: false,
         }
     }
 
@@ -358,6 +378,82 @@ mod tests {
             .unwrap();
         req.extensions_mut().insert(ConnectInfo(addr));
         req
+    }
+
+    fn get_from(ip: &str, path: &str) -> Request<Body> {
+        let addr: SocketAddr = format!("{ip}:40000").parse().unwrap();
+        let mut req = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(addr));
+        req
+    }
+
+    fn dashboard_router(state: AuthState) -> Router {
+        let mut r = Router::new();
+        for p in [
+            "/api/approvals",
+            "/api/sessions",
+            "/api/logs/stream",
+            "/api/budget",
+            "/api/config",
+            "/api/health",
+            "/api/auth/check",
+        ] {
+            r = r.route(p, get(ok_handler));
+        }
+        r.route_layer(axum::middleware::from_fn_with_state(state, auth))
+    }
+
+    #[tokio::test]
+    async fn customer_data_reads_need_sign_in() {
+        for path in [
+            "/api/approvals",
+            "/api/sessions",
+            "/api/logs/stream",
+            "/api/budget",
+            "/api/config",
+        ] {
+            let app = dashboard_router(auth_state_with_key("k"));
+            let resp = app.oneshot(get_from("203.0.113.5", path)).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn login_and_health_stay_public() {
+        for path in ["/api/health", "/api/auth/check"] {
+            let app = dashboard_router(auth_state_with_key("k"));
+            let resp = app.oneshot(get_from("203.0.113.5", path)).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_switch_restores_dashboard_reads() {
+        let mut s = auth_state_with_key("k");
+        s.legacy_public_reads = true;
+        let app = dashboard_router(s);
+        let resp = app
+            .oneshot(get_from("203.0.113.5", "/api/approvals"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn public_lists_do_not_overlap_on_customer_data() {
+        for p in [
+            "/api/approvals",
+            "/api/sessions",
+            "/api/logs/stream",
+            "/api/config",
+        ] {
+            assert!(!is_always_public(p, true), "{p}");
+            assert!(is_legacy_dashboard_read(p, true), "{p}");
+        }
     }
 
     #[tokio::test]

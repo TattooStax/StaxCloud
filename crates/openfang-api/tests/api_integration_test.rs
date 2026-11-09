@@ -939,6 +939,7 @@ async fn start_test_server_with_auth(api_key: &str) -> TestServer {
             String::new()
         },
         allow_no_auth: true,
+        legacy_public_reads: false,
     };
 
     let app = Router::new()

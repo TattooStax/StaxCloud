@@ -119,6 +119,14 @@ pub async fn build_router(
 
     // Trim whitespace so `api_key = ""` or `api_key = "  "` both disable auth.
     let api_key = state.kernel.config.api_key.trim().to_string();
+    let legacy_public_reads = std::env::var("OPENFANG_LEGACY_PUBLIC_READS")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        .unwrap_or(false);
+    if legacy_public_reads {
+        tracing::warn!(
+            "OPENFANG_LEGACY_PUBLIC_READS=1: approvals, sessions, logs and config are readable without signing in"
+        );
+    }
     let allow_no_auth = std::env::var("OPENFANG_ALLOW_NO_AUTH")
         .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "on"))
         .unwrap_or(false);
@@ -157,6 +165,7 @@ pub async fn build_router(
             &state.kernel.config.data_dir,
         ),
         allow_no_auth,
+        legacy_public_reads,
     };
     let gcra_limiter = rate_limiter::create_rate_limiter();
 

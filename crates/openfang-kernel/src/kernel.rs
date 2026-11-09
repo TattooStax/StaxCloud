@@ -7425,6 +7425,16 @@ impl KernelHandle for OpenFangKernel {
             .map_err(|e| format!("Memory recall failed: {e}"))
     }
 
+    fn memory_list(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
+        let agent_id = shared_memory_agent_id();
+        let mut pairs = self
+            .memory
+            .list_kv(agent_id)
+            .map_err(|e| format!("Memory list failed: {e}"))?;
+        pairs.retain(|(k, _)| !k.starts_with("__openfang_") && k.starts_with(prefix));
+        Ok(pairs)
+    }
+
     fn find_agents(&self, query: &str) -> Vec<kernel_handle::AgentInfo> {
         let q = query.to_lowercase();
         self.registry

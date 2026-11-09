@@ -305,6 +305,7 @@ pub async fn execute_tool(
         // Shared memory tools
         "memory_store" => tool_memory_store(input, kernel),
         "memory_recall" => tool_memory_recall(input, kernel),
+        "memory_list" => tool_memory_list(input, kernel),
 
         // Collaboration tools
         "agent_find" => tool_agent_find(input, kernel),
@@ -752,6 +753,18 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "key": { "type": "string", "description": "The storage key to recall" }
                 },
                 "required": ["key"]
+            }),
+        },
+        ToolDefinition {
+            name: "memory_list".to_string(),
+            description: "Find records in shared memory: lists keys starting with a prefix (e.g. 'contact/', 'sms/', 'formsub/'), optionally only those whose key or content contains some words, each with a short preview. Use it to find a record when you don't know its exact key, then memory_recall that key for the full record. Never guess a key.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "prefix": { "type": "string", "description": "Key prefix to list, e.g. 'contact/' (empty = every record)" },
+                    "contains": { "type": "string", "description": "Only records whose key or content contains this text (case-insensitive), e.g. a name or phone number" },
+                    "limit": { "type": "integer", "description": "Most records to show (default 30, max 200)" }
+                }
             }),
         },
         // --- Collaboration tools ---
@@ -1882,6 +1895,83 @@ fn tool_memory_store(
     let value = input.get("value").ok_or("Missing 'value' parameter")?;
     kh.memory_store(key, value.clone())?;
     Ok(format!("Stored value under key '{key}'."))
+}
+
+/// Longest string kept whole in a `memory_list` preview; longer strings
+/// (embedded images, file bundles) are replaced by a size note.
+const MEMORY_LIST_LONG_STRING: usize = 160;
+/// Characters of preview shown per record.
+const MEMORY_LIST_PREVIEW: usize = 240;
+
+/// Copy of `v` with long strings replaced by "<N chars>".
+fn shrink_long_strings(v: &serde_json::Value) -> serde_json::Value {
+    match v {
+        serde_json::Value::String(s) if s.chars().count() > MEMORY_LIST_LONG_STRING => {
+            serde_json::Value::String(format!("<{} chars>", s.chars().count()))
+        }
+        serde_json::Value::Array(a) => {
+            serde_json::Value::Array(a.iter().map(shrink_long_strings).collect())
+        }
+        serde_json::Value::Object(o) => serde_json::Value::Object(
+            o.iter()
+                .map(|(k, v)| (k.clone(), shrink_long_strings(v)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// One-line preview of a record for `memory_list`.
+fn memory_list_preview(v: &serde_json::Value) -> String {
+    let text = shrink_long_strings(v).to_string();
+    let mut out: String = text.chars().take(MEMORY_LIST_PREVIEW).collect();
+    if text.chars().count() > MEMORY_LIST_PREVIEW {
+        out.push('…');
+    }
+    out
+}
+
+fn tool_memory_list(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+    let prefix = input["prefix"].as_str().unwrap_or("");
+    let contains = input["contains"]
+        .as_str()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let limit = input["limit"].as_u64().unwrap_or(30).clamp(1, 200) as usize;
+
+    let mut pairs = kh.memory_list(prefix)?;
+    if let Some(ref needle) = contains {
+        pairs.retain(|(k, v)| {
+            k.to_lowercase().contains(needle) || v.to_string().to_lowercase().contains(needle)
+        });
+    }
+    let total = pairs.len();
+    let scope = match (&contains, prefix.is_empty()) {
+        (Some(n), true) => format!("containing '{n}'"),
+        (Some(n), false) => format!("under '{prefix}' containing '{n}'"),
+        (None, true) => "in shared memory".to_string(),
+        (None, false) => format!("under '{prefix}'"),
+    };
+    if total == 0 {
+        return Ok(format!("No records {scope}."));
+    }
+    let mut out = format!(
+        "{total} record{} {scope}{}. Previews are shortened — memory_recall a key for the full record.\n",
+        if total == 1 { "" } else { "s" },
+        if total > limit {
+            format!(" (showing the first {limit})")
+        } else {
+            String::new()
+        }
+    );
+    for (k, v) in pairs.iter().take(limit) {
+        out.push_str(&format!("- {k}: {}\n", memory_list_preview(v)));
+    }
+    Ok(out)
 }
 
 fn tool_memory_recall(
@@ -4779,6 +4869,80 @@ mod tests {
         assert!(out.chars().count() <= 128);
     }
 
+    fn records_kernel() -> Arc<dyn KernelHandle> {
+        Arc::new(FakeKernelHandle::new().with_records(vec![
+            (
+                "contact/7015550101",
+                serde_json::json!({"name": "Jane Ink", "phone": "+17015550101"}),
+            ),
+            (
+                "contact/sam@example.com",
+                serde_json::json!({"name": "Sam Rivera"}),
+            ),
+            (
+                "sms/7015550101",
+                serde_json::json!({"messages": [{"body": "A small rose on my wrist"}]}),
+            ),
+            (
+                "designreq/1",
+                serde_json::json!({"preview": "x".repeat(5000), "title": "rose"}),
+            ),
+        ]))
+    }
+
+    #[test]
+    fn memory_list_by_prefix_and_contains() {
+        let k = records_kernel();
+        let out = tool_memory_list(&serde_json::json!({"prefix": "contact/"}), Some(&k)).unwrap();
+        assert!(out.starts_with("2 records under 'contact/'"), "{out}");
+        assert!(out.contains("contact/7015550101") && out.contains("Sam Rivera"));
+
+        let out = tool_memory_list(&serde_json::json!({"contains": "ROSE"}), Some(&k)).unwrap();
+        assert!(
+            out.contains("sms/7015550101") && out.contains("designreq/1"),
+            "{out}"
+        );
+        assert!(!out.contains("contact/"), "{out}");
+
+        let out = tool_memory_list(
+            &serde_json::json!({"prefix": "contact/", "contains": "nobody"}),
+            Some(&k),
+        )
+        .unwrap();
+        assert_eq!(out, "No records under 'contact/' containing 'nobody'.");
+    }
+
+    #[test]
+    fn memory_list_shrinks_embedded_payloads_and_honours_limit() {
+        let k = records_kernel();
+        let out = tool_memory_list(&serde_json::json!({"prefix": "designreq/"}), Some(&k)).unwrap();
+        assert!(out.contains("<5000 chars>"), "{out}");
+        assert!(
+            out.len() < 600,
+            "preview must stay short: {} bytes",
+            out.len()
+        );
+
+        let out = tool_memory_list(&serde_json::json!({"limit": 1}), Some(&k)).unwrap();
+        assert!(
+            out.starts_with("4 records in shared memory (showing the first 1)"),
+            "{out}"
+        );
+        assert_eq!(out.matches("\n- ").count(), 1, "{out}");
+    }
+
+    #[test]
+    fn memory_list_is_a_registered_tool() {
+        let names: Vec<String> = builtin_tool_definitions()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(names.iter().any(|n| n == "memory_list"));
+        assert!(openfang_types::tool_compat::is_known_openfang_tool(
+            "memory_list"
+        ));
+    }
+
     // Minimal in-memory KernelHandle used to verify schedule_* tool wiring.
     // Records every cron_* call so tests can assert what the tool pushed into
     // the kernel, without booting a real OpenFangKernel.
@@ -4786,6 +4950,7 @@ mod tests {
         created: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
         cancelled: std::sync::Mutex<Vec<String>>,
         jobs: std::sync::Mutex<Vec<serde_json::Value>>,
+        records: Vec<(String, serde_json::Value)>,
     }
 
     impl FakeKernelHandle {
@@ -4794,7 +4959,16 @@ mod tests {
                 created: std::sync::Mutex::new(Vec::new()),
                 cancelled: std::sync::Mutex::new(Vec::new()),
                 jobs: std::sync::Mutex::new(Vec::new()),
+                records: Vec::new(),
             }
+        }
+
+        fn with_records(mut self, records: Vec<(&str, serde_json::Value)>) -> Self {
+            self.records = records
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
+            self
         }
 
         fn with_job(self, job: serde_json::Value) -> Self {
@@ -4826,6 +5000,16 @@ mod tests {
         }
         fn memory_recall(&self, _key: &str) -> Result<Option<serde_json::Value>, String> {
             Ok(None)
+        }
+        fn memory_list(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
+            let mut out: Vec<_> = self
+                .records
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix))
+                .cloned()
+                .collect();
+            out.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(out)
         }
         fn find_agents(&self, _query: &str) -> Vec<crate::kernel_handle::AgentInfo> {
             vec![]

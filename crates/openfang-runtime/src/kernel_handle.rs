@@ -58,6 +58,13 @@ pub trait KernelHandle: Send + Sync {
     /// Recall a value from shared memory.
     fn memory_recall(&self, key: &str) -> Result<Option<serde_json::Value>, String>;
 
+    /// List shared-memory records whose key starts with `prefix` (empty =
+    /// all), sorted by key. Kernel bookkeeping keys are never included.
+    fn memory_list(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
+        let _ = prefix;
+        Err("Memory listing not available".to_string())
+    }
+
     /// Find agents by query (matches on name substring, tag, or tool name; case-insensitive).
     fn find_agents(&self, query: &str) -> Vec<AgentInfo>;
 

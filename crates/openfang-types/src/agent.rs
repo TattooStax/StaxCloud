@@ -208,6 +208,7 @@ impl AgentMode {
                     "file_read",
                     "file_list",
                     "memory_recall",
+                    "memory_list",
                     "web_fetch",
                     "web_search",
                     "agent_list",

@@ -67,6 +67,18 @@ TOOL_DEFS = {
             "value": {"type": "string", "description": "The value to store (JSON-encode objects/arrays, or pass a plain string)"}},
             "required": ["key", "value"]},
     },
+    "memory_list": {
+        "description": "Find records in shared memory: lists keys starting with a prefix (e.g. 'contact/', 'sms/', 'formsub/'), optionally only those whose key or content contains some words, each with a short preview. Use it to find a record when you don't know its exact key, then memory_recall that key for the full record. Never guess a key.",
+        "parameters": {"type": "object", "properties": {
+            "prefix": {"type": "string", "description": "Key prefix to list, e.g. 'contact/' (empty = every record)"},
+            "contains": {"type": "string", "description": "Only records whose key or content contains this text (case-insensitive), e.g. a name or phone number"},
+            "limit": {"type": "integer", "description": "Most records to show (default 30, max 200)"}}},
+    },
+    "web_fetch": {
+        "description": "Fetch a web page and return its readable text.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "The URL to fetch"}}, "required": ["url"]},
+    },
     "agent_send": {
         "description": "Send a message to another agent and receive their response. Accepts UUID or agent name. Use agent_find first to discover agents.",
         "parameters": {"type": "object", "properties": {
@@ -127,6 +139,19 @@ class FakeStore:
                 val = raw
             self.writes[key] = val
             return f"Stored value under key '{key}'."
+        if name == "memory_list":
+            prefix = str(args.get("prefix") or "")
+            needle = str(args.get("contains") or "").strip().lower()
+            merged = {**self.records, **self.writes}
+            hits = sorted((k, v) for k, v in merged.items() if k.startswith(prefix)
+                          and (not needle or needle in k.lower() or needle in json.dumps(v).lower()))
+            if not hits:
+                return "No records found."
+            return f"{len(hits)} records. Previews are shortened — memory_recall a key for the full record.\n" + \
+                "\n".join(f"- {k}: {json.dumps(v)[:240]}" for k, v in hits[:30])
+        if name == "web_fetch":
+            url = str(args.get("url", ""))
+            return self.search.get(url, f"Fetched {url}: (no readable content in this test)")
         if name == "agent_list":
             return json.dumps([{"name": n, "state": "Running"} for n in self.agents], indent=2)
         if name == "agent_send":
