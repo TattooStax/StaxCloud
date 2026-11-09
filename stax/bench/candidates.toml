@@ -1,0 +1,80 @@
+# Benchmark candidates, per role. Model ids are OpenRouter slugs, checked
+# against OpenRouter's live catalog on 2026-11-09 (newest version in each family).
+#
+# variants: "any"  = OpenRouter's normal routing (often the cheapest fp4 build)
+#           "full" = full-precision providers only (bf16 / fp16 / fp8)
+# pin:      optional provider order, e.g. pin = ["DeepInfra"] (no fallbacks)
+#
+# The cheapest listed price is usually an fp4 build; fp4 can hurt tool calling,
+# so models with cheap fp4 endpoints are run both ways.
+
+traffic_note = "small shop, 1-2 artists"
+
+# Monthly volume per role for the cost estimate (one unit = one case-sized job).
+# Small shop guess; a large studio is roughly 4x. Replace with real numbers from
+# GET /api/usage/agents once the shop has run on the new pins for a few weeks.
+[traffic]
+router = 900      # every inbound text/form gets a decision
+driver = 600      # owner chats + reply drafts
+memory = 300      # fact extraction after conversations
+deep_work = 60    # Scout research, audits, long writing
+vision = 40       # portfolio photos read (first boot is a one-time burst)
+image = 30        # designs generated
+
+[roles.router]
+candidates = [
+  { id = "nvidia/nemotron-3.5-lightning", variants = ["any", "full"] },
+  { id = "liquid/lfm-3-1.7b" },
+  { id = "qwen/qwen3.7-flash" },
+  { id = "z-ai/glm-5.3-flash", variants = ["any", "full"] },
+]
+
+[roles.driver]
+candidates = [
+  { id = "z-ai/glm-5.3-flash", variants = ["any", "full"] },
+  { id = "google/gemma-4-26b-a4b-it", variants = ["any", "full"] },
+  { id = "minimax/minimax-m3.1-flash" },
+  { id = "qwen/qwen3.8-flash" },
+  { id = "deepseek/deepseek-v4.1-flash-1017", variants = ["any", "full"] },
+  { id = "google/gemma-4-31b-it", variants = ["full"] },
+  { id = "nvidia/nemotron-3.5-super-vl", variants = ["full"] },
+]
+
+[roles.memory]
+candidates = [
+  { id = "z-ai/glm-5.3-flash", variants = ["full"] },
+  { id = "google/gemma-4-26b-a4b-it", variants = ["full"] },
+  { id = "minimax/minimax-m3.1-flash" },
+  { id = "qwen/qwen3.7-flash" },
+]
+
+[roles.deep_work]
+candidates = [
+  { id = "minimax/minimax-m3.1-flash" },
+  { id = "qwen/qwen3.8-flash" },
+  { id = "google/gemini-3.1-flash-lite" },
+  { id = "z-ai/glm-5.3-flash", variants = ["full"] },
+  { id = "moonshotai/kimi-k2-0905" },   # what Deep Work runs on today (baseline)
+]
+
+[roles.vision]
+# Only runs when --images points at a folder of portfolio photos.
+candidates = [
+  { id = "nvidia/nemotron-3.5-super-vl", variants = ["full"] },
+  { id = "google/gemma-4-31b-it", variants = ["full"] },
+  { id = "z-ai/glm-5.3-flash", variants = ["full"] },
+  { id = "qwen/qwen3.8-flash" },
+  { id = "google/gemini-2.5-flash" },   # what the designer reads with today (baseline)
+]
+
+[roles.image]
+candidates = [
+  { id = "openai/gpt-image-2" },
+  { id = "openai/gpt-image-2.6-flare" },
+  { id = "black-forest-labs/flux-3-image" },
+  { id = "black-forest-labs/flux-3-image-klein" },
+  { id = "bytedance-seed/seedream-5-0-flash" },
+  { id = "qwen/qwen-image-2.1-turbo" },
+  { id = "google/gemini-3.1-flash-lite-image" },
+  { id = "google/gemini-2.5-flash-image" },  # what Canvas generates with today (baseline)
+]

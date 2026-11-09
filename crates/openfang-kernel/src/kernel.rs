@@ -161,6 +161,9 @@ pub struct OpenFangKernel {
     /// Channel adapters registered at bridge startup (for proactive `channel_send` tool).
     pub channel_adapters:
         dashmap::DashMap<String, Arc<dyn openfang_channels::types::ChannelAdapter>>,
+    /// The spending budget enforced before every LLM call. Starts from
+    /// `config.budget`; `PUT /api/budget` updates it at runtime.
+    pub budget: std::sync::RwLock<openfang_types::config::BudgetConfig>,
     /// Hot-reloadable default model override (set via config hot-reload, read at agent spawn).
     pub default_model_override:
         std::sync::RwLock<Option<openfang_types::config::DefaultModelConfig>>,
@@ -1191,6 +1194,7 @@ impl OpenFangKernel {
         let initial_broadcast = config.broadcast.clone();
         let auto_reply_engine = crate::auto_reply::AutoReplyEngine::new(config.auto_reply.clone());
 
+        let initial_budget = config.budget.clone();
         let kernel = Self {
             config,
             registry: AgentRegistry::new(),
@@ -1239,6 +1243,7 @@ impl OpenFangKernel {
             booted_at: std::time::Instant::now(),
             whatsapp_gateway_pid: Arc::new(std::sync::Mutex::new(None)),
             channel_adapters: dashmap::DashMap::new(),
+            budget: std::sync::RwLock::new(initial_budget),
             default_model_override: std::sync::RwLock::new(None),
             fallback_providers_override: std::sync::RwLock::new(None),
             agent_msg_locks: dashmap::DashMap::new(),
@@ -2163,16 +2168,17 @@ impl OpenFangKernel {
             by_messages || by_tokens || by_quota
         };
 
-        let driver = self.resolve_driver(&entry.manifest)?;
+        let mut manifest = entry.manifest.clone();
+        self.apply_budget_policy(&mut manifest)?;
+        let driver = self.resolve_driver(&manifest)?;
 
         // Look up model's actual context window from the catalog
         let ctx_window = self.model_catalog.read().ok().and_then(|cat| {
-            cat.find_model(&entry.manifest.model.model)
+            cat.find_model(&manifest.model.model)
                 .map(|m| m.context_window as usize)
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<StreamEvent>(64);
-        let mut manifest = entry.manifest.clone();
         let content_blocks = self.gate_images(&manifest, content_blocks);
 
         // Lazy backfill: create state_dir and workspace for existing agents
@@ -3001,6 +3007,7 @@ impl OpenFangKernel {
             }
         }
 
+        self.apply_budget_policy(&mut manifest)?;
         let driver = self.resolve_driver(&manifest)?;
         let content_blocks = self.gate_images(&manifest, content_blocks);
 
@@ -5649,6 +5656,81 @@ impl OpenFangKernel {
         None
     }
 
+    /// The budget currently enforced (runtime value, not the boot config).
+    pub fn current_budget(&self) -> openfang_types::config::BudgetConfig {
+        self.budget
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Replace the enforced budget (called by `PUT /api/budget`).
+    pub fn set_budget(&self, budget: openfang_types::config::BudgetConfig) {
+        *self.budget.write().unwrap_or_else(|e| e.into_inner()) = budget;
+    }
+
+    /// Budget policy for one LLM call, applied before the driver is chosen.
+    ///
+    /// - A global limit (hourly, daily, monthly) that is fully spent refuses
+    ///   the call with a plain QuotaExceeded error.
+    /// - Once spend passes the saver threshold of any limit and a saver model
+    ///   is set, the call runs on the saver model instead.
+    ///
+    /// Returns the saver model's name when it was swapped in.
+    fn apply_budget_policy(&self, manifest: &mut AgentManifest) -> KernelResult<Option<String>> {
+        let budget = self.current_budget();
+        self.metering
+            .check_global_budget(&budget)
+            .map_err(KernelError::OpenFang)?;
+
+        let Some(threshold) = budget.saver_threshold() else {
+            return Ok(None);
+        };
+        let status = self.metering.budget_status(&budget);
+        let spent = status
+            .hourly_pct
+            .max(status.daily_pct)
+            .max(status.monthly_pct);
+        if spent < threshold {
+            return Ok(None);
+        }
+
+        let saver = budget.saver_model.trim().to_string();
+        let mut provider = budget.saver_provider.trim().to_string();
+        let mut model = saver.clone();
+        if let Ok(catalog) = self.model_catalog.read() {
+            if let Some(entry) = catalog.find_model(&saver) {
+                if provider.is_empty() {
+                    provider = entry.provider.clone();
+                }
+                if provider == entry.provider {
+                    model = strip_provider_prefix(&entry.id, &entry.provider);
+                }
+            }
+        }
+        if provider.is_empty() {
+            provider = manifest.model.provider.clone();
+        }
+        let model = strip_provider_prefix(&model, &provider);
+        if manifest.model.model == model && manifest.model.provider == provider {
+            return Ok(None);
+        }
+        info!(
+            agent = %manifest.name,
+            from = %manifest.model.model,
+            to = %model,
+            spent_pct = spent,
+            "Budget saver: switching to the saver model"
+        );
+        if manifest.model.provider != provider {
+            manifest.model.api_key_env = Some(self.config.resolve_api_key_env(&provider));
+            manifest.model.base_url = None;
+            manifest.model.provider = provider;
+        }
+        manifest.model.model = model.clone();
+        Ok(Some(model))
+    }
+
     fn resolve_driver(&self, manifest: &AgentManifest) -> KernelResult<Arc<dyn LlmDriver>> {
         let agent_provider = &manifest.model.provider;
 
@@ -6922,17 +7004,13 @@ fn apply_budget_defaults(
     budget: &openfang_types::config::BudgetConfig,
     resources: &mut ResourceQuota,
 ) {
-    // Only override hourly if agent has unlimited (0.0) and global is set
-    if budget.max_hourly_usd > 0.0 && resources.max_cost_per_hour_usd == 0.0 {
-        resources.max_cost_per_hour_usd = budget.max_hourly_usd;
-    }
-    // Only override daily/monthly if agent has unlimited (0.0) and global is set
-    if budget.max_daily_usd > 0.0 && resources.max_cost_per_day_usd == 0.0 {
-        resources.max_cost_per_day_usd = budget.max_daily_usd;
-    }
-    if budget.max_monthly_usd > 0.0 && resources.max_cost_per_month_usd == 0.0 {
-        resources.max_cost_per_month_usd = budget.max_monthly_usd;
-    }
+    // Global cost limits (max_hourly/daily/monthly_usd) are NOT copied into each
+    // agent's own quota. They are enforced across all agents together by
+    // `apply_budget_policy` before every LLM call, against the runtime budget
+    // (so `PUT /api/budget` takes effect immediately). Copying them here gave
+    // every agent the whole studio's allowance and froze the value at spawn.
+    // An agent's own `[resources]` cost caps still apply on top.
+    //
     // Override per-agent hourly token limit when the global default is set.
     // This lets users raise (or lower) the token budget for all agents at once
     // via config.toml [budget] default_max_llm_tokens_per_hour = 10000000
@@ -8029,6 +8107,31 @@ mod tests {
     use super::*;
     use openfang_types::config::ExecPolicy;
     use std::collections::HashMap;
+
+    #[test]
+    fn global_cost_caps_are_not_copied_into_agent_quotas() {
+        let budget = openfang_types::config::BudgetConfig {
+            max_hourly_usd: 1.0,
+            max_daily_usd: 2.0,
+            max_monthly_usd: 5.0,
+            default_max_llm_tokens_per_hour: 123,
+            ..Default::default()
+        };
+        let mut q = ResourceQuota {
+            max_cost_per_hour_usd: 0.0,
+            max_cost_per_day_usd: 0.0,
+            max_cost_per_month_usd: 0.0,
+            ..Default::default()
+        };
+        apply_budget_defaults(&budget, &mut q);
+        assert_eq!(q.max_cost_per_hour_usd, 0.0);
+        assert_eq!(q.max_cost_per_day_usd, 0.0);
+        assert_eq!(q.max_cost_per_month_usd, 0.0);
+        assert_eq!(
+            q.max_llm_tokens_per_hour, 123,
+            "token default still applies"
+        );
+    }
 
     #[test]
     fn test_manifest_to_capabilities() {

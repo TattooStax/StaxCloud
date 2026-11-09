@@ -5591,6 +5591,57 @@ pub async fn usage_stats(State(state): State<Arc<AppState>>) -> impl IntoRespons
 // Usage summary endpoints
 // ---------------------------------------------------------------------------
 
+/// Per-call averages for one agent's usage summary.
+pub fn per_call_averages(s: &openfang_memory::usage::UsageSummary) -> serde_json::Value {
+    let calls = s.call_count.max(1) as f64;
+    let has_calls = s.call_count > 0;
+    let avg = |total: f64| {
+        if has_calls {
+            serde_json::Value::from((total / calls * 10_000.0).round() / 10_000.0)
+        } else {
+            serde_json::Value::Null
+        }
+    };
+    serde_json::json!({
+        "call_count": s.call_count,
+        "total_cost_usd": s.total_cost_usd,
+        "avg_input_tokens": avg(s.total_input_tokens as f64),
+        "avg_output_tokens": avg(s.total_output_tokens as f64),
+        "avg_cost_usd": avg(s.total_cost_usd),
+        "avg_tool_calls": avg(s.total_tool_calls as f64),
+    })
+}
+
+/// GET /api/usage/agents — Per-agent call size: average input/output tokens,
+/// cost and tool calls per LLM call, plus the model the agent runs on. This is
+/// the number the monthly cost estimate rests on (how big each call really is).
+pub async fn usage_by_agent(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let usage = state.kernel.memory.usage();
+    let mut agents: Vec<serde_json::Value> = state
+        .kernel
+        .registry
+        .list()
+        .into_iter()
+        .filter_map(|e| {
+            let s = usage.query_summary(Some(e.id)).ok()?;
+            let mut v = per_call_averages(&s);
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("agent_id".into(), e.id.to_string().into());
+                obj.insert("name".into(), e.name.clone().into());
+                obj.insert("provider".into(), e.manifest.model.provider.clone().into());
+                obj.insert("model".into(), e.manifest.model.model.clone().into());
+            }
+            Some(v)
+        })
+        .collect();
+    agents.sort_by(|a, b| {
+        let ca = a["total_cost_usd"].as_f64().unwrap_or(0.0);
+        let cb = b["total_cost_usd"].as_f64().unwrap_or(0.0);
+        cb.partial_cmp(&ca).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Json(serde_json::json!({"agents": agents}))
+}
+
 /// GET /api/usage/summary — Get overall usage summary from UsageStore.
 pub async fn usage_summary(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match state.kernel.memory.usage().query_summary(None) {
@@ -5668,11 +5719,12 @@ pub async fn usage_daily(State(state): State<Arc<AppState>>) -> impl IntoRespons
 /// GET /api/budget — Current budget status (limits, spend, % used).
 pub async fn budget_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let budget = state.budget_config.read().await;
-    let status = state.kernel.metering.budget_status(&budget);
-    Json(serde_json::to_value(&status).unwrap_or_default())
+    Json(budget_report(&state, &budget))
 }
 
-/// PUT /api/budget — Update global budget limits (in-memory only, not persisted to config.toml).
+/// PUT /api/budget — Update global budget limits and the saver model
+/// (in-memory only, not persisted to config.toml). The kernel enforces the
+/// new values from the next LLM call on.
 pub async fn update_budget(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
@@ -5694,10 +5746,45 @@ pub async fn update_budget(
         if let Some(v) = body["default_max_llm_tokens_per_hour"].as_u64() {
             budget.default_max_llm_tokens_per_hour = v;
         }
+        if let Some(v) = body["saver_model"].as_str() {
+            budget.saver_model = v.trim().to_string();
+        }
+        if let Some(v) = body["saver_provider"].as_str() {
+            budget.saver_provider = v.trim().to_string();
+        }
+        if let Some(v) = body["saver_at_pct"].as_f64() {
+            budget.saver_at_pct = v.clamp(0.0, 1.0);
+        }
+        // The kernel enforces the budget before every LLM call; keep it in
+        // step with what this endpoint reports.
+        state.kernel.set_budget(budget.clone());
     }
     let budget = state.budget_config.read().await;
-    let status = state.kernel.metering.budget_status(&budget);
-    Json(serde_json::to_value(&status).unwrap_or_default())
+    Json(budget_report(&state, &budget))
+}
+
+/// Budget status plus the saver settings, as `GET`/`PUT /api/budget` report it.
+fn budget_report(
+    state: &AppState,
+    budget: &openfang_types::config::BudgetConfig,
+) -> serde_json::Value {
+    let status = state.kernel.metering.budget_status(budget);
+    let mut v = serde_json::to_value(&status).unwrap_or_default();
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("saver_model".into(), budget.saver_model.clone().into());
+        obj.insert(
+            "saver_provider".into(),
+            budget.saver_provider.clone().into(),
+        );
+        obj.insert(
+            "saver_at".into(),
+            budget
+                .saver_threshold()
+                .map(serde_json::Value::from)
+                .unwrap_or(serde_json::Value::Null),
+        );
+    }
+    v
 }
 
 /// GET /api/budget/agents/{id} — Per-agent budget/quota status.

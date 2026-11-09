@@ -1386,6 +1386,15 @@ pub struct BudgetConfig {
     /// will be overridden to this value. Set to 0 to keep each agent's own limit.
     /// Use this to globally raise or lower the token budget for all agents.
     pub default_max_llm_tokens_per_hour: u64,
+    /// Cheaper model every agent switches to once spend passes `saver_at_pct`
+    /// of any limit (hourly, daily or monthly). Empty = no switch: agents keep
+    /// their own models until a limit is reached.
+    pub saver_model: String,
+    /// Provider for `saver_model`. Empty = look it up in the model catalog.
+    pub saver_provider: String,
+    /// Fraction (0.0 - 1.0) of a limit at which the saver model takes over.
+    /// 0.0 = use `alert_threshold`.
+    pub saver_at_pct: f64,
 }
 
 impl Default for BudgetConfig {
@@ -1396,7 +1405,26 @@ impl Default for BudgetConfig {
             max_monthly_usd: 0.0,
             alert_threshold: 0.8,
             default_max_llm_tokens_per_hour: 0,
+            saver_model: String::new(),
+            saver_provider: String::new(),
+            saver_at_pct: 0.0,
         }
+    }
+}
+
+impl BudgetConfig {
+    /// The spend fraction at which the saver model takes over (None when no
+    /// saver model is set).
+    pub fn saver_threshold(&self) -> Option<f64> {
+        if self.saver_model.trim().is_empty() {
+            return None;
+        }
+        let t = if self.saver_at_pct > 0.0 {
+            self.saver_at_pct
+        } else {
+            self.alert_threshold
+        };
+        Some(t.clamp(0.0, 1.0))
     }
 }
 
@@ -3917,6 +3945,36 @@ impl KernelConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn budget_saver_threshold() {
+        let mut b = BudgetConfig::default();
+        assert_eq!(b.saver_threshold(), None, "no saver model, no switch");
+        b.saver_model = "qwen/qwen3.7-flash".into();
+        assert_eq!(
+            b.saver_threshold(),
+            Some(0.8),
+            "falls back to alert_threshold"
+        );
+        b.saver_at_pct = 0.5;
+        assert_eq!(b.saver_threshold(), Some(0.5));
+        b.saver_at_pct = 7.0;
+        assert_eq!(b.saver_threshold(), Some(1.0), "clamped");
+        b.saver_model = "   ".into();
+        assert_eq!(b.saver_threshold(), None, "blank counts as unset");
+    }
+
+    #[test]
+    fn budget_saver_fields_parse_from_toml() {
+        let b: BudgetConfig = toml::from_str(
+            "max_monthly_usd = 5.0\nsaver_model = \"qwen/qwen3.7-flash\"\nsaver_at_pct = 0.9\n",
+        )
+        .unwrap();
+        assert_eq!(b.max_monthly_usd, 5.0);
+        assert_eq!(b.saver_model, "qwen/qwen3.7-flash");
+        assert_eq!(b.saver_threshold(), Some(0.9));
+        assert_eq!(b.alert_threshold, 0.8, "unset fields keep defaults");
+    }
 
     #[test]
     fn test_default_config() {

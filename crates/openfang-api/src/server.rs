@@ -576,6 +576,10 @@ pub async fn build_router(
             axum::routing::get(routes::usage_by_model),
         )
         .route("/api/usage/daily", axum::routing::get(routes::usage_daily))
+        .route(
+            "/api/usage/agents",
+            axum::routing::get(routes::usage_by_agent),
+        )
         // Budget endpoints
         .route(
             "/api/budget",
