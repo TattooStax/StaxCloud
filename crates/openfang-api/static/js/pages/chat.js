@@ -996,6 +996,11 @@ function chatPage() {
                 lastMsg3.tools[ri].running = false;
                 lastMsg3.tools[ri].result = data.result || '';
                 lastMsg3.tools[ri].is_error = !!data.is_error;
+                // Pictures a tool made (image_generate) show in the turn now,
+                // not only after the history reloads.
+                if (!data.is_error && data.image_urls && data.image_urls.length) {
+                  lastMsg3.tools[ri]._imageUrls = data.image_urls;
+                }
                 // Extract audio file path from text_to_speech results
                 if (data.tool === 'text_to_speech' && !data.is_error) {
                   try {

@@ -1276,31 +1276,40 @@ fn map_stream_event(event: &StreamEvent, verbose: VerboseLevel) -> Option<serde_
             name,
             result_preview,
             is_error,
-        } => match verbose {
-            VerboseLevel::Off => Some(serde_json::json!({
-                "type": "tool_result",
-                "id": id,
-                "tool": name,
-                "is_error": is_error,
-            })),
-            VerboseLevel::On => {
-                let truncated: String = result_preview.chars().take(200).collect();
-                Some(serde_json::json!({
+        } => {
+            // Pictures a tool made travel on their own field so the chat can
+            // show them at every verbosity (the result text may be trimmed).
+            let images = upload_urls_in(result_preview);
+            let mut ev = match verbose {
+                VerboseLevel::Off => serde_json::json!({
                     "type": "tool_result",
                     "id": id,
                     "tool": name,
-                    "result": truncated,
                     "is_error": is_error,
-                }))
+                }),
+                VerboseLevel::On => {
+                    let truncated: String = result_preview.chars().take(200).collect();
+                    serde_json::json!({
+                        "type": "tool_result",
+                        "id": id,
+                        "tool": name,
+                        "result": truncated,
+                        "is_error": is_error,
+                    })
+                }
+                VerboseLevel::Full => serde_json::json!({
+                    "type": "tool_result",
+                    "id": id,
+                    "tool": name,
+                    "result": result_preview,
+                    "is_error": is_error,
+                }),
+            };
+            if !images.is_empty() && !*is_error {
+                ev["image_urls"] = serde_json::json!(images);
             }
-            VerboseLevel::Full => Some(serde_json::json!({
-                "type": "tool_result",
-                "id": id,
-                "tool": name,
-                "result": result_preview,
-                "is_error": is_error,
-            })),
-        },
+            Some(ev)
+        }
         StreamEvent::PhaseChange { phase, detail } => Some(serde_json::json!({
             "type": "phase",
             "phase": phase,
@@ -1602,8 +1611,40 @@ pub fn start_ws_cron_broadcaster(kernel: Arc<OpenFangKernel>) {
 // Tests
 // ---------------------------------------------------------------------------
 
+/// `/api/uploads/<uuid>` addresses in a tool result, in order, once each.
+pub fn upload_urls_in(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find("/api/uploads/") {
+        let after = &rest[pos + "/api/uploads/".len()..];
+        let id: String = after.chars().take(36).collect();
+        if uuid::Uuid::parse_str(&id).is_ok() {
+            let url = format!("/api/uploads/{id}");
+            if !out.contains(&url) {
+                out.push(url);
+            }
+        }
+        rest = &after[after.len().min(1)..];
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn upload_urls_are_found_once_each() {
+        let a = "8c1f4c3e-2b7a-4d7e-9a51-0f4c2b9d1e10";
+        let b = "1b2c3d4e-5f60-4718-8899-aabbccddeeff";
+        let text = format!(
+            r#"{{"images":[{{"url":"/api/uploads/{a}"}}],"image_urls":["/api/uploads/{a}","/api/uploads/{b}"],"x":"/api/uploads/not-a-uuid"}}"#
+        );
+        assert_eq!(
+            upload_urls_in(&text),
+            vec![format!("/api/uploads/{a}"), format!("/api/uploads/{b}")]
+        );
+        assert!(upload_urls_in("no pictures here").is_empty());
+    }
+
     use super::*;
 
     #[test]

@@ -60,7 +60,7 @@ candidates = [
 [roles.vision]
 # Only runs when --images points at a folder of portfolio photos.
 candidates = [
-  { id = "nvidia/nemotron-3.5-super-vl", variants = ["full"] },
+  # nemotron-3.5-super-vl dropped: empty answers on all 30 portfolio photos (2026-11-09 run)
   { id = "google/gemma-4-31b-it", variants = ["full"] },
   { id = "z-ai/glm-5.3-flash", variants = ["full"] },
   { id = "qwen/qwen3.8-flash" },

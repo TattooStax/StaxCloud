@@ -2574,6 +2574,7 @@
             <li><button class="sys-row" @click="navigate('scheduler')"><span class="sys-text"><span class="sys-name">Scheduled</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('hands')"><span class="sys-text"><span class="sys-name">Playbooks</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('skills')"><span class="sys-text"><span class="sys-name">Capabilities</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
+            <li><button class="sys-row" @click="navigate('canvas')"><span class="sys-text"><span class="sys-name">Design bench</span><span class="sys-sub">The old Canvas. Designs are now made by asking Stax in chat</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('sessions')"><span class="sys-text"><span class="sys-name">History</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="navigate('analytics')"><span class="sys-text"><span class="sys-name">Reports</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
             <li><button class="sys-row" @click="$store.app.r4Open = true"><span class="sys-text"><span class="sys-name">Side chats</span></span><svg class="sys-chev" aria-hidden="true"><use href="#g-chev"/></svg></button></li>
@@ -7490,7 +7491,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
   <!-- System corner module dock: Settings, Connections, Advanced (every
        console under Advanced keeps Advanced lit), on the owned tiles.
        Done is the header exit on those surfaces, not a tab. -->
-  <nav class="stax-dock" x-cloak x-show="inSystemCorner()" aria-label="System">
+  <nav class="stax-dock" x-cloak x-show="inSystemCorner() && page !== 'canvas'" aria-label="System">
     <button class="stax-dock-btn" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')" aria-label="Settings">
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--toolbox"></span></span>
       <span>Settings</span>
@@ -7727,8 +7728,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           <button class="sd-row" :class="{ 'is-here': page === 'library' }" :aria-current="page === 'library' ? 'page' : false" @click="navigate('library')"><span class="sd-ico stax-tile stax-tile--book" aria-hidden="true"></span><span>Library</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'websites' }" :aria-current="page === 'websites' ? 'page' : false" @click="navigate('websites')"><span class="sd-ico stax-tile stax-tile--frame-rose" aria-hidden="true"></span><span>Websites</span></button>
           <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><span class="sd-ico stax-tile stax-tile--bubble" aria-hidden="true"></span><span>Contacts</span></button>
-          <!-- Canvas: the design bench, its own app surface. -->
-          <button class="sd-row" :class="{ 'is-here': page === 'canvas' }" :aria-current="page === 'canvas' ? 'page' : false" @click="navigate('canvas')"><span class="sd-ico stax-tile stax-tile--machine" aria-hidden="true"></span><span>Canvas</span></button>
+          <!-- Canvas lives under Advanced: designs are made by asking Stax in chat. -->
         </div>
       </div>
       <div class="sd-sec" style="--sec: var(--sec-system)">

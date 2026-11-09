@@ -235,6 +235,13 @@ def hand_prompt(hand: str) -> tuple[str, list[str]]:
     return data["agent"].get("system_prompt", ""), list(data.get("tools", []))
 
 
+def hand_step_limit(hand: str, default: int) -> int:
+    """The hand's own max_iterations, so the bench gives a model the same
+    room it gets in production (Deep Work runs 40 steps, not 12)."""
+    data = tomllib.loads((STAX / "hands" / hand / "HAND.toml").read_text(encoding="utf-8"))
+    return int(data.get("agent", {}).get("max_iterations") or default)
+
+
 def run_loop(model: str, provider: dict | None, case: dict, key: str, max_iters: int) -> dict:
     system, tools = hand_prompt(case["hand"])
     tools = case.get("tools", tools)
@@ -347,6 +354,9 @@ def grade(case: dict, run: dict) -> list[str]:
     for tool in exp.get("must_call", []):
         if not any(c["tool"] == tool for c in run["calls"]):
             fails.append(f"never called {tool}")
+    any_of = exp.get("must_call_any", [])
+    if any_of and not any(c["tool"] in any_of for c in run["calls"]):
+        fails.append(f"called none of {any_of}")
     for tool in exp.get("must_not_call", []):
         if any(c["tool"] == tool for c in run["calls"]):
             fails.append(f"called {tool}")
@@ -369,41 +379,87 @@ def data_url(path: Path) -> str:
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
 
 
+IMAGES_API = API.replace("/chat/completions", "/images")
+
+
+def _save_pictures(urls_or_b64: list[str], outdir: Path, case_id: str, tag: str) -> list[str]:
+    files = []
+    for i, item in enumerate(urls_or_b64):
+        raw = item.split(",", 1)[1] if item.startswith("data:") and "," in item else item
+        try:
+            data = base64.b64decode(raw)
+        except Exception:
+            continue
+        ext = ".png" if data[:4] == b"\x89PNG" else ".webp" if data[8:12] == b"WEBP" else ".jpg"
+        f = outdir / f"{case_id}__{tag}__{i}{ext}"
+        f.write_bytes(data)
+        files.append(f.name)
+    return files
+
+
 def run_image(model: str, provider: dict | None, case: dict, key: str, outdir: Path, tag: str) -> dict:
-    content = [{"type": "text", "text": case["prompt"]}]
+    """Same two routes as the daemon's image tool: OpenRouter's /images
+    endpoint first (GPT-Image, FLUX, Seedream, Qwen-Image…), then chat
+    completions with image output (Gemini image models)."""
+    refs = []
     ref = case.get("reference")
     if ref:
         rp = (HERE / ref) if not Path(ref).is_absolute() else Path(ref)
         if not rp.exists():
             return {"error": f"reference image missing: {rp}", "cost": 0.0, "latency": 0.0, "files": []}
-        content.append({"type": "image_url", "image_url": {"url": data_url(rp)}})
+        refs.append({"type": "image_url", "image_url": {"url": data_url(rp)}})
+
+    body = {"model": model, "prompt": case["prompt"], "n": 1}
+    if refs:
+        body["input_references"] = refs
+    if provider:
+        body["provider"] = provider
+    req = urllib.request.Request(IMAGES_API, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Authorization", "Bearer " + key)
+    req.add_header("Content-Type", "application/json")
+    t0 = time.monotonic()
+    route_err = ""
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            data = json.loads(r.read())
+        secs = time.monotonic() - t0
+        files = _save_pictures([d.get("b64_json", "") for d in data.get("data", []) if d.get("b64_json")],
+                               outdir, case["id"], tag)
+        if files:
+            u = data.get("usage") or {}
+            return {"error": None, "cost": float(u.get("cost") or 0.0), "latency": secs, "files": files,
+                    "route": "images"}
+        route_err = "images route returned no picture"
+    except urllib.error.HTTPError as e:
+        if e.code not in (400, 404, 405, 422):
+            return {"error": f"HTTP {e.code}: {e.read().decode(errors='replace')[:300]}", "cost": 0.0,
+                    "latency": time.monotonic() - t0, "files": []}
+        route_err = f"images route HTTP {e.code}"
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}", "cost": 0.0, "latency": time.monotonic() - t0, "files": []}
+
+    content = [{"type": "text", "text": case["prompt"]}] + refs
     body = {"model": model, "modalities": ["image", "text"],
             "messages": [{"role": "user", "content": content}]}
     if provider:
         body["provider"] = provider
     data, secs = call(body, key, timeout=600)
     if "error" in data:
-        return {"error": data["error"], "cost": 0.0, "latency": secs, "files": []}
+        return {"error": f"{route_err}; chat route {data['error']}", "cost": 0.0, "latency": secs, "files": []}
     msg = ((data.get("choices") or [{}])[0].get("message")) or {}
-    files = []
-    for i, im in enumerate(msg.get("images") or []):
-        url = (im.get("image_url") or {}).get("url", "")
-        if url.startswith("data:") and "," in url:
-            ext = ".png" if "png" in url[:30] else ".jpg"
-            f = outdir / f"{case['id']}__{tag}__{i}{ext}"
-            f.write_bytes(base64.b64decode(url.split(",", 1)[1]))
-            files.append(f.name)
+    urls = [(im.get("image_url") or {}).get("url", "") for im in (msg.get("images") or [])]
+    files = _save_pictures([u for u in urls if u.startswith("data:")], outdir, case["id"], tag)
     u = data.get("usage") or {}
     return {"error": None if files else "no image returned", "cost": float(u.get("cost") or 0.0),
-            "latency": secs, "files": files}
+            "latency": secs, "files": files, "route": "chat"}
 
 
 VISION_PROMPT = (
     "This is a photo of a finished tattoo from a studio portfolio. Classify it. "
     "Reply with JSON only: {\"style\": one of [\"black and grey realism\", \"portrait\", "
     "\"fine line\", \"lettering\", \"color realism\", \"traditional\", \"neo-traditional\", "
-    "\"japanese\", \"blackwork\", \"cover-up\", \"other\"], \"subject\": \"<a few words>\", "
-    "\"placement\": \"<body part or unknown>\"}"
+    "\"japanese\", \"blackwork\", \"cover-up\", \"other\"], \"also\": [other styles from that list that clearly apply], "
+    "\"subject\": \"<a few words>\", \"placement\": \"<body part or unknown>\"}"
 )
 
 
@@ -421,7 +477,9 @@ def vision_cases(folder: Path) -> list[dict]:
 
 
 def run_vision(model: str, provider: dict | None, case: dict, key: str) -> dict:
-    body = {"model": model, "max_tokens": 300, "temperature": 0,
+    # Reasoning models spend tokens thinking before the JSON; 300 cut answers
+    # off mid-object in the 2026-11-09 run.
+    body = {"model": model, "max_tokens": 2000, "temperature": 0,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": VISION_PROMPT},
                 {"type": "image_url", "image_url": {"url": data_url(Path(case["path"]))}}]}]}
@@ -471,7 +529,7 @@ def main() -> None:
     ap.add_argument("--only", default="", help="comma list of substrings of candidate ids")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--images", default="", help="folder of portfolio photos for vision cases")
-    ap.add_argument("--max-iters", type=int, default=12)
+    ap.add_argument("--max-iters", type=int, default=0, help="step limit per case (default: the hand's own max_iterations)")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--out", default="")
     ap.add_argument("--dry-run", action="store_true")
@@ -529,11 +587,13 @@ def main() -> None:
             r = run_vision(mid, prov, case, key)
             fails = [r["error"]] if r["error"] else []
             if not fails and case.get("label"):
-                got = (r["answer"] or {}).get("style", "")
-                if got.strip().lower() != case["label"].strip().lower():
+                ans = r["answer"] or {}
+                got = [str(ans.get("style", ""))] + [str(x) for x in (ans.get("also") or [])]
+                want = case["label"].strip().lower()
+                if want not in [g.strip().lower() for g in got]:
                     fails.append(f"style {got!r}, labelled {case['label']!r}")
         else:
-            r = run_loop(mid, prov, case, key, args.max_iters)
+            r = run_loop(mid, prov, case, key, args.max_iters or hand_step_limit(case["hand"], 25))
             fails = grade(case, r)
         return {"role": role, "model": mid, "variant": variant, "case": case["id"], "rep": rep,
                 "pass": not fails, "fails": fails, **{k: v for k, v in r.items() if k not in ("calls",)}}

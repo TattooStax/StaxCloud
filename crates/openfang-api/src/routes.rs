@@ -287,6 +287,14 @@ pub fn resolve_attachments(
                     media_type: content_type,
                     data: b64,
                 });
+                // Name the upload so the agent can hand the same picture to a
+                // tool (image_generate references, image_describe) even when
+                // its own model cannot see images and the block above is
+                // dropped for it.
+                blocks.push(openfang_types::message::ContentBlock::Text {
+                    text: format!("[Attached image: file_id {}]", att.file_id),
+                    provider_metadata: None,
+                });
             }
             Err(e) => {
                 tracing::warn!(file_id = %att.file_id, error = %e, "Failed to read upload for attachment");
@@ -10854,7 +10862,13 @@ pub async fn serve_upload(Path(file_id): Path<String>) -> impl IntoResponse {
                     b"{\"error\":\"File not found\"}".to_vec(),
                 );
             }
-            "image/png".to_string()
+            // Probe the bytes so a JPEG or WebP is not served as PNG
+            // (the registry is in memory and empties on restart).
+            std::fs::read(&file_path)
+                .ok()
+                .and_then(|b| openfang_types::uploads::sniff_image_mime(&b))
+                .unwrap_or("application/octet-stream")
+                .to_string()
         }
     };
 

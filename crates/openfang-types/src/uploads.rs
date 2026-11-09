@@ -86,6 +86,39 @@ fn migrate_between(from: &Path, to: &Path) -> std::io::Result<usize> {
     Ok(copied)
 }
 
+/// Image type from the file's first bytes (PNG, JPEG, WebP, GIF), or None.
+pub fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else {
+        None
+    }
+}
+
+/// Write bytes as a new upload. Returns the new file id (a UUID).
+pub fn save_new(bytes: &[u8]) -> std::io::Result<String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    std::fs::write(ensure_dir()?.join(&id), bytes)?;
+    Ok(id)
+}
+
+/// Read an upload by id. Refuses anything that is not a UUID (no paths).
+pub fn read(file_id: &str) -> std::io::Result<Vec<u8>> {
+    if uuid::Uuid::parse_str(file_id).is_err() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("'{file_id}' is not an upload id"),
+        ));
+    }
+    std::fs::read(resolve(file_id))
+}
+
 fn default_dir() -> PathBuf {
     let home = std::env::var("OPENFANG_HOME")
         .map(PathBuf::from)

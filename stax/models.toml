@@ -19,7 +19,7 @@ model = "default"
 
 [roles.workers]
 # background sweeps: form intake, text threads, boards
-hands = ["forms", "sms", "surface-builder"]
+hands = ["forms", "sms", "surface-builder", "style"]
 provider = "default"
 model = "default"
 
@@ -51,7 +51,12 @@ provider = "default"
 model = "default"
 
 [image]
-# Used by the designer sidecar (it reads DESIGNER_GEN_MODEL). apply-models.py
-# prints the line to set; it never edits the sidecar's env file, which also
-# holds the API key.
+# Designs made in chat (image_generate reads STAX_IMAGE_MODEL) and by the
+# designer sidecar (DESIGNER_GEN_MODEL). apply-models.py prints the lines to
+# set; it never edits env files, which also hold the API key.
 model = "google/gemini-2.5-flash-image"
+
+[vision]
+# Reads pictures for image_describe — the Style helper's portfolio reading and
+# customer references (STAX_VISION_MODEL).
+model = "google/gemini-2.5-flash"

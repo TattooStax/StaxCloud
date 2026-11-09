@@ -224,7 +224,8 @@ function approvalsPage() {
       // Page navigation lives in the shell component's template scope,
       // not on the store; page components route by setting the hash
       // (the same pattern chat.js / wizard.js use).
-      window.location.hash = 'canvas';
+      // Canvas is an Advanced page now; the deep link keeps working.
+      window.location.hash = 'advanced/canvas';
     },
 
     // Who is asking, in the artist's words (One Face) — the store

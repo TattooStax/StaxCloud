@@ -115,9 +115,16 @@ def main() -> int:
     dirs = [SOURCE_HANDS] + ([installed_hands_dir()] if args.installed else [])
     stale = apply(dirs, pins, args.check)
 
-    image = tomllib.loads(MODELS.read_text(encoding="utf-8")).get("image", {}).get("model")
+    pins = tomllib.loads(MODELS.read_text(encoding="utf-8"))
+    image = pins.get("image", {}).get("model")
+    vision = pins.get("vision", {}).get("model")
+    if image or vision:
+        print("\nSet these in the daemon's environment (and the designer sidecar's), then restart:")
     if image:
-        print(f"\nimage model: set DESIGNER_GEN_MODEL={image} for the designer sidecar")
+        print(f"  STAX_IMAGE_MODEL={image}")
+        print(f"  DESIGNER_GEN_MODEL={image}")
+    if vision:
+        print(f"  STAX_VISION_MODEL={vision}")
     if args.installed and not args.check and stale:
         print("restart the daemon (or re-activate the changed hands) to pick these up")
     return 1 if (args.check and stale) else 0

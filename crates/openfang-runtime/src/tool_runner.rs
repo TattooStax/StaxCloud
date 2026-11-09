@@ -333,7 +333,10 @@ pub async fn execute_tool(
         "media_transcribe" => tool_media_transcribe(input, media_engine).await,
 
         // Image generation tool
-        "image_generate" => tool_image_generate(input, workspace_root, media_engine).await,
+        "image_generate" => tool_image_generate(input, workspace_root, media_engine, kernel).await,
+        "image_describe" => tool_image_describe(input).await,
+        "image_fetch" => tool_image_fetch(input).await,
+        "page_images" => tool_page_images(input).await,
 
         // TTS/STT tools
         "text_to_speech" => tool_text_to_speech(input, tts_engine, workspace_root).await,
@@ -1060,17 +1063,54 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         // --- Image generation tool ---
         ToolDefinition {
             name: "image_generate".to_string(),
-            description: "Generate images from a text prompt using DALL-E 3, DALL-E 2, or GPT-Image-1. Requires OPENAI_API_KEY. Generated images are saved to the workspace output/ directory.".to_string(),
+            description: "Make pictures — tattoo designs, flash, mockups — from a description, optionally redoing reference pictures (pass their file_ids) and in an artist's learned style (pass artist; their style profile and best matching portfolio pieces are added automatically). Returns the pictures' file_ids and URLs; show them to the owner. Uses the studio's image model through OpenRouter (or OpenAI's DALL-E/GPT-Image when one is named in model).".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "prompt": { "type": "string", "description": "Text description of the image to generate (max 4000 chars)" },
-                    "model": { "type": "string", "description": "Model to use: 'dall-e-3' (default), 'dall-e-2', or 'gpt-image-1'" },
-                    "size": { "type": "string", "description": "Image size: '1024x1024' (default), '1024x1792', '1792x1024', '256x256', '512x512'" },
-                    "quality": { "type": "string", "description": "Quality: 'hd' (default for dall-e-3) or 'standard'" },
-                    "count": { "type": "integer", "description": "Number of images to generate (1-4, default: 1). DALL-E 3 only supports 1." }
+                    "prompt": { "type": "string", "description": "What to draw, in plain words (max 4000 chars)" },
+                    "references": { "type": "array", "items": { "type": "string" }, "description": "file_ids of pictures to work from — e.g. the customer's reference the owner attached ('[Attached image: file_id …]')" },
+                    "artist": { "type": "string", "description": "Artist whose style to draw in (e.g. 'Shawn', 'Leni')" },
+                    "category": { "type": "string", "description": "Which of the artist's styles to lean on, e.g. 'black and grey realism', 'fine line'" },
+                    "count": { "type": "integer", "description": "How many versions (1-3, default 1)" },
+                    "model": { "type": "string", "description": "Leave empty for the studio's image model. An OpenRouter slug overrides it; 'dall-e-3', 'dall-e-2' or 'gpt-image-1' use OpenAI." },
+                    "size": { "type": "string", "description": "OpenAI models only: '1024x1024' (default), '1024x1792', '1792x1024'" },
+                    "quality": { "type": "string", "description": "OpenAI models only: 'hd' or 'standard'" }
                 },
                 "required": ["prompt"]
+            }),
+        },
+        ToolDefinition {
+            name: "image_describe".to_string(),
+            description: "Look at a picture (by file_id) with the studio's vision model and answer a question about it — e.g. classify a tattoo's style, subject and placement. Use for portfolio pictures and customer references.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_id": { "type": "string", "description": "The picture's file_id" },
+                    "prompt": { "type": "string", "description": "What to find out about the picture; ask for JSON when you need fields" }
+                },
+                "required": ["file_id"]
+            }),
+        },
+        ToolDefinition {
+            name: "page_images".to_string(),
+            description: "List the pictures on a public web page (e.g. the studio's portfolio or an artist's page): each picture's address and alt text. Page text from web_fetch leaves pictures out, so use this to find them.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "The page's full https:// address" }
+                },
+                "required": ["url"]
+            }),
+        },
+        ToolDefinition {
+            name: "image_fetch".to_string(),
+            description: "Download a picture from a public web address (e.g. a portfolio image on the studio's website) into the studio's files. Returns its file_id. Only PNG, JPEG, WebP and GIF up to 10 MB.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "The picture's full https:// address" }
+                },
+                "required": ["url"]
             }),
         },
         // --- Cron scheduling tools ---
@@ -3178,10 +3218,30 @@ async fn tool_image_generate(
     input: &serde_json::Value,
     workspace_root: Option<&Path>,
     media_engine: Option<&crate::media_understanding::MediaEngine>,
+    kernel: Option<&Arc<dyn KernelHandle>>,
 ) -> Result<String, String> {
     let prompt = input["prompt"]
         .as_str()
         .ok_or("Missing 'prompt' parameter")?;
+
+    // StaxCloud path: OpenRouter image models with reference pictures and the
+    // artist's learned style. Used unless an OpenAI model is asked for by name.
+    let openai_named = matches!(
+        input["model"].as_str().unwrap_or(""),
+        "dall-e-3"
+            | "dalle3"
+            | "dalle-3"
+            | "dall-e-2"
+            | "dalle2"
+            | "dalle-2"
+            | "gpt-image-1"
+            | "gpt_image_1"
+    );
+    if !openai_named
+        && (crate::stax_images::available() || std::env::var("OPENAI_API_KEY").is_err())
+    {
+        return stax_image_generate(input, prompt, kernel).await;
+    }
 
     let model_str = input["model"].as_str().unwrap_or("dall-e-3");
     let model = match model_str {
@@ -3254,6 +3314,271 @@ async fn tool_image_generate(
     });
 
     serde_json::to_string_pretty(&response).map_err(|e| format!("Serialize error: {e}"))
+}
+
+/// Key-safe slug for an artist name ("Leni Bee" -> "leni-bee").
+fn artist_slug(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
+/// The style anchor and exemplar uploads an artist's style record offers
+/// for one job.
+#[derive(Debug, Default, PartialEq)]
+struct StyleUse {
+    artist: String,
+    anchor: String,
+    exemplars: Vec<String>,
+}
+
+/// Read what to use from a `style/<artist>` record (written by the Style
+/// hand): the artist's style note, their strongest categories, and up to
+/// three portfolio pictures — matching `category` when one is asked for.
+fn style_use(record: &serde_json::Value, category: Option<&str>) -> StyleUse {
+    let artist = record["artist"]
+        .as_str()
+        .unwrap_or("the artist")
+        .to_string();
+    let mut cats: Vec<(String, f64)> = record["categories"]
+        .as_object()
+        .map(|o| {
+            o.iter()
+                .map(|(k, v)| (k.clone(), v.as_f64().unwrap_or(0.0)))
+                .collect()
+        })
+        .unwrap_or_default();
+    cats.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top: Vec<String> = cats.iter().take(3).map(|c| c.0.clone()).collect();
+
+    let want = category
+        .map(|c| c.trim().to_lowercase())
+        .filter(|c| !c.is_empty());
+    let all: Vec<&serde_json::Value> = record["exemplars"]
+        .as_array()
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    let matches = |e: &serde_json::Value| {
+        let c = e["category"].as_str().unwrap_or("").to_lowercase();
+        match &want {
+            Some(w) => !c.is_empty() && (c.contains(w.as_str()) || w.contains(c.as_str())),
+            None => top.first().is_some_and(|t| c == t.to_lowercase()),
+        }
+    };
+    let mut picked: Vec<String> = all
+        .iter()
+        .copied()
+        .filter(|e| matches(e))
+        .filter_map(|e| e["file_id"].as_str().map(String::from))
+        .collect();
+    if picked.is_empty() {
+        picked = all
+            .iter()
+            .filter_map(|e| e["file_id"].as_str().map(String::from))
+            .collect();
+    }
+    picked.truncate(3);
+
+    let mut anchor = format!("Draw it in {artist}'s tattoo style");
+    if !top.is_empty() {
+        anchor.push_str(&format!(" ({})", top.join(", ")));
+    }
+    anchor.push('.');
+    if let Some(note) = record["style_note"]
+        .as_str()
+        .filter(|n| !n.trim().is_empty())
+    {
+        anchor.push_str(&format!(" {}", note.trim()));
+    }
+    if !picked.is_empty() {
+        anchor.push_str(" The last reference pictures are examples of this artist's finished work: match their linework, shading, contrast and value structure — not their subjects.");
+    }
+    StyleUse {
+        artist,
+        anchor,
+        exemplars: picked,
+    }
+}
+
+/// Find an artist's style record: `style/<slug>` first, then any style/
+/// record that names the artist.
+fn find_style_record(kh: &Arc<dyn KernelHandle>, artist: &str) -> Option<serde_json::Value> {
+    if let Ok(Some(v)) = kh.memory_recall(&format!("style/{}", artist_slug(artist))) {
+        return Some(v);
+    }
+    let needle = artist.trim().to_lowercase();
+    kh.memory_list("style/")
+        .ok()?
+        .into_iter()
+        .find_map(|(_, v)| {
+            let name = v["artist"].as_str().unwrap_or("").to_lowercase();
+            (!name.is_empty() && (name.contains(&needle) || needle.contains(&name))).then_some(v)
+        })
+}
+
+async fn stax_image_generate(
+    input: &serde_json::Value,
+    prompt: &str,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    use crate::stax_images::{self, Picture};
+
+    let model = input["model"]
+        .as_str()
+        .filter(|m| m.contains('/'))
+        .map(String::from)
+        .unwrap_or_else(stax_images::image_model);
+    let count = input["count"].as_u64().unwrap_or(1).clamp(1, 3) as usize;
+
+    let mut refs: Vec<Picture> = Vec::new();
+    let mut ref_ids: Vec<String> = Vec::new();
+    if let Some(ids) = input["references"].as_array() {
+        for id in ids.iter().filter_map(|v| v.as_str()) {
+            refs.push(Picture::from_upload(id)?);
+            ref_ids.push(id.to_string());
+        }
+    }
+
+    let mut full_prompt = prompt.trim().to_string();
+    let mut style_json = serde_json::Value::Null;
+    if let Some(artist) = input["artist"].as_str().filter(|a| !a.trim().is_empty()) {
+        let kh = require_kernel(kernel)?;
+        match find_style_record(kh, artist) {
+            Some(rec) => {
+                let used = style_use(&rec, input["category"].as_str());
+                let mut ex_used = Vec::new();
+                for id in &used.exemplars {
+                    if refs.len() >= stax_images::MAX_REFERENCES {
+                        break;
+                    }
+                    // A portfolio picture that has gone missing is skipped,
+                    // not fatal: the style note still applies.
+                    if let Ok(p) = Picture::from_upload(id) {
+                        refs.push(p);
+                        ex_used.push(id.clone());
+                    }
+                }
+                full_prompt = format!("{full_prompt}\n\n{}", used.anchor);
+                style_json = serde_json::json!({
+                    "artist": used.artist,
+                    "style_anchor": used.anchor,
+                    "portfolio_examples_used": ex_used,
+                });
+            }
+            None => {
+                style_json = serde_json::json!({
+                    "artist": artist,
+                    "note": "No style profile for this artist yet — the Style helper builds one from the portfolio. Generated without it.",
+                });
+            }
+        }
+    }
+    if !ref_ids.is_empty() {
+        full_prompt.push_str(
+            "\n\nThe first reference picture(s) are the customer's reference: keep its subject and composition unless told otherwise.",
+        );
+    }
+
+    let mut images = Vec::new();
+    let mut total_cost = 0.0;
+    let mut metered = true;
+    let mut notes = Vec::new();
+    for _ in 0..count {
+        let out = stax_images::generate(&full_prompt, &refs, &model).await?;
+        match out.cost_usd {
+            Some(c) => total_cost += c,
+            None => metered = false,
+        }
+        if !out.note.is_empty() {
+            notes.push(out.note.clone());
+        }
+        for pic in out.pictures {
+            let id = openfang_types::uploads::save_new(&pic.bytes)
+                .map_err(|e| format!("Could not save the picture: {e}"))?;
+            images.push(serde_json::json!({"file_id": id, "url": format!("/api/uploads/{id}"), "type": pic.mime}));
+        }
+    }
+    let image_urls: Vec<&str> = images.iter().filter_map(|i| i["url"].as_str()).collect();
+    serde_json::to_string_pretty(&serde_json::json!({
+        "model": model,
+        "images_generated": images.len(),
+        "images": images,
+        "image_urls": image_urls,
+        "references_used": ref_ids,
+        "style": style_json,
+        "cost_usd": if metered { serde_json::json!(total_cost) } else { serde_json::Value::Null },
+        "model_note": notes.join(" "),
+        "show_the_owner": "Show these pictures as they are. Nothing is sent to a customer without the owner's OK.",
+    }))
+    .map_err(|e| format!("Serialize error: {e}"))
+}
+
+async fn tool_image_describe(input: &serde_json::Value) -> Result<String, String> {
+    let file_id = input["file_id"]
+        .as_str()
+        .ok_or("Missing 'file_id' parameter")?;
+    let prompt = input["prompt"]
+        .as_str()
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or("Describe this picture plainly and precisely.");
+    let pic = crate::stax_images::Picture::from_upload(file_id)?;
+    let model = crate::stax_images::vision_model();
+    let (text, cost) = crate::stax_images::describe(&pic, prompt, &model).await?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "file_id": file_id,
+        "model": model,
+        "answer": text,
+        "cost_usd": cost,
+    }))
+    .map_err(|e| format!("Serialize error: {e}"))
+}
+
+async fn tool_page_images(input: &serde_json::Value) -> Result<String, String> {
+    let url = input["url"].as_str().ok_or("Missing 'url' parameter")?;
+    let found = crate::stax_images::page_images(url).await?;
+    if found.is_empty() {
+        return Ok(format!(
+            "No pictures found in the HTML of {url}. The page may build its gallery with JavaScript; try the artist or gallery pages linked from it, or ask the owner for a portfolio link."
+        ));
+    }
+    let mut out = format!(
+        "{} picture{} on {url} (address — alt text). Use image_fetch to save one before describing it.\n",
+        found.len(),
+        if found.len() == 1 { "" } else { "s" }
+    );
+    for p in &found {
+        out.push_str(&format!(
+            "- {} — {}\n",
+            p.url,
+            if p.alt.is_empty() {
+                "(no alt text)"
+            } else {
+                &p.alt
+            }
+        ));
+    }
+    Ok(out)
+}
+
+async fn tool_image_fetch(input: &serde_json::Value) -> Result<String, String> {
+    let url = input["url"].as_str().ok_or("Missing 'url' parameter")?;
+    let pic = crate::stax_images::fetch(url).await?;
+    let id = openfang_types::uploads::save_new(&pic.bytes)
+        .map_err(|e| format!("Could not save the picture: {e}"))?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "file_id": id,
+        "url": format!("/api/uploads/{id}"),
+        "type": pic.mime,
+        "bytes": pic.bytes.len(),
+        "source_url": url,
+    }))
+    .map_err(|e| format!("Serialize error: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -4867,6 +5192,55 @@ mod tests {
         let long = "a".repeat(500);
         let out = sanitize_schedule_name(&long);
         assert!(out.chars().count() <= 128);
+    }
+
+    fn shawn_style() -> serde_json::Value {
+        serde_json::json!({
+            "artist": "Shawn",
+            "categories": {"black and grey realism": 14, "portrait": 9, "cover-up": 3, "lettering": 1},
+            "style_note": "Leans realistic with a simplified value structure.",
+            "exemplars": [
+                {"file_id": "a", "category": "portrait"},
+                {"file_id": "b", "category": "black and grey realism"},
+                {"file_id": "c", "category": "black and grey realism"},
+                {"file_id": "d", "category": "black and grey realism"},
+                {"file_id": "e", "category": "black and grey realism"}
+            ]
+        })
+    }
+
+    #[test]
+    fn artist_slug_is_key_safe() {
+        assert_eq!(artist_slug("Leni Bee"), "leni-bee");
+        assert_eq!(artist_slug("  Shawn  "), "shawn");
+        assert_eq!(artist_slug("Ana-María O'Neil"), "ana-mar-a-o-neil");
+    }
+
+    #[test]
+    fn style_use_prefers_the_asked_category_then_the_top_one() {
+        let rec = shawn_style();
+        let u = style_use(&rec, Some("portrait"));
+        assert_eq!(u.exemplars, vec!["a"]);
+        let u = style_use(&rec, None);
+        assert_eq!(
+            u.exemplars,
+            vec!["b", "c", "d"],
+            "top category, at most three"
+        );
+        assert!(u
+            .anchor
+            .contains("Shawn's tattoo style (black and grey realism, portrait, cover-up)"));
+        assert!(u.anchor.contains("simplified value structure"));
+        assert!(u.anchor.contains("not their subjects"));
+        let u = style_use(&rec, Some("watercolor"));
+        assert_eq!(u.exemplars.len(), 3, "no match falls back to any exemplars");
+    }
+
+    #[test]
+    fn style_use_copes_with_an_empty_profile() {
+        let u = style_use(&serde_json::json!({"artist": "Leni"}), None);
+        assert!(u.exemplars.is_empty());
+        assert_eq!(u.anchor, "Draw it in Leni's tattoo style.");
     }
 
     fn records_kernel() -> Arc<dyn KernelHandle> {

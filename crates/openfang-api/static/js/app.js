@@ -615,14 +615,14 @@ function app() {
   return {
     page: 'chat',
     surface: null,
-    surfaceOf: { chat: 'home', sms: 'texts', team: 'texts', email: 'texts', approvals: 'work', leads: 'leads', contacts: 'studio', boards: 'boards', forms: 'studio', library: 'studio', canvas: 'studio', websites: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
+    surfaceOf: { chat: 'home', sms: 'texts', team: 'texts', email: 'texts', approvals: 'work', leads: 'leads', contacts: 'studio', boards: 'boards', forms: 'studio', library: 'studio', websites: 'studio', channels: 'system', settings: 'system', advanced: 'advanced' },
     surfaceHome: { home: 'chat', work: 'approvals', boards: 'boards', leads: 'leads', system: 'settings', advanced: 'advanced' },
     // Pages demoted to System > Advanced. Their page keys are unchanged;
     // only their URL hash carries an advanced/ prefix, so a stale bare
     // bookmark (#agents, #scheduler, ...) lands on home instead.
     // The stock Settings console (configuration) and the integrations
     // catalog (integrations) live here too; 'advanced' itself is the index.
-    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard', 'configuration', 'integrations', 'workflows', 'scheduler', 'hands', 'skills', 'sessions', 'analytics'],
+    advancedPages: ['overview', 'agents', 'setup', 'comms', 'logs', 'runtime', 'wizard', 'configuration', 'integrations', 'workflows', 'scheduler', 'hands', 'skills', 'sessions', 'analytics', 'canvas'],
     themeMode: localStorage.getItem('openfang-theme-mode') || 'system',
     theme: (() => {
       var mode = localStorage.getItem('openfang-theme-mode') || 'system';
@@ -664,7 +664,7 @@ function app() {
       // to Home — in-app taps worked only because navigate() sets
       // the page directly. Both lists are valid landings.
       var validPages = ['overview','chat','agents','sessions','approvals','comms','workflows','scheduler','channels','skills','hands','analytics','logs','runtime','settings','wizard','advanced'];
-      var modulePages = ['sms','team','email','leads','contacts','boards','forms','library','canvas','websites'];
+      var modulePages = ['sms','team','email','leads','contacts','boards','forms','library','websites'];
       var pageRedirects = {
         'templates': 'agents',
         'triggers': 'workflows',
