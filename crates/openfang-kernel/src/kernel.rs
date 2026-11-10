@@ -4014,9 +4014,16 @@ impl OpenFangKernel {
         // would always be a no-op without this snapshot — same pattern as
         // saved_triggers above. Fixes the silent loss of cron jobs across
         // every daemon restart for hand-style agents.
-        let saved_crons: Vec<openfang_types::scheduler::CronJob> = old_agent_id
+        let mut saved_crons: Vec<openfang_types::scheduler::CronJob> = old_agent_id
             .map(|id| self.cron_scheduler.list_jobs(id))
             .unwrap_or_default();
+        // A hand that was deactivated first (the only way to update a running
+        // hand) had its jobs set aside by deactivate_hand: bring them back.
+        let parked =
+            self.take_parked_hand_jobs(&parked_jobs_key(hand_id, instance_name.as_deref()));
+        if saved_crons.is_empty() {
+            saved_crons = parked;
+        }
         if let Some(old) = existing {
             info!(agent = %old.name, id = %old.id, "Removing existing hand agent for reactivation");
             let _ = self.kill_agent(old.id);
@@ -4117,6 +4124,33 @@ impl OpenFangKernel {
             .deactivate(instance_id)
             .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(e.to_string())))?;
 
+        // Set the hand's scheduled jobs aside before its agent is killed (which
+        // deletes them), so activating the hand again — how a hand is updated —
+        // brings its schedule back instead of silently losing it.
+        let agent_for_jobs = instance.agent_id.or_else(|| {
+            let hand_tag = format!("hand:{}", instance.hand_id);
+            self.registry
+                .list()
+                .into_iter()
+                .find(|e| e.tags.contains(&hand_tag))
+                .map(|e| e.id)
+        });
+        if let Some(agent_id) = agent_for_jobs {
+            let jobs = self.cron_scheduler.list_jobs(agent_id);
+            if !jobs.is_empty() {
+                let key = parked_jobs_key(&instance.hand_id, instance.instance_name.as_deref());
+                let n = jobs.len();
+                match self.park_hand_jobs(&key, jobs) {
+                    Ok(()) => {
+                        info!(hand = %instance.hand_id, jobs = n, "Set aside the hand's scheduled jobs until it is activated again")
+                    }
+                    Err(e) => {
+                        warn!(hand = %instance.hand_id, error = %e, "Could not set aside the hand's scheduled jobs")
+                    }
+                }
+            }
+        }
+
         if let Some(agent_id) = instance.agent_id {
             if let Err(e) = self.kill_agent(agent_id) {
                 warn!(agent = %agent_id, error = %e, "Failed to kill hand agent (may already be dead)");
@@ -4137,6 +4171,61 @@ impl OpenFangKernel {
         // Persist hand state so it survives restarts
         self.persist_hand_state();
         Ok(())
+    }
+
+    fn parked_jobs_path(&self) -> std::path::PathBuf {
+        self.config.home_dir.join("parked_hand_jobs.json")
+    }
+
+    fn read_parked_jobs(
+        &self,
+    ) -> std::collections::HashMap<String, Vec<openfang_types::scheduler::CronJob>> {
+        std::fs::read_to_string(self.parked_jobs_path())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    fn write_parked_jobs(
+        &self,
+        map: &std::collections::HashMap<String, Vec<openfang_types::scheduler::CronJob>>,
+    ) -> std::io::Result<()> {
+        let path = self.parked_jobs_path();
+        if map.is_empty() {
+            return match std::fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            };
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(map).map_err(std::io::Error::other)?,
+        )?;
+        std::fs::rename(tmp, path)
+    }
+
+    /// Keep a deactivated hand's jobs on disk until it is activated again.
+    fn park_hand_jobs(
+        &self,
+        key: &str,
+        jobs: Vec<openfang_types::scheduler::CronJob>,
+    ) -> std::io::Result<()> {
+        let mut map = self.read_parked_jobs();
+        map.insert(key.to_string(), jobs);
+        self.write_parked_jobs(&map)
+    }
+
+    /// The jobs set aside for a hand, removed from the parking file.
+    fn take_parked_hand_jobs(&self, key: &str) -> Vec<openfang_types::scheduler::CronJob> {
+        let mut map = self.read_parked_jobs();
+        let Some(jobs) = map.remove(key) else {
+            return Vec::new();
+        };
+        if let Err(e) = self.write_parked_jobs(&map) {
+            warn!(error = %e, "Could not update the parked hand jobs file");
+        }
+        jobs
     }
 
     /// Persist active hand state to disk.
@@ -7000,6 +7089,14 @@ fn manifest_to_capabilities(manifest: &AgentManifest) -> Vec<Capability> {
 ///
 /// When the global budget config specifies limits and the agent still has
 /// the built-in defaults, override them so agents respect the user's config.
+/// Where a deactivated hand's jobs are kept: one entry per hand instance.
+fn parked_jobs_key(hand_id: &str, instance_name: Option<&str>) -> String {
+    match instance_name {
+        Some(n) if !n.is_empty() => format!("{hand_id}#{n}"),
+        _ => hand_id.to_string(),
+    }
+}
+
 fn apply_budget_defaults(
     budget: &openfang_types::config::BudgetConfig,
     resources: &mut ResourceQuota,

@@ -327,24 +327,69 @@ var OpenFangAPI = (function() {
 
   function getToken() { return _authToken; }
 
+  // A phone photo can be 5-15 MB. Pictures over 3 MB (or wider than
+  // 2560 px) are redrawn at 2560 px on the long side as a JPEG before they
+  // leave the device: faster on a shop's connection, and plenty for any
+  // model. Anything that cannot be redrawn is sent as it is.
+  var SHRINK_OVER_BYTES = 3 * 1024 * 1024, SHRINK_TO_SIDE = 2560;
+  function shrinkPhoto(file) {
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type || '') || typeof createImageBitmap !== 'function') return Promise.resolve(file);
+    return createImageBitmap(file).then(function(bmp) {
+      var side = Math.max(bmp.width, bmp.height);
+      if (file.size <= SHRINK_OVER_BYTES && side <= SHRINK_TO_SIDE) { if (bmp.close) bmp.close(); return file; }
+      var scale = Math.min(1, SHRINK_TO_SIDE / side);
+      var w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      return new Promise(function(res) { canvas.toBlob(res, 'image/jpeg', 0.9); }).then(function(blob) {
+        if (!blob || blob.size >= file.size) return file;
+        var name = (file.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg';
+        try { return new File([blob], name, { type: 'image/jpeg' }); } catch(e) { blob.name = name; return blob; }
+      });
+    }).catch(function() { return file; });
+  }
+
+  // One shared record by its exact key. A record that was never written
+  // comes back as null (an answer), not as a "not found" error: the read
+  // goes through the prefix list, which returns an empty list instead.
+  function getRecord(key) {
+    return get('/api/memory/agents/shared/kv?prefix=' + encodeURIComponent(key)).then(function(d) {
+      var hit = ((d && d.kv_pairs) || []).find(function(pr) { return pr.key === key; });
+      var v = hit ? hit.value : null;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { /* plain string record */ } }
+      return v === undefined ? null : v;
+    });
+  }
+
   function upload(agentId, file) {
+    return shrinkPhoto(file).then(function(f) { return uploadAsIs(agentId, f); });
+  }
+
+  function uploadAsIs(agentId, file) {
     var hdrs = {};
     if (_authToken) hdrs['Authorization'] = 'Bearer ' + _authToken;
 	var form = new FormData();
-    form.append('file', file);
-    form.append('filename', file.name);
+    form.append('file', file, file.name || 'upload');
+    form.append('filename', file.name || 'upload');
     return fetch(BASE + '/api/agents/' + agentId + '/upload', {
       method: 'POST',
       headers: hdrs,
       body: form
     }).then(function(r) {
-      if (!r.ok) throw new Error('Upload failed');
-      return r.json();
+      if (r.ok) return r.json();
+      return r.json().catch(function() { return {}; }).then(function(j) {
+        throw new Error(j.error || 'Upload failed');
+      });
     });
   }
 
   return {
     setAuthToken: setAuthToken,
+    getRecord: getRecord,
     getToken: getToken,
     get: get,
     post: post,

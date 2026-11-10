@@ -817,3 +817,50 @@ function settingsPage() {
     }
   };
 }
+
+// Settings -> Backups: the box backs itself up daily; this row says when it
+// last did, backs up on demand, and downloads a full copy to keep elsewhere.
+function staxBackups() {
+  return {
+    info: null, failed: false, busy: '',
+    async load() {
+      try { this.info = await OpenFangAPI.get('/api/studio/backups'); this.failed = false; }
+      catch(e) { this.failed = true; }
+    },
+    summary() {
+      if (this.failed) return 'Could not check the backups just now';
+      if (!this.info) return 'Checking…';
+      if (!this.info.enabled) return 'Daily backups are turned off on this box';
+      var list = this.info.backups || [];
+      if (!list.length) return 'The first daily backup runs a few minutes after the box starts';
+      var last = list[0], when = last.written_at ? new Date(last.written_at) : null;
+      var stamp = when ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : last.name.slice(7, 17);
+      return 'Daily on this box · last ' + stamp + ' · ' + list.length + ' of ' + this.info.keep + ' kept';
+    },
+    async backupNow() {
+      if (this.busy) return;
+      this.busy = 'now';
+      try { this.info = await OpenFangAPI.post('/api/studio/backups', {}); this.failed = false; OpenFangToast.success('Backed up'); }
+      catch(e) { OpenFangToast.error(e.message || 'The backup did not run'); }
+      this.busy = '';
+    },
+    async download() {
+      if (this.busy) return;
+      this.busy = 'download';
+      try {
+        var hdrs = {}, tok = OpenFangAPI.getToken();
+        if (tok) hdrs['Authorization'] = 'Bearer ' + tok;
+        var r = await fetch('/api/studio/export', { headers: hdrs, credentials: 'same-origin' });
+        if (!r.ok) throw new Error('The copy could not be made');
+        var blob = await r.blob();
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'studio-' + new Date().toISOString().slice(0, 10) + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 4000);
+      } catch(e) { OpenFangToast.error(e.message || 'The copy could not be made'); }
+      this.busy = '';
+    }
+  };
+}
+

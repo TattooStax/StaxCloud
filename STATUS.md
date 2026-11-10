@@ -1,4 +1,4 @@
-# StaxCloud (fork) — status, 2026-11-09
+# StaxCloud (fork) — status, 2026-11-10
 
 Work resumed on the owner's word on 2026-11-09 under a seven-strike plan to
 make the product shippable. The rule from the stop notice below still
@@ -10,11 +10,11 @@ the owner has used it.
 |---|---|---|---|
 | 1 Foundation | `strike-1-foundation` | Studio export/import, uploads survive a reboot, model pins per role | Passed on live 2026-11-09 (959 records round-tripped) |
 | 2 Bench + meter | `strike-2-bench-meter` | Model benchmark, live prices, enforced budget with saver model | Deployed; first scoreboard in, pins not chosen yet |
-| 3 Stax works directly | `strike-3-stax-worker` | Sign-in required for customer data, record search tool, Stax gets web + records | Deploy handed off |
-| 4 Style + designs | `strike-4-style-images` | Designs in chat, Style helper learns each artist, Canvas under Advanced | Deploy handed off |
-| 5 Contacts + Forms | `strike-5-contacts-forms` | Form builder, forms hosted at `/f/<slug>`, Contacts in the Records layout | Not yet deployed |
-| 6 Clean surfaces | `strike-6-clean-surfaces` | One file per page, consistent headers/empty/error states, surface audit | Not yet deployed |
-| 7 Ship hardening | — | Fold sidecars in, onboarding, 30-day shop run | Not started |
+| 3 Stax works directly | `strike-3-stax-worker` | Sign-in required for customer data, record search tool, Stax gets web + records | Live; sign-in gate verified off-box |
+| 4 Style + designs | `strike-4-style-images` | Designs in chat, Style helper learns each artist, Canvas under Advanced | Live; designs in chat FAILED on the box (photo upload cap) — fixed in Strike 7 |
+| 5 Contacts + Forms | `strike-5-contacts-forms` | Form builder, forms hosted at `/f/<slug>`, Contacts in the Records layout | Live; builder -> publish -> phone submit -> contact -> draft verified on the box |
+| 6 Clean surfaces | `strike-6-clean-surfaces` | One file per page, consistent headers/empty/error states, surface audit | Live (9686562) |
+| 7 Ship hardening | `strike-7-ship-hardening` | Photo uploads fixed (designs in chat), no template blanks in drafts, helper jobs survive updates, daily backups, background helper health in Connections | Not yet deployed; then the 30-day shop run |
 
 Still open, plainly:
 - The Memory helper asks the model to compute SHA-256 keys, which models
@@ -22,7 +22,7 @@ Still open, plainly:
 - Model pins for driver, vision and image wait on a benchmark rerun.
 - Contacts has no Rewards and no appointment-based Today: the fork holds no
   visit, points or appointment data (Square holds the schedule).
-- The four Python sidecars are still separate processes (Strike 7).
+- The four Python sidecars are still separate processes; they now report health to Connections, and folding them into the daemon is a post-launch job.
 
 Checks that exist: `cargo test`, `node stax/tests/forms_builder.test.js`,
 `python3 -m unittest stax/bench/test_bench.py`, and

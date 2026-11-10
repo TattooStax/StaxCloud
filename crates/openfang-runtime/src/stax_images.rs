@@ -16,8 +16,13 @@ use std::time::Duration;
 pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-2.5-flash-image";
 /// Vision model used until a benchmark winner is pinned (what the designer used).
 pub const DEFAULT_VISION_MODEL: &str = "google/gemini-2.5-flash";
-/// Largest picture accepted from the web or sent as a reference.
-pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+/// Largest picture accepted from the web or from an upload (phone originals
+/// run 3-15 MB); anything sent to a model is shrunk first, see `for_model`.
+pub const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
+/// Longest side, in pixels, of a picture sent to a model.
+pub const MODEL_MAX_SIDE: u32 = 1536;
+/// A picture already this small (and within MODEL_MAX_SIDE) is sent as is.
+const MODEL_KEEP_BYTES: usize = 1536 * 1024;
 /// Most reference pictures sent with one generation.
 pub const MAX_REFERENCES: usize = 6;
 
@@ -95,6 +100,39 @@ impl Picture {
             .ok_or("not a PNG, JPEG, WebP or GIF picture")?
             .to_string();
         Ok(Self { mime, bytes })
+    }
+
+    /// The picture as it should be sent to a model: a phone original is
+    /// scaled down to MODEL_MAX_SIDE on its longest side and saved as JPEG,
+    /// so a request stays a few hundred KB instead of tens of MB. Small
+    /// pictures (and anything that cannot be decoded) go as they are.
+    pub fn for_model(&self) -> Picture {
+        let Ok(img) = image::load_from_memory(&self.bytes) else {
+            return self.clone();
+        };
+        let (w, h) = (img.width(), img.height());
+        if w.max(h) <= MODEL_MAX_SIDE && self.bytes.len() <= MODEL_KEEP_BYTES {
+            return self.clone();
+        }
+        let img = if w.max(h) > MODEL_MAX_SIDE {
+            img.resize(
+                MODEL_MAX_SIDE,
+                MODEL_MAX_SIDE,
+                image::imageops::FilterType::Lanczos3,
+            )
+        } else {
+            img
+        };
+        let rgb = img.to_rgb8();
+        let mut out = Vec::new();
+        let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+        if enc.encode_image(&rgb).is_err() || out.is_empty() {
+            return self.clone();
+        }
+        Picture {
+            mime: "image/jpeg".to_string(),
+            bytes: out,
+        }
     }
 
     fn data_url(&self) -> String {
@@ -242,6 +280,84 @@ pub fn pictures_in_images_reply(reply: &serde_json::Value) -> Vec<Picture> {
 /// `modalities: ["image","text"]` (Gemini image models and some others only
 /// generate there). The images endpoint is tried first; a 400/404/405/422
 /// from it means the model wants the chat route, which is tried next.
+/// Whether a model generates through chat completions (with image output)
+/// rather than the dedicated images endpoint. Gemini image models do: the
+/// designer sidecar has always sent them references this way, and it is the
+/// route proven on the studio's box.
+pub fn prefers_chat_route(model: &str) -> bool {
+    model.starts_with("google/")
+}
+
+async fn generate_on_images_route(
+    prompt: &str,
+    refs: &[serde_json::Value],
+    model: &str,
+) -> Result<Generated, ServiceError> {
+    let mut body = serde_json::json!({"model": model, "prompt": prompt, "n": 1});
+    if !refs.is_empty() {
+        body["input_references"] = serde_json::json!(refs);
+    }
+    let reply = post_json(images_url(), body, 300).await?;
+    let pictures = pictures_in_images_reply(&reply);
+    if pictures.is_empty() {
+        return Err(ServiceError {
+            status: 0,
+            message: format!("{model} returned no picture on the images route"),
+        });
+    }
+    Ok(Generated {
+        pictures,
+        note: String::new(),
+        cost_usd: billed(&reply),
+        model: model.to_string(),
+    })
+}
+
+async fn generate_on_chat_route(
+    prompt: &str,
+    refs: &[serde_json::Value],
+    model: &str,
+) -> Result<Generated, ServiceError> {
+    let mut content = vec![serde_json::json!({"type": "text", "text": prompt})];
+    content.extend(refs.iter().cloned());
+    let body = serde_json::json!({
+        "model": model,
+        "modalities": ["image", "text"],
+        "messages": [{"role": "user", "content": content}],
+        "usage": {"include": true},
+    });
+    let reply = post_json(chat_url(), body, 300).await?;
+    let (pictures, note) = pictures_in_reply(&reply);
+    if pictures.is_empty() {
+        return Err(ServiceError {
+            status: 0,
+            message: if note.is_empty() {
+                format!("{model} returned no picture.")
+            } else {
+                format!(
+                    "{model} returned no picture. It said: {}",
+                    crate::str_utils::safe_truncate_str(&note, 300)
+                )
+            },
+        });
+    }
+    Ok(Generated {
+        pictures,
+        note,
+        cost_usd: billed(&reply),
+        model: model.to_string(),
+    })
+}
+
+/// Make pictures from a prompt and optional reference pictures.
+///
+/// OpenRouter serves image models on two routes: the dedicated `/images`
+/// endpoint (GPT-Image, FLUX, Seedream, Qwen-Image… — references in
+/// `input_references`) and chat completions with image output. Gemini models
+/// go to the chat route first (see `prefers_chat_route`), everything else to
+/// the images route first; a route that refuses the request (400/404/405/422)
+/// or answers without a picture hands over to the other one. References are
+/// shrunk first (`Picture::for_model`).
 pub async fn generate(
     prompt: &str,
     references: &[Picture],
@@ -250,59 +366,34 @@ pub async fn generate(
     let refs: Vec<serde_json::Value> = references
         .iter()
         .take(MAX_REFERENCES)
-        .map(|r| serde_json::json!({"type": "image_url", "image_url": {"url": r.data_url()}}))
+        .map(|r| serde_json::json!({"type": "image_url", "image_url": {"url": r.for_model().data_url()}}))
         .collect();
-
-    let mut body = serde_json::json!({"model": model, "prompt": prompt, "n": 1});
-    if !refs.is_empty() {
-        body["input_references"] = serde_json::json!(refs);
-    }
-    let images_err = match post_json(images_url(), body, 300).await {
-        Ok(reply) => {
-            let pictures = pictures_in_images_reply(&reply);
-            if !pictures.is_empty() {
-                return Ok(Generated {
-                    pictures,
-                    note: String::new(),
-                    cost_usd: billed(&reply),
-                    model: model.to_string(),
-                });
-            }
-            format!("{model} returned no picture on the images route")
-        }
-        Err(e) if matches!(e.status, 400 | 404 | 405 | 422) => e.message,
+    let chat_first = prefers_chat_route(model);
+    let first = if chat_first {
+        generate_on_chat_route(prompt, &refs, model).await
+    } else {
+        generate_on_images_route(prompt, &refs, model).await
+    };
+    let first_err = match first {
+        Ok(g) => return Ok(g),
+        Err(e) if matches!(e.status, 0 | 400 | 404 | 405 | 422) => e.message,
         Err(e) => return Err(e.message),
     };
-
-    let mut content = vec![serde_json::json!({"type": "text", "text": prompt})];
-    content.extend(refs);
-    let body = serde_json::json!({
-        "model": model,
-        "modalities": ["image", "text"],
-        "messages": [{"role": "user", "content": content}],
-        "usage": {"include": true},
-    });
-    let reply = post_chat(body, 300).await.map_err(|chat_err| {
-        format!(
-            "{model} could not make a picture. Images route: {images_err}. Chat route: {chat_err}"
-        )
-    })?;
-    let (pictures, note) = pictures_in_reply(&reply);
-    if pictures.is_empty() {
-        return Err(if note.is_empty() {
-            format!("{model} returned no picture.")
+    let second = if chat_first {
+        generate_on_images_route(prompt, &refs, model).await
+    } else {
+        generate_on_chat_route(prompt, &refs, model).await
+    };
+    second.map_err(|e| {
+        let (a, b) = if chat_first {
+            ("Chat route", "Images route")
         } else {
-            format!(
-                "{model} returned no picture. It said: {}",
-                crate::str_utils::safe_truncate_str(&note, 300)
-            )
-        });
-    }
-    Ok(Generated {
-        pictures,
-        note,
-        cost_usd: billed(&reply),
-        model: model.to_string(),
+            ("Images route", "Chat route")
+        };
+        format!(
+            "{model} could not make a picture. {a}: {first_err}. {b}: {}",
+            e.message
+        )
     })
 }
 
@@ -319,7 +410,7 @@ pub async fn describe(
         "temperature": 0.1,
         "messages": [{"role": "user", "content": [
             {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": picture.data_url()}},
+            {"type": "image_url", "image_url": {"url": picture.for_model().data_url()}},
         ]}],
         "usage": {"include": true},
     });
@@ -544,6 +635,39 @@ mod tests {
         let p = Picture::from_bytes(PNG.to_vec()).unwrap();
         assert_eq!(p.mime, "image/png");
         assert!(p.data_url().starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn big_photos_are_shrunk_before_sending() {
+        // A 3000x2000 photo becomes a JPEG at most 1536 px on its long side.
+        let img = {
+            // Photo-like noise: PNG cannot squeeze it, as with a real photo.
+            let mut seed: u32 = 12345;
+            image::RgbImage::from_fn(3000, 2000, |_, _| {
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let b = (seed >> 16).to_le_bytes();
+                image::Rgb([b[0], b[1], b[0] ^ b[1]])
+            })
+        };
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let p = Picture::from_bytes(png).unwrap();
+        let sent = p.for_model();
+        assert_eq!(sent.mime, "image/jpeg");
+        let back = image::load_from_memory(&sent.bytes).unwrap();
+        assert_eq!((back.width(), back.height()), (1536, 1024));
+        assert!(sent.bytes.len() < p.bytes.len());
+        // A small picture goes as it is.
+        let tiny = Picture::from_bytes(PNG.to_vec()).unwrap();
+        assert_eq!(tiny.for_model().bytes, tiny.bytes);
+    }
+
+    #[test]
+    fn gemini_goes_to_chat_first() {
+        assert!(prefers_chat_route("google/gemini-2.5-flash-image"));
+        assert!(!prefers_chat_route("openai/gpt-image-2"));
     }
 
     #[test]

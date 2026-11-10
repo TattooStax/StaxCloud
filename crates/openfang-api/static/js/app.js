@@ -249,11 +249,7 @@ document.addEventListener('alpine:init', function() {
 
     async loadSetup() {
       try {
-        var first = (this.agents && this.agents[0]) || null;
-        var aid = first ? first.id : 'shared';
-        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv/' + encodeURIComponent('setup/profile'));
-        var v = d && d.value;
-        if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+        var v = await OpenFangAPI.getRecord('setup/profile');
         this.setupDone = !!(v && v.business);
       } catch(e) { this.setupDone = false; }
       this.setupLoaded = true;
@@ -261,16 +257,9 @@ document.addEventListener('alpine:init', function() {
 
     async loadMorningBrief() {
       try {
-        var first = (this.agents && this.agents[0]) || null;
-        var aid = first ? first.id : 'shared';
         var now = new Date();
         var key = 'brief/' + now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        // Read by prefix: a day with no brief yet is an empty answer, not
-        // a "not found" error on every screen.
-        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv?prefix=' + encodeURIComponent(key));
-        var hit = ((d && d.kv_pairs) || []).find(function(pr) { return pr.key === key; });
-        var v = hit ? hit.value : null;
-        if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+        var v = await OpenFangAPI.getRecord(key);
         this.morningBrief = (v && v.text) ? v : null;
       } catch(e) { this.morningBrief = null; }
     },

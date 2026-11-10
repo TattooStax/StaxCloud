@@ -29,6 +29,10 @@
                   <span class="sys-text"><span class="sys-name">Team</span><span class="sys-sub" x-text="team.sub"></span></span>
                   <span class="sys-status" :data-tone="team.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="team.status"></span></span>
                 </li>
+                <li class="sys-row" x-show="helpers">
+                  <span class="sys-text"><span class="sys-name">Background helpers</span><span class="sys-sub" x-text="helpers ? helpers.sub : ''"></span></span>
+                  <span class="sys-status" :data-tone="helpers ? helpers.tone : ''"><span class="sys-dot" aria-hidden="true"></span><span x-text="helpers ? helpers.status : ''"></span></span>
+                </li>
                 <li><button class="sys-row" @click="askStax('I want to connect something new so customers can reach the shop.')"><span class="sys-text"><span class="sys-name">Connect something new</span><span class="sys-sub">Texting, chat apps, email</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
               </ul>
               <p class="sys-ident" x-show="checkedAt">Checked <span x-text="fmtClock(checkedAt)"></span></p>

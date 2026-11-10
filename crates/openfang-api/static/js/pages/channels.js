@@ -340,6 +340,7 @@ function connectionsPage() {
     get replies() { return this.gateRow(Alpine.store('app').textGate); },
     email: null,
     team: null,
+    helpers: null,
 
     gateRow(gate) {
       if (!gate || gate.mode === 'unknown') {
@@ -402,9 +403,10 @@ function connectionsPage() {
         leg(function() { return one('attention/sms'); }),
         leg(function() { return one('mailbox/status'); }),
         leg(function() { return pairs('teammsg/'); }),
-        store.refreshTextGate()
+        store.refreshTextGate(),
+        leg(function() { return pairs('health/'); })
       ]);
-      var smsR = results[0], attR = results[1], mbR = results[2], teamR = results[3], gate = results[4];
+      var smsR = results[0], attR = results[1], mbR = results[2], teamR = results[3], gate = results[4], hpR = results[5];
 
       // ── Text line: the shop's texting, from its thread records ──
       if (!smsR.ok) {
@@ -464,6 +466,9 @@ function connectionsPage() {
         this.team = { tone: 'ok', status: 'Connected', sub: tTs ? 'Last message ' + this.fmtTs(tTs) : 'The team channel is in use' };
       }
 
+      // ── Background helpers: each records health/<name> after every run ──
+      this.helpers = staxHelperHealth(hpR, Date.now());
+
       this.checkedAt = new Date().toISOString();
       if (!smsR.ok && !mbR.ok && !teamR.ok && (!gate || gate.mode === 'unknown')) {
         this.loadError = 'Your connections did not load. Check that StaxCloud is online, then try again.';
@@ -472,3 +477,23 @@ function connectionsPage() {
     }
   };
 }
+
+// What the background helpers' last runs say, in one row. A helper is
+// "quiet" when it has not run for three of its intervals. Helper names are
+// the box's script names; the owner sees plain ones.
+var STAX_HELPER_NAMES = { 'pull-sync': 'Form sync', 'designer': 'Design bench', 'bridge': 'Text line link', 'mail': 'Mail sync', 'mailsync': 'Mail sync', 'mailsend': 'Mail sending' };
+function staxHelperHealth(r, now) {
+  if (!r || !r.ok) return { tone: 'warn', status: "Couldn't check", sub: 'The helpers\' records did not load — try again in a moment', rows: [] };
+  var rows = (r.v || []).map(function(pr) {
+    var v = pr.value || {}, name = pr.key.slice(7);
+    var at = v.at ? Date.parse(v.at) : NaN, every = Math.max(1, +v.every_minutes || 5);
+    var quiet = isNaN(at) || (now - at) > every * 3 * 60000;
+    return { name: STAX_HELPER_NAMES[name] || name, ok: !!v.ok && !quiet, failed: v.ok === false, quiet: quiet, at: at };
+  });
+  if (!rows.length) return { tone: 'quiet', status: 'Not reporting', sub: 'The background helpers have not reported in yet', rows: [] };
+  var bad = rows.filter(function(x) { return !x.ok; });
+  if (!bad.length) return { tone: 'ok', status: 'Running', sub: rows.length + (rows.length === 1 ? ' helper' : ' helpers') + ' working normally', rows: rows };
+  var words = bad.map(function(x) { return x.name + (x.failed && !x.quiet ? ' had a problem on its last run' : ' has gone quiet'); });
+  return { tone: 'warn', status: 'Needs a look', sub: words.join('; ') + ' — ask Stax to check it', rows: rows };
+}
+

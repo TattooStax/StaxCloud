@@ -323,8 +323,209 @@ pub async fn import_studio(
         .into_response()
 }
 
+// ---------------------------------------------------------------------------
+// Daily backups
+// ---------------------------------------------------------------------------
+
+/// Backups kept unless `STAX_BACKUP_KEEP` says otherwise.
+pub const BACKUP_KEEP_DEFAULT: usize = 14;
+
+/// Where the box keeps its own backups: `<home>/backups`.
+pub fn backups_dir(home: &Path) -> std::path::PathBuf {
+    home.join("backups")
+}
+
+/// Whether daily backups run (on unless `STAX_BACKUPS=0`).
+pub fn backups_enabled() -> bool {
+    !matches!(
+        std::env::var("STAX_BACKUPS").as_deref().map(str::trim),
+        Ok("0") | Ok("off") | Ok("false") | Ok("no")
+    )
+}
+
+/// How many daily backups to keep.
+pub fn backups_keep() -> usize {
+    std::env::var("STAX_BACKUP_KEEP")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(BACKUP_KEEP_DEFAULT)
+}
+
+fn is_backup_name(name: &str) -> bool {
+    name.len() == "studio-YYYY-MM-DD.json".len()
+        && name.starts_with("studio-")
+        && name.ends_with(".json")
+        && chrono::NaiveDate::parse_from_str(&name[7..17], "%Y-%m-%d").is_ok()
+}
+
+/// The backups in `dir`, newest first: (file name, size in bytes).
+pub fn list_backups(dir: &Path) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = std::fs::read_dir(dir)
+        .map(|it| {
+            it.filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().into_string().ok()?;
+                    let size = e.metadata().ok()?.len();
+                    is_backup_name(&name).then_some((name, size))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out
+}
+
+/// Write the studio (records + uploads) to `<dir>/studio-<date>.json`,
+/// replacing that day's file if there is one. Written to a temporary file
+/// first, so a backup is either whole or absent.
+pub fn write_backup(
+    records: Vec<(String, serde_json::Value)>,
+    upload_dir: &Path,
+    dir: &Path,
+    date: &str,
+) -> std::io::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let bundle = build_bundle(records, Some(upload_dir))?;
+    let path = dir.join(format!("studio-{date}.json"));
+    let tmp = dir.join(format!(".studio-{date}.json.tmp"));
+    {
+        let file = std::fs::File::create(&tmp)?;
+        let mut w = std::io::BufWriter::new(file);
+        serde_json::to_writer(&mut w, &bundle).map_err(std::io::Error::other)?;
+        use std::io::Write;
+        w.flush()?;
+        w.get_ref().sync_all()?;
+    }
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
+/// Delete all but the newest `keep` backups. Returns how many were removed.
+pub fn prune_backups(dir: &Path, keep: usize) -> std::io::Result<usize> {
+    let mut removed = 0;
+    for (name, _) in list_backups(dir).into_iter().skip(keep) {
+        std::fs::remove_file(dir.join(name))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+/// Write today's backup unless it already exists (`force` writes it again),
+/// then prune. Returns the path written, or None when today's was there.
+pub fn run_backup(
+    kernel: &openfang_kernel::OpenFangKernel,
+    force: bool,
+) -> std::io::Result<Option<std::path::PathBuf>> {
+    let dir = backups_dir(&kernel.config.home_dir);
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    if !force && dir.join(format!("studio-{date}.json")).exists() {
+        return Ok(None);
+    }
+    let shared = openfang_kernel::kernel::shared_memory_agent_id();
+    let records = kernel
+        .memory
+        .list_kv(shared)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let path = write_backup(records, &openfang_types::uploads::dir(), &dir, &date)?;
+    let removed = prune_backups(&dir, backups_keep())?;
+    tracing::info!(path = %path.display(), removed, "Studio backup written");
+    Ok(Some(path))
+}
+
+fn backups_report(state: &AppState) -> serde_json::Value {
+    let dir = backups_dir(&state.kernel.config.home_dir);
+    let list: Vec<serde_json::Value> = list_backups(&dir)
+        .into_iter()
+        .map(|(name, size)| {
+            let modified = std::fs::metadata(dir.join(&name))
+                .and_then(|m| m.modified())
+                .ok()
+                .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
+            serde_json::json!({"name": name, "bytes": size, "written_at": modified})
+        })
+        .collect();
+    serde_json::json!({
+        "enabled": backups_enabled(),
+        "keep": backups_keep(),
+        "folder": dir.display().to_string(),
+        "backups": list,
+    })
+}
+
+/// GET /api/studio/backups — the box's own backups, newest first.
+pub async fn list_backups_route(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    Json(backups_report(&state)).into_response()
+}
+
+/// POST /api/studio/backups — back up now (replaces today's file).
+pub async fn backup_now(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let kernel = state.kernel.clone();
+    match tokio::task::spawn_blocking(move || run_backup(&kernel, true)).await {
+        Ok(Ok(_)) => Json(backups_report(&state)).into_response(),
+        Ok(Err(e)) => {
+            tracing::warn!("Backup failed: {e}");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "The backup could not be written",
+            )
+        }
+        Err(e) => {
+            tracing::warn!("Backup task failed: {e}");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "The backup could not be written",
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn backups_are_dated_whole_and_pruned() {
+        let root = std::env::temp_dir().join(format!("stax-backup-test-{}", uuid::Uuid::new_v4()));
+        let uploads = root.join("uploads");
+        let dir = root.join("backups");
+        std::fs::create_dir_all(&uploads).unwrap();
+        let fid = uuid::Uuid::new_v4().to_string();
+        std::fs::write(uploads.join(&fid), b"picture").unwrap();
+        let recs = vec![
+            ("contact/1".to_string(), serde_json::json!({"name": "Jane"})),
+            ("__openfang_internal".to_string(), serde_json::json!(1)),
+        ];
+        for d in ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"] {
+            write_backup(recs.clone(), &uploads, &dir, d).unwrap();
+        }
+        std::fs::write(dir.join("notes.txt"), b"not a backup").unwrap();
+        let names: Vec<String> = list_backups(&dir).into_iter().map(|b| b.0).collect();
+        assert_eq!(names[0], "studio-2026-11-04.json", "newest first");
+        assert_eq!(names.len(), 4, "other files are not backups");
+        assert_eq!(prune_backups(&dir, 2).unwrap(), 2);
+        let names: Vec<String> = list_backups(&dir).into_iter().map(|b| b.0).collect();
+        assert_eq!(
+            names,
+            vec!["studio-2026-11-04.json", "studio-2026-11-03.json"]
+        );
+        assert!(
+            dir.join("notes.txt").exists(),
+            "pruning never touches other files"
+        );
+        // A backup is a bundle import accepts.
+        let b: StudioBundle =
+            serde_json::from_slice(&std::fs::read(dir.join("studio-2026-11-04.json")).unwrap())
+                .unwrap();
+        check_bundle(&b).unwrap();
+        assert_eq!(b.records.len(), 1, "internal keys never travel");
+        assert_eq!(b.uploads[0].file_id, fid);
+        assert!(std::fs::read_dir(&dir).unwrap().all(|e| !e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     use super::*;
     use serde_json::json;
 

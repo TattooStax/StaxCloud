@@ -6,6 +6,8 @@ license.workspace = true
 description = "Agent runtime and execution environment for OpenFang"
 
 [dependencies]
+# Shrinks reference pictures (phone photos) before they are sent to an image model.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 openfang-types = { path = "../openfang-types" }
 openfang-memory = { path = "../openfang-memory" }
 openfang-skills = { path = "../openfang-skills" }

@@ -297,7 +297,11 @@ pub async fn build_router(
         )
         .route(
             "/api/agents/{id}/upload",
-            axum::routing::post(routes::upload_file),
+            // Without its own limit this route fell back to the framework's
+            // 2 MB default, refusing ordinary phone photos.
+            axum::routing::post(routes::upload_file).layer(axum::extract::DefaultBodyLimit::max(
+                routes::MAX_UPLOAD_SIZE + 64 * 1024,
+            )),
         )
         .route("/api/agents/{id}/ws", axum::routing::get(ws::agent_ws))
         // Upload serving
@@ -358,6 +362,10 @@ pub async fn build_router(
         .route(
             "/api/studio/export",
             axum::routing::get(crate::studio::export_studio),
+        )
+        .route(
+            "/api/studio/backups",
+            axum::routing::get(crate::studio::list_backups_route).post(crate::studio::backup_now),
         )
         .route(
             "/api/studio/import",
@@ -876,6 +884,28 @@ pub async fn run_daemon(
     }
 
     kernel.start_background_agents();
+
+    // Daily studio backup: once a day the box writes its records and files to
+    // <home>/backups/studio-<date>.json and keeps the newest few
+    // (STAX_BACKUP_KEEP, default 14). Checked hourly, so a box that was off
+    // overnight backs up soon after it starts. STAX_BACKUPS=0 turns it off.
+    if crate::studio::backups_enabled() {
+        let k = kernel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+            loop {
+                let kk = k.clone();
+                match tokio::task::spawn_blocking(move || crate::studio::run_backup(&kk, false))
+                    .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => tracing::warn!("Daily studio backup failed: {e}"),
+                    Err(e) => tracing::warn!("Daily studio backup task failed: {e}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
+        });
+    }
 
     // Config file hot-reload watcher (polls every 30 seconds)
     {

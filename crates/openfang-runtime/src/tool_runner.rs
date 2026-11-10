@@ -1933,8 +1933,50 @@ fn tool_memory_store(
     let kh = require_kernel(kernel)?;
     let key = input["key"].as_str().ok_or("Missing 'key' parameter")?;
     let value = input.get("value").ok_or("Missing 'value' parameter")?;
+    if key.starts_with("draft/") {
+        if let Some(blank) = draft_blank(value) {
+            return Err(format!(
+                "Not stored: this draft still has a blank to fill in: {blank}. A customer must never see a template blank. Use the person's first name from the record, sign as the studio (memory_recall setup/profile for its name), or leave that part out — then store the draft again."
+            ));
+        }
+    }
     kh.memory_store(key, value.clone())?;
     Ok(format!("Stored value under key '{key}'."))
+}
+
+/// A template blank left in a reply draft ("[Your Name]", "{first_name}",
+/// "<studio name>", "[insert date]"), or None. Only the draft's own words
+/// are checked: the "text" / "body" / "message" fields, or a plain string.
+fn draft_blank(value: &serde_json::Value) -> Option<String> {
+    let parsed;
+    let v = match value {
+        serde_json::Value::String(s) => match serde_json::from_str::<serde_json::Value>(s) {
+            Ok(j) if j.is_object() => {
+                parsed = j;
+                &parsed
+            }
+            _ => value,
+        },
+        other => other,
+    };
+    let texts: Vec<&str> = match v {
+        serde_json::Value::String(s) => vec![s.as_str()],
+        serde_json::Value::Object(o) => ["text", "body", "message"]
+            .iter()
+            .filter_map(|f| o.get(*f).and_then(|x| x.as_str()))
+            .collect(),
+        _ => Vec::new(),
+    };
+    static BLANK: std::sync::OnceLock<regex_lite::Regex> = std::sync::OnceLock::new();
+    let re = BLANK.get_or_init(|| {
+        regex_lite::Regex::new(
+            r"(?i)[\[{<]{1,2}\s*(your|their|my|insert|client|customer|studio|shop|business|artist|first|last|full|recipient|date|time|phone|email|link|name|price|address)[^\]}>\n]{0,40}[\]}>]{1,2}",
+        )
+        .expect("valid regex")
+    });
+    texts
+        .iter()
+        .find_map(|t| re.find(t).map(|m| m.as_str().to_string()))
 }
 
 /// Longest string kept whole in a `memory_list` preview; longer strings
@@ -3316,6 +3358,15 @@ async fn tool_image_generate(
     serde_json::to_string_pretty(&response).map_err(|e| format!("Serialize error: {e}"))
 }
 
+/// The upload id (a UUID) inside however a reference was written.
+fn upload_id_in(raw: &str) -> Option<String> {
+    let chars: Vec<char> = raw.chars().collect();
+    (0..chars.len().saturating_sub(35)).find_map(|i| {
+        let cand: String = chars[i..i + 36].iter().collect();
+        uuid::Uuid::parse_str(&cand).ok().map(|u| u.to_string())
+    })
+}
+
 /// Key-safe slug for an artist name ("Leni Bee" -> "leni-bee").
 fn artist_slug(name: &str) -> String {
     let mut out = String::new();
@@ -3438,11 +3489,28 @@ async fn stax_image_generate(
 
     let mut refs: Vec<Picture> = Vec::new();
     let mut ref_ids: Vec<String> = Vec::new();
-    if let Some(ids) = input["references"].as_array() {
-        for id in ids.iter().filter_map(|v| v.as_str()) {
-            refs.push(Picture::from_upload(id)?);
-            ref_ids.push(id.to_string());
-        }
+    // References arrive however the agent wrote them: a bare file_id, an
+    // /api/uploads/<id> link, a full URL, or the "[Attached image: file_id …]"
+    // note itself. A single string is taken as a list of one.
+    let raw_refs: Vec<String> = match &input["references"] {
+        serde_json::Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        serde_json::Value::String(s) if !s.trim().is_empty() => vec![s.clone()],
+        _ => Vec::new(),
+    };
+    for raw in &raw_refs {
+        let id = upload_id_in(raw).ok_or_else(|| {
+            format!(
+                "Reference '{}' is not a picture in the studio's files. Pass the file_id from the \"[Attached image: file_id …]\" note, e.g. \"references\": [\"8c1f4c3e-2b7a-4d7e-9a51-0f4c2b9d1e10\"].",
+                crate::str_utils::safe_truncate_str(raw, 80)
+            )
+        })?;
+        refs.push(Picture::from_upload(&id).map_err(|e| {
+            format!("{e}. The customer's picture could not be used; ask the owner to attach it again (PNG, JPEG or WebP).")
+        })?);
+        ref_ids.push(id);
     }
 
     let mut full_prompt = prompt.trim().to_string();
@@ -5207,6 +5275,52 @@ mod tests {
                 {"file_id": "e", "category": "black and grey realism"}
             ]
         })
+    }
+
+    #[test]
+    fn draft_blanks_are_caught() {
+        for text in [
+            "Dear Test Person, thanks! Best regards, [Your Name]",
+            "Hi {first_name}, thanks for reaching out",
+            "See you on [insert date] at <studio name>",
+            "Thanks! — [Studio Name] team",
+        ] {
+            let rec = serde_json::json!({"kind": "reply_draft", "text": text});
+            assert!(draft_blank(&rec).is_some(), "{text}");
+            assert!(
+                draft_blank(&serde_json::Value::String(rec.to_string())).is_some(),
+                "as a JSON string: {text}"
+            );
+        }
+        for text in [
+            "Hi Jane! Thanks for the details on the rose. Grab a time here when you're ready. — Fargo Tattoo",
+            "Ready when you are [booking link below]: https://squareup.com/appointments/book/x",
+        ] {
+            let rec = serde_json::json!({"text": text});
+            let got = draft_blank(&rec);
+            assert!(got.is_none() || text.contains("[booking link"), "{text} -> {got:?}");
+        }
+        // A blank outside the draft's words (e.g. in a key name) is not checked.
+        assert!(draft_blank(
+            &serde_json::json!({"to_name": "[Your Name]", "text": "Hi Sam — Fargo Tattoo"})
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn reference_ids_are_found_however_written() {
+        let id = "8c1f4c3e-2b7a-4d7e-9a51-0f4c2b9d1e10";
+        for raw in [
+            id.to_string(),
+            format!("/api/uploads/{id}"),
+            format!("https://fang.sefer.team/api/uploads/{id}"),
+            format!("[Attached image: file_id {id}]"),
+            format!("upload:{}", id.to_uppercase()),
+        ] {
+            assert_eq!(upload_id_in(&raw).as_deref(), Some(id), "{raw}");
+        }
+        assert_eq!(upload_id_in("tiger.jpg"), None);
+        assert_eq!(upload_id_in(""), None);
     }
 
     #[test]

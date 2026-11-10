@@ -15,6 +15,15 @@
                 <button role="radio" :aria-checked="themeMode === 'dark'" :class="{ 'is-on': themeMode === 'dark' }" @click="setTheme('dark')">Dark</button>
               </span>
             </li>
+            <li class="sys-row" x-data="staxBackups()" x-init="load()">
+              <span class="sys-text"><span class="sys-name">Backups</span>
+                <span class="sys-sub" x-text="summary()"></span>
+                <span class="sys-backup-actions">
+                  <button class="btn btn-ghost btn-sm" @click="backupNow()" :disabled="busy !== ''" x-text="busy === 'now' ? 'Backing up…' : 'Back up now'"></button>
+                  <button class="btn btn-ghost btn-sm" @click="download()" :disabled="busy !== ''" x-text="busy === 'download' ? 'Preparing…' : 'Download a copy'"></button>
+                </span>
+              </span>
+            </li>
             <li><button class="sys-row" @click="askStax('I want to update my shop details.')"><span class="sys-text"><span class="sys-name">Shop details</span><span class="sys-sub">Name, hours, and what you offer</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
             <li><button class="sys-row" @click="askStax('What does Stax check with me before doing? I want to change that.')"><span class="sys-text"><span class="sys-name">What Stax checks with you first</span><span class="sys-sub">Texts, posts, and anything that spends money</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>
             <li><button class="sys-row" @click="askStax('I want to set a monthly spending limit.')"><span class="sys-text"><span class="sys-name">Spending limit</span><span class="sys-sub">A monthly cap on what Stax can spend</span></span><span class="sys-ask"><svg aria-hidden="true"><use href="#stax-reaper"/></svg>Ask Stax</span></button></li>

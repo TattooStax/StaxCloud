@@ -10643,8 +10643,8 @@ struct UploadMeta {
 /// In-memory upload metadata registry.
 static UPLOAD_REGISTRY: LazyLock<DashMap<String, UploadMeta>> = LazyLock::new(DashMap::new);
 
-/// Maximum upload size: 10 MB.
-const MAX_UPLOAD_SIZE: usize = 10 * 1024 * 1024;
+/// Maximum upload size: 25 MB (a full-size phone photo can pass 10 MB).
+pub const MAX_UPLOAD_SIZE: usize = 25 * 1024 * 1024;
 
 /// Allowed content type prefixes for upload.
 const ALLOWED_CONTENT_TYPES: &[&str] = &["image/", "text/", "application/pdf", "audio/"];

@@ -28,10 +28,7 @@ function setupPage() {
 
     async loadData() {
       try {
-        var agentId = (Alpine.store('app').agents[0] || {}).id || 'shared';
-        var data = await OpenFangAPI.get('/api/memory/agents/' + agentId + '/kv/' + encodeURIComponent('setup/profile'));
-        var v = data.value;
-        if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
+        var v = await OpenFangAPI.getRecord('setup/profile');
         if (v && v.business) { this.profile = v; this.done = true; }
       } catch(e) { /* no profile yet — the conversation starts */ }
     },

@@ -704,3 +704,5 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .lead-open::after { content: ''; position: absolute; inset: -12px 0; }
 .sys-seg button { position: relative; }
 .sys-seg button::after { content: ""; position: absolute; inset: -5px 0; }
+
+.sys-backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

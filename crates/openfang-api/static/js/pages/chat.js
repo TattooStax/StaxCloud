@@ -1292,8 +1292,8 @@ function chatPage() {
       var allowedExts = ['.txt', '.pdf', '.md', '.json', '.csv'];
       for (var i = 0; i < files.length; i++) {
         var file = files[i];
-        if (file.size > 10 * 1024 * 1024) {
-          OpenFangToast.warn('File "' + file.name + '" exceeds 10MB limit');
+        if (file.size > 25 * 1024 * 1024) {
+          OpenFangToast.warn('"' + file.name + '" is over 25 MB — try a smaller copy.');
           continue;
         }
         var typeOk = allowed.indexOf(file.type) !== -1;
