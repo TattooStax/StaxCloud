@@ -1856,6 +1856,9 @@ mod tests {
         };
         let lp = wrapper("lightpanda", "TestEngine/plain");
         let ob = wrapper("obscura", "TestEngine/stealth");
+        // A second stand-in with its own profile for the second check (a
+        // closing Chrome can hold its profile a moment longer).
+        let ob2 = wrapper("obscura2", "TestEngine/stealth");
 
         // The site: a bot wall for the plain engine, the studio for the other.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1918,7 +1921,7 @@ mod tests {
         // An engine that isn't installed is skipped at start.
         let config = BrowserConfig {
             lightpanda_path: Some("/nonexistent/lightpanda".into()),
-            obscura_path: Some(ob.display().to_string()),
+            obscura_path: Some(ob2.display().to_string()),
             engines: vec!["lightpanda".into(), "obscura".into()],
             ..BrowserConfig::default()
         };

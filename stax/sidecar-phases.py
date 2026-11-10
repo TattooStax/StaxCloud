@@ -157,7 +157,13 @@ def digest_phase(tok):
 # All three do nothing until a "memory" agent exists.
 
 # At most 10 source keys named per wake; the ledger makes deferral lossless.
-WAKE_CAP = 10
+WAKE_CAP = 3
+# A record whose wake fails this many times in a row is set aside (logged)
+# instead of re-woken every cycle at full cost; a later change to it gives
+# it a fresh try.
+WAKE_TRIES = 2
+# Most memory facts shown in Needs you at once; the rest wait their turn.
+MEM_SHOWN = 5
 
 
 def kv_snapshot(tok):
@@ -224,6 +230,8 @@ def memwake_phase(tok):
         prev = entries.get(key)
         if not prev or prev.get("sha") != sha:
             work.append((key, sha))
+        elif prev.get("pending"):
+            work.append((key, sha))
     work.sort()
     named = work[:WAKE_CAP]
     if not named:
@@ -239,13 +247,34 @@ def memwake_phase(tok):
            f"keys: {keys}. Recall each key exactly and extract per your "
            "playbook (candidates only — quote or nothing). Keys not named "
            "here are not yours to process.")
-    r = req(tok, "POST", f"/api/agents/{mem_id}/message",
-            {"message": msg, "fresh": True}, timeout=220)
-    if not (isinstance(r, dict) and r.get("response")):
-        print(stamp, "memwake: wake got no response — ledger untouched, will retry")
-        return
+    try:
+        r = req(tok, "POST", f"/api/agents/{mem_id}/message",
+                {"message": msg, "fresh": True}, timeout=220)
+        ok = isinstance(r, dict) and bool(r.get("response"))
+        why = "" if ok else "no response"
+    except urllib.error.HTTPError as e:
+        ok, why = False, f"HTTP {e.code}"
+    except Exception as e:  # timeout, connection
+        ok, why = False, type(e).__name__
     for k, sha in named:
-        entries[k] = {"sha": sha, "named_ts": stamp}
+        prev = entries.get(k) or {}
+        if ok:
+            entries[k] = {"sha": sha, "named_ts": stamp}
+            continue
+        tries = (prev.get("tries", 0) if prev.get("sha") == sha else 0) + 1
+        if tries >= WAKE_TRIES:
+            # Set aside: candidates it did file stand (they are content-keyed);
+            # re-waking the same record every cycle only re-spends.
+            entries[k] = {"sha": sha, "named_ts": stamp, "tries": tries, "set_aside": why}
+            print(stamp, f"memwake: {k} set aside after {tries} failed wakes ({why})")
+        else:
+            entries[k] = {"sha": sha, "named_ts": stamp, "tries": tries, "pending": True}
+    if not ok:
+        kv_put(tok, "memwake/state",
+               {"version": 1, "updated": stamp, "entries": entries})
+        print(stamp, f"memwake: wake failed ({why}) over {len(named)} key(s); "
+                     "each is retried once more, then set aside")
+        return
     kv_put(tok, "memwake/state",
            {"version": 1, "updated": stamp, "entries": entries})
     print(stamp, f"memwake: woke memory over {len(named)} key(s); "
@@ -410,7 +439,8 @@ def memcarry_phase(tok):
     if not mem_id:
         print(stamp, "memcarry: memory agent not found — nothing carried")
         return
-    carried = deleted = woken = 0  # woken = promotions applied
+    carried = deleted = woken = pulled = 0  # woken = promotions applied
+    showing, waiting = [], []
     for key in sorted(snapshot):
         if not key.startswith("memcand/"):
             continue
@@ -433,14 +463,35 @@ def memcarry_phase(tok):
                 woken += 1
             continue
         if linked == "pending":
-            if rec.get("status") == "candidate":
-                rec["status"] = "in-needs-you"
-                kv_put(tok, key, rec)
+            showing.append((rec.get("ts", ""), key, rec))
             continue
-        # No live link — a fresh candidate, or an approval that expired
-        # undecided (the 300 s TTL): (re-)carry it, like the drafts phase.
-        if rec.get("status") not in ("candidate", "in-needs-you"):
-            continue
+        # No live link: a fresh candidate, one pulled back to make room, or
+        # an approval that ended undecided. It waits its turn below.
+        if rec.get("status") in ("candidate", "in-needs-you"):
+            waiting.append((rec.get("ts", ""), key, rec))
+
+    # Needs you shows at most MEM_SHOWN memory facts at a time, oldest
+    # first, so customer replies are never buried. Extras already showing
+    # (e.g. a backlog from before this rule) are pulled back quietly.
+    showing.sort()
+    for _, key, rec in showing[MEM_SHOWN:]:
+        try:
+            req(tok, "POST", f"/api/approvals/{rec.get('approval_id', '')}/supersede", {"actor": "memory-carrier"})
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(stamp, "memcarry: could not pull back", key, f"(HTTP {e.code})")
+                continue
+        rec["status"] = "candidate"
+        rec.pop("approval_id", None)
+        kv_put(tok, key, rec)
+        pulled += 1
+    for _, key, rec in showing[:MEM_SHOWN]:
+        if rec.get("status") != "in-needs-you":
+            rec["status"] = "in-needs-you"
+            kv_put(tok, key, rec)
+    room = max(0, MEM_SHOWN - min(len(showing), MEM_SHOWN))
+    waiting.sort()
+    for _, key, rec in waiting[:room]:
         desc = (f"{note_text(rec)} — they said \u201c{rec.get('quote', '')}\u201d "
                 f"in {source_plain(rec, snapshot)}")
         ap = req(tok, "POST", "/api/approvals",
@@ -454,6 +505,9 @@ def memcarry_phase(tok):
         carried += 1
         print(stamp, "memcarry: candidate carried to Needs you:", key,
               "approval:", rec["approval_id"])
+    if pulled:
+        print(stamp, f"memcarry: pulled {pulled} back to wait (at most {MEM_SHOWN} shown at once)")
+    print(stamp, f"memcarry: {len(waiting) - min(len(waiting), room)} waiting their turn")
     print(stamp, f"memcarry: {carried} carried, {woken} promoted, "
                  f"{deleted} rejected+deleted")
 

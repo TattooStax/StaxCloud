@@ -285,6 +285,30 @@ fn build_user_turn_message(user_message: &str, blocks: Option<Vec<ContentBlock>>
     }
 }
 
+/// After an embedding call fails (e.g. the local embedding server is not
+/// running), memory recall uses text search for this long before trying
+/// embeddings again, instead of waiting on a dead endpoint every turn.
+const EMBED_RETRY_SECS: u64 = 600;
+static EMBED_DOWN_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn embedding_usable() -> bool {
+    unix_now() >= EMBED_DOWN_UNTIL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn embedding_failed() {
+    EMBED_DOWN_UNTIL.store(
+        unix_now() + EMBED_RETRY_SECS,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
 /// Run the agent execution loop for a single user message.
 ///
 /// This is the core of OpenFang: it loads session context, recalls memories,
@@ -323,7 +347,7 @@ pub async fn run_agent_loop(
         .unwrap_or_default();
 
     // Recall relevant memories — prefer vector similarity search when embedding driver is available
-    let memories = if let Some(emb) = embedding_driver {
+    let memories = if let Some(emb) = embedding_driver.filter(|_| embedding_usable()) {
         match emb.embed_one(user_message).await {
             Ok(query_vec) => {
                 debug!("Using vector recall (dims={})", query_vec.len());
@@ -341,7 +365,8 @@ pub async fn run_agent_loop(
                     .unwrap_or_default()
             }
             Err(e) => {
-                warn!("Embedding recall failed, falling back to text search: {e}");
+                embedding_failed();
+                warn!("Embedding recall failed, falling back to text search for {EMBED_RETRY_SECS}s: {e}");
                 memory
                     .recall(
                         user_message,
@@ -1551,7 +1576,7 @@ pub async fn run_agent_loop_streaming(
         .unwrap_or_default();
 
     // Recall relevant memories — prefer vector similarity search when embedding driver is available
-    let memories = if let Some(emb) = embedding_driver {
+    let memories = if let Some(emb) = embedding_driver.filter(|_| embedding_usable()) {
         match emb.embed_one(user_message).await {
             Ok(query_vec) => {
                 debug!("Using vector recall (streaming, dims={})", query_vec.len());
@@ -1569,7 +1594,8 @@ pub async fn run_agent_loop_streaming(
                     .unwrap_or_default()
             }
             Err(e) => {
-                warn!("Embedding recall failed (streaming), falling back to text search: {e}");
+                embedding_failed();
+                warn!("Embedding recall failed (streaming), falling back to text search for {EMBED_RETRY_SECS}s: {e}");
                 memory
                     .recall(
                         user_message,
@@ -3233,6 +3259,16 @@ mod tests {
     use async_trait::async_trait;
     use openfang_types::tool::ToolCall;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn embedding_backs_off_after_a_failure() {
+        EMBED_DOWN_UNTIL.store(0, std::sync::atomic::Ordering::Relaxed);
+        assert!(embedding_usable());
+        embedding_failed();
+        assert!(!embedding_usable(), "skipped while the endpoint is down");
+        EMBED_DOWN_UNTIL.store(unix_now() - 1, std::sync::atomic::Ordering::Relaxed);
+        assert!(embedding_usable(), "tried again after the wait");
+    }
 
     #[test]
     fn test_max_iterations_constant() {

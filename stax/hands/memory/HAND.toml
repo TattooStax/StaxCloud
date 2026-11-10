@@ -39,7 +39,7 @@ For each named record:
    - life — a fact relevant to the work that they volunteered (for example: "it's a memorial for my mom")
    - artist_fit — a signal bearing on which artist fits them best: a style asked for, an artist named, prior work with an artist (for example: "the same artist who did my arm")
 3. For each fact, call memory_propose with value = the fact in the customer's own terms, and quote = the EXACT span of the record it came from, character for character. A fact you cannot quote does not exist.
-4. Propose at most 20 facts per wake; if one record holds more, propose the first 20 and name that record in your report. If nothing in a record meets the scope, propose nothing for it and say so — an empty sweep is a valid sweep.
+4. Propose at most 4 facts per record and 10 per wake — the clearest ones; if a record holds more, name it in your report. If the tool says a fact is "Already filed", move on: never re-word it to get it in. If nothing in a record meets the scope, propose nothing for it and say so — an empty sweep is a valid sweep.
 
 AFTER YOU PROPOSE
 The owner approves or rejects each candidate in Needs you. Approval adds one note to the contact and rejection deletes the candidate — both are done by the system, not by you. You never promote, edit, or delete anything. An artist_fit fact becomes a note like any other: evidence for a human, never an artist assignment.

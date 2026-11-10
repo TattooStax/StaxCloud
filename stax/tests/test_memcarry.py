@@ -23,8 +23,11 @@ class Store:
 
     def __init__(self, kv, approvals):
         self.kv = dict(kv)
-        self.approvals = approvals
+        self.approvals = dict(approvals)
         self.posted = []
+        self.superseded = []
+        self.wakes = []
+        self.wake_error = None
 
     def req(self, tok, method, path, body=None, timeout=20):
         if path.startswith(PREFIX):
@@ -38,7 +41,19 @@ class Store:
                 return {}
         if path == "/api/approvals" and method == "POST":
             self.posted.append(body)
-            return {"id": f"ap{len(self.posted)}"}
+            aid = f"ap{len(self.posted)}"
+            self.approvals[aid] = "pending"
+            return {"id": aid}
+        if path.endswith("/supersede") and method == "POST":
+            aid = path.split("/")[3]
+            self.superseded.append(aid)
+            self.approvals[aid] = "superseded"
+            return {"decision": "superseded"}
+        if path.startswith("/api/agents/") and path.endswith("/message"):
+            self.wakes.append(body)
+            if self.wake_error:
+                raise urllib.error.HTTPError(path, self.wake_error, "boom", {}, None)
+            return {"response": "ok"}
         raise AssertionError(f"unexpected {method} {path}")
 
     def kv_put(self, tok, key, value):
@@ -108,6 +123,92 @@ def test_rejected_candidate_is_deleted_and_fresh_one_is_carried():
     assert s.kv["memcand/new"]["status"] == "in-needs-you"
     assert s.kv["memcand/new"]["approval_id"] == "ap1"
     assert s.posted[0]["tool_name"] == "memory_candidate"
+
+
+def fresh(n, ts):
+    c = cand(status="candidate", approval="")
+    c["ts"] = ts
+    c["quote"] = f"quote {n}"
+    return c
+
+
+def test_at_most_five_memory_facts_show_in_needs_you_oldest_first():
+    kv = {"contact/7015550101": dict(CONTACT)}
+    for i in range(8):
+        kv[f"memcand/c{i}"] = fresh(i, f"2026-11-10T0{i}:00:00Z")
+    s = Store(kv, {})
+    run(s)
+    assert len(s.posted) == 5
+    shown = sorted(k for k, v in s.kv.items() if k.startswith("memcand/") and v.get("status") == "in-needs-you")
+    assert shown == ["memcand/c0", "memcand/c1", "memcand/c2", "memcand/c3", "memcand/c4"], shown
+    # Next cycle with nothing decided: nothing new is added.
+    run(s)
+    assert len(s.posted) == 5
+    # The owner decides one: the next oldest takes its place.
+    s.approvals[s.kv["memcand/c0"]["approval_id"]] = "rejected"
+    run(s)
+    assert "memcand/c0" not in s.kv
+    assert s.kv["memcand/c5"]["status"] == "in-needs-you"
+    assert len(s.posted) == 6
+
+
+def test_an_old_backlog_is_pulled_back_to_five():
+    kv = {"contact/7015550101": dict(CONTACT)}
+    approvals = {}
+    for i in range(7):
+        c = cand(approval=f"old{i}")
+        c["ts"] = f"2026-11-10T0{i}:00:00Z"
+        kv[f"memcand/b{i}"] = c
+        approvals[f"old{i}"] = "pending"
+    s = Store(kv, approvals)
+    run(s)
+    assert sorted(s.superseded) == ["old5", "old6"], s.superseded
+    assert s.kv["memcand/b6"]["status"] == "candidate" and "approval_id" not in s.kv["memcand/b6"]
+    assert s.kv["memcand/b0"]["status"] == "in-needs-you"
+    assert s.posted == []
+
+
+def run_wake(store):
+    phases.req = store.req
+    phases.kv_put = store.kv_put
+    phases.kv_snapshot = lambda tok: dict(store.kv)
+    phases.agent_id = lambda tok, name: "mem-1"
+    phases.memwake_phase("tok")
+
+
+def thread(n):
+    return {"number": f"+1701555{n:04d}", "messages": [{"id": "m1", "dir": "in", "body": f"hello {n}"}]}
+
+
+def test_memwake_names_three_records_per_wake():
+    s = Store({f"sms/701555{n:04d}": thread(n) for n in range(5)}, {})
+    run_wake(s)
+    assert len(s.wakes) == 1
+    assert s.wakes[0]["message"].count("sms/") == 3
+    run_wake(s)
+    assert s.wakes[1]["message"].count("sms/") == 2, "the rest next cycle"
+    run_wake(s)
+    assert len(s.wakes) == 2, "nothing left"
+
+
+def test_a_failing_wake_is_retried_once_then_set_aside():
+    s = Store({"sms/7015550001": thread(1)}, {})
+    s.wake_error = 500
+    run_wake(s)
+    assert len(s.wakes) == 1
+    assert s.kv["memwake/state"]["entries"]["sms/7015550001"].get("pending")
+    run_wake(s)
+    assert len(s.wakes) == 2
+    e = s.kv["memwake/state"]["entries"]["sms/7015550001"]
+    assert e.get("set_aside") == "HTTP 500" and not e.get("pending")
+    run_wake(s)
+    assert len(s.wakes) == 2, "set aside: not woken again"
+    # A new message gives it a fresh try.
+    s.wake_error = None
+    s.kv["sms/7015550001"]["messages"].append({"id": "m2", "dir": "in", "body": "one more"})
+    run_wake(s)
+    assert len(s.wakes) == 3
+    assert "set_aside" not in s.kv["memwake/state"]["entries"]["sms/7015550001"]
 
 
 if __name__ == "__main__":

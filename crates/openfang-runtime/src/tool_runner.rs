@@ -2282,6 +2282,50 @@ fn memory_contact_keys(source_key: &str, rec: &serde_json::Value) -> Vec<String>
     keys
 }
 
+/// A fact already filed from the same conversation that this one repeats:
+/// its quote overlaps (one contains the other), or it states the same value
+/// for the same field. A re-read of a record then files nothing new, however
+/// the model words it this time. Returns the report, or None.
+fn memory_near_duplicate(
+    kh: &Arc<dyn KernelHandle>,
+    key: &str,
+    source_key: &str,
+    field: &str,
+    value: &str,
+    quote: &str,
+) -> Result<Option<String>, String> {
+    let norm = |t: &str| {
+        t.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim_matches(|c: char| c.is_ascii_punctuation())
+            .to_string()
+    };
+    let (q, v) = (norm(quote), norm(value));
+    for (k, rec) in kh.memory_list("memcand/")? {
+        if k == key {
+            continue;
+        }
+        let rec = stored_record(rec);
+        if rec["source_key"].as_str() != Some(source_key) {
+            continue;
+        }
+        let pq = norm(rec["quote"].as_str().unwrap_or(""));
+        let pv = norm(rec["value"].as_str().unwrap_or(""));
+        let overlaps = !pq.is_empty() && (pq.contains(&q) || q.contains(&pq));
+        let same = rec["field"].as_str() == Some(field) && !pv.is_empty() && pv == v;
+        if overlaps || same {
+            return Ok(Some(format!(
+                "Already filed from this conversation at {k} ({}: \"{}\") — nothing new filed. Move on to the next fact.",
+                rec["field"].as_str().unwrap_or("fact"),
+                rec["value"].as_str().unwrap_or("")
+            )));
+        }
+    }
+    Ok(None)
+}
+
 /// The candidate's key: content-addressed, so proposing the same words from
 /// the same record again lands on the same candidate instead of a copy.
 fn memory_candidate_key(source_key: &str, quote: &str) -> String {
@@ -2342,6 +2386,9 @@ fn tool_memory_propose(
     }
 
     let key = memory_candidate_key(&source_key, quote);
+    if let Some(dup) = memory_near_duplicate(kh, &key, &source_key, &field, &value, quote)? {
+        return Ok(dup);
+    }
     if let Some(prev) = kh.memory_recall(&key)? {
         let prev = stored_record(prev);
         let status = prev["status"].as_str().unwrap_or("");
@@ -6226,6 +6273,40 @@ mod tests {
                 "{t}"
             );
         }
+    }
+
+    #[test]
+    fn memory_propose_files_nothing_new_on_a_reread() {
+        let k = memory_kernel();
+        let first = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "placement",
+                "value": "left forearm", "quote": "on my left forearm"}),
+            Some(&k),
+        )
+        .unwrap();
+        assert!(first.starts_with("Proposed"), "{first}");
+        // The same fact quoted a little wider, and the same value reworded.
+        for (quote, value) in [
+            ("pair on my left forearm", "left forearm"),
+            ("left forearm", "Left forearm."),
+        ] {
+            let again = tool_memory_propose(
+                &serde_json::json!({"source_key": "sms/17015550101", "field": "placement",
+                    "value": value, "quote": quote}),
+                Some(&k),
+            )
+            .unwrap();
+            assert!(again.starts_with("Already filed"), "{again}");
+        }
+        // A different fact from the same message still files.
+        let other = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "piece",
+                "value": "fine-line horseshoe pair", "quote": "fine-line horseshoe pair"}),
+            Some(&k),
+        )
+        .unwrap();
+        assert!(other.starts_with("Proposed"), "{other}");
+        assert_eq!(k.memory_list("memcand/").unwrap().len(), 2);
     }
 
     #[test]
