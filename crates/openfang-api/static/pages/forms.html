@@ -60,7 +60,7 @@
                     <button class="btn btn-primary btn-sm" @click="editForm(d.slug)">Edit</button>
                     <button class="btn btn-ghost btn-sm" @click="setPreview(d.slug); $store.app.formsTab = 'preview'">Preview</button>
                     <button class="btn btn-ghost btn-sm" @click="$store.app.formsTab = 'subs'">Submissions</button>
-                    <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="deleteForm(d.slug)" x-text="confirmDelete === d.slug ? 'Tap again to remove' : 'Remove'"></button>
+                    <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="deleteForm(d.slug)" >Remove</button>
                   </div>
                 </div>
               </template>

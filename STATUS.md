@@ -15,6 +15,7 @@ the owner has used it.
 | 5 Contacts + Forms | `strike-5-contacts-forms` | Form builder, forms hosted at `/f/<slug>`, Contacts in the Records layout | Live; builder -> publish -> phone submit -> contact -> draft verified on the box |
 | 6 Clean surfaces | `strike-6-clean-surfaces` | One file per page, consistent headers/empty/error states, surface audit | Live (9686562) |
 | 7 Ship hardening | `strike-7-ship-hardening` | Photo uploads fixed (designs in chat), no template blanks in drafts, helper jobs survive updates, daily backups, background helper health in Connections | Live (e004d64); designs in chat verified on the box |
+| 9 UI primitives | `strike-9-ui-primitives` | V4's shared behaviours in the fork's look: one question box (dangerous ones open on Cancel, buttons name the action, focus kept and returned), Undo toasts, every pop-up window takes and returns focus and stays on screen, one focus ring, Reduce Motion honoured, no browser pop-ups; Forms asks before discard/take down/remove and offers Undo for a removed block | Not yet deployed |
 | 8 Memory | `strike-8-memory` | Memory helper proposes facts through a checking tool (exact words, customer only, key in code); approval adds one contact note in code; uploads can be deleted | Not yet deployed; Memory sidecar phases still staged |
 
 Still open, plainly:
@@ -27,7 +28,8 @@ Still open, plainly:
 - The four Python sidecars are still separate processes; they now report health to Connections, and folding them into the daemon is a post-launch job.
 
 Checks that exist: `cargo test`, `node stax/tests/forms_builder.test.js`,
-`python3 stax/tests/test_memcarry.py`,
+`python3 stax/tests/test_memcarry.py`, `node stax/tests/ui_primitives.test.js`,
+`node stax/tests/ui_primitives_browser.js` (local daemon),
 `python3 -m unittest stax/bench/test_bench.py`, and
 `node stax/tests/surface_audit.js <dir>` (walks every screen on iPad and
 phone against a local daemon).

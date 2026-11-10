@@ -769,8 +769,9 @@ function chatPage() {
     async createSession() {
       if (!this.currentAgent) return;
       var t = typeof window.t === 'function' ? window.t : function(s) { return s; };
-      var label = prompt(t('chat.session_name_prompt'));
-      if (label === null) return; // cancelled
+      var answer = await StaxUI.ask({ title: t('chat.session_name_prompt'), fields: [{ name: 'label', label: 'Name (optional)', placeholder: 'e.g. Sleeve planning' }], confirmLabel: 'Start chat' });
+      if (answer === null) return; // cancelled
+      var label = answer.label || '';
       try {
         await OpenFangAPI.post('/api/agents/' + this.currentAgent.id + '/sessions', {
           label: label.trim() || undefined

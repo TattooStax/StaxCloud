@@ -694,7 +694,6 @@ function formsPage() {
     addAt: -1,
     saving: false,
     showTemplates: false,
-    confirmDelete: '',
     palette: FB_PALETTE,
     fbBlockName: fbBlockName,
     raws: {},
@@ -816,7 +815,17 @@ function formsPage() {
     },
 
     leaveBuilder() { Alpine.store('app').formsTab = 'forms'; },
-    discardDraft() { this.draft = null; this.draftRaw = null; this.draftDirty = false; Alpine.store('app').formsTab = 'forms'; },
+    async discardDraft() {
+      if (this.draft && (this.draftDirty || this.draft.isNew)) {
+        var ok = await StaxUI.confirm({
+          title: 'Discard your changes?',
+          message: 'The edits to \u201c' + (this.draft.title || 'this form') + '\u201d since you last saved are thrown away. The saved form stays as it was.',
+          confirmLabel: 'Discard', danger: true
+        });
+        if (!ok) return;
+      }
+      this.draft = null; this.draftRaw = null; this.draftDirty = false; Alpine.store('app').formsTab = 'forms';
+    },
 
     openAdd(at) { this.adding = true; this.addAt = at; this.openBlock = -1; },
     addBlock(entry) {
@@ -833,9 +842,18 @@ function formsPage() {
       });
     },
     removeBlock(i) {
-      this.draft.fields.splice(i, 1);
+      var self = this;
+      var draft = this.draft;
+      var removed = draft.fields.splice(i, 1)[0];
       this.openBlock = -1;
       this.touch(); this.reseed();
+      if (!removed) return;
+      StaxUI.undo('Removed \u201c' + (fbBlockName(removed) || 'block') + '\u201d', function() {
+        // Only into the same form, still open: never into a different draft.
+        if (self.draft !== draft) return;
+        draft.fields.splice(Math.min(i, draft.fields.length), 0, removed);
+        self.touch(); self.reseed();
+      });
     },
     moveBlock(i, by) {
       var j = i + by;
@@ -861,6 +879,14 @@ function formsPage() {
 
     async saveDraft(publish) {
       if (!this.draft || this.saving) return false;
+      if (publish === false) {
+        var down = await StaxUI.confirm({
+          title: 'Take this form down?',
+          message: 'The link stops working for anyone who has it. You can publish it again later.',
+          confirmLabel: 'Take down', danger: true
+        });
+        if (!down) return false;
+      }
       var problem = fbProblems(this.draft);
       if (problem) { OpenFangToast.error(problem); return false; }
       var published = publish === undefined ? !!this.draft.published : !!publish;
@@ -899,8 +925,13 @@ function formsPage() {
     },
 
     async deleteForm(slug) {
-      if (this.confirmDelete !== slug) { this.confirmDelete = slug; return; }
-      this.confirmDelete = '';
+      var def = this.defOf(slug) || {};
+      var ok = await StaxUI.confirm({
+        title: 'Remove this form?',
+        message: '\u201c' + (def.title || slug) + '\u201d comes off your list and its link stops working. Submissions already sent are kept.',
+        confirmLabel: 'Remove', danger: true
+      });
+      if (!ok) return;
       try {
         var rec = JSON.parse(JSON.stringify(this.raws[slug] || {}));
         rec.deleted = true; rec.published = false; rec.updated = new Date().toISOString();

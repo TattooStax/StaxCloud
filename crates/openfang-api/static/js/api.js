@@ -34,6 +34,8 @@ var OpenFangToast = (function() {
 
     var closeBtn = document.createElement('button');
     closeBtn.className = 'toast-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
     closeBtn.textContent = '\u00D7';
     closeBtn.onclick = function() { dismissToast(el); };
     el.appendChild(closeBtn);
@@ -59,51 +61,203 @@ var OpenFangToast = (function() {
   function warn(msg, duration) { return toast(msg, 'warn', duration || 5000); }
   function info(msg, duration) { return toast(msg, 'info', duration); }
 
-  // Styled confirmation modal — replaces native confirm()
-  function confirm(title, message, onConfirm) {
-    var overlay = document.createElement('div');
-    overlay.className = 'confirm-overlay';
-
-    var modal = document.createElement('div');
-    modal.className = 'confirm-modal';
-
-    var titleEl = document.createElement('div');
-    titleEl.className = 'confirm-title';
-    titleEl.textContent = title;
-    modal.appendChild(titleEl);
-
-    var msgEl = document.createElement('div');
-    msgEl.className = 'confirm-message';
-    msgEl.textContent = message;
-    modal.appendChild(msgEl);
-
-    var actions = document.createElement('div');
-    actions.className = 'confirm-actions';
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-ghost confirm-cancel';
-    cancelBtn.textContent = 'Cancel';
-    actions.appendChild(cancelBtn);
-
-    var okBtn = document.createElement('button');
-    okBtn.className = 'btn btn-danger confirm-ok';
-    okBtn.textContent = 'Confirm';
-    actions.appendChild(okBtn);
-
-    modal.appendChild(actions);
-    overlay.appendChild(modal);
-
-    function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); document.removeEventListener('keydown', onKey); }
-    cancelBtn.onclick = close;
-    okBtn.onclick = function() { close(); if (onConfirm) onConfirm(); };
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
-
-    function onKey(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', onKey);
-
-    document.body.appendChild(overlay);
-    okBtn.focus();
+  // ── The one in-page question (V4's AppShell.ask, in the fork's style) ──
+  // Native confirm()/prompt() can be dismissed without a word in an
+  // installed web app or an embedded view, so every question goes here.
+  //   StaxUI.ask({ title, message, fields: [{ name, label, value,
+  //     placeholder, type, inputmode, required, options }], requireText,
+  //     confirmLabel, cancelLabel, danger })
+  // resolves an object of field values on confirm, or null on Cancel,
+  // Escape or the backdrop. One question at a time. A dangerous question
+  // opens on Cancel so Enter alone never removes anything. Focus stays in
+  // the question while it is open and goes back where it was after.
+  var _askQueue = Promise.resolve();
+  function ask(options) {
+    var turn = _askQueue.then(function() { return askNow(options); });
+    _askQueue = turn.catch(function() { return null; });
+    return turn;
   }
+
+  function askNow(options) {
+    var opts = typeof options === 'string' ? { message: options } : (options || {});
+    var fields = Array.isArray(opts.fields) ? opts.fields.slice() : [];
+    if (opts.requireText) fields.push({ name: '__require', label: 'Type ' + opts.requireText + ' to continue', required: true });
+    return new Promise(function(resolve) {
+      var returnFocus = document.activeElement;
+      var uid = 'stax-ask-' + Math.random().toString(36).slice(2, 10);
+      var overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      var form = document.createElement('form');
+      form.className = 'confirm-modal';
+      form.setAttribute('role', 'alertdialog');
+      form.setAttribute('aria-modal', 'true');
+      form.setAttribute('aria-labelledby', uid + '-t');
+      form.setAttribute('tabindex', '-1');
+      form.noValidate = true;
+
+      var titleEl = document.createElement('div');
+      titleEl.className = 'confirm-title';
+      titleEl.id = uid + '-t';
+      titleEl.textContent = opts.title || 'Are you sure?';
+      form.appendChild(titleEl);
+      if (opts.message) {
+        var msgEl = document.createElement('div');
+        msgEl.className = 'confirm-message';
+        msgEl.id = uid + '-m';
+        msgEl.textContent = opts.message;
+        form.setAttribute('aria-describedby', uid + '-m');
+        form.appendChild(msgEl);
+      }
+
+      var inputs = [];
+      fields.forEach(function(f, i) {
+        var label = document.createElement('label');
+        label.className = 'confirm-field';
+        label.setAttribute('for', uid + '-f' + i);
+        var span = document.createElement('span');
+        span.textContent = f.label || f.name;
+        label.appendChild(span);
+        var input;
+        if (Array.isArray(f.options)) {
+          input = document.createElement('select');
+          f.options.forEach(function(o) {
+            var opt = document.createElement('option');
+            opt.value = o.value; opt.textContent = o.label != null ? o.label : o.value;
+            if (String(o.value) === String(f.value == null ? '' : f.value)) opt.selected = true;
+            input.appendChild(opt);
+          });
+        } else {
+          input = document.createElement('input');
+          input.type = f.type || 'text';
+          input.value = f.value == null ? '' : f.value;
+          if (f.placeholder) input.placeholder = f.placeholder;
+          if (f.inputmode) input.setAttribute('inputmode', f.inputmode);
+          input.autocomplete = 'off';
+        }
+        input.id = uid + '-f' + i;
+        input.name = f.name;
+        input.className = 'form-input';
+        if (f.required) input.required = true;
+        label.appendChild(input);
+        form.appendChild(label);
+        inputs.push(input);
+      });
+
+      var actions = document.createElement('div');
+      actions.className = 'confirm-actions';
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-ghost confirm-cancel';
+      cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+      var okBtn = document.createElement('button');
+      okBtn.type = 'submit';
+      okBtn.className = 'btn confirm-ok ' + (opts.danger ? 'btn-danger' : 'btn-primary');
+      okBtn.textContent = opts.confirmLabel || 'Continue';
+      actions.appendChild(cancelBtn);
+      actions.appendChild(okBtn);
+      form.appendChild(actions);
+      overlay.appendChild(form);
+
+      function ready() {
+        var filled = inputs.every(function(x) { return !x.required || String(x.value).trim(); });
+        var typed = !opts.requireText || (form.elements.__require && form.elements.__require.value === opts.requireText);
+        return filled && typed;
+      }
+      function sync() { okBtn.disabled = !ready(); }
+      inputs.forEach(function(x) { x.addEventListener('input', sync); x.addEventListener('change', sync); });
+      sync();
+
+      var settled = false;
+      function first() { return inputs[0] || (opts.danger ? cancelBtn : okBtn); }
+      function keepFocus(e) { if (!overlay.contains(e.target)) { var f = first(); if (f) f.focus(); } }
+      document.addEventListener('focusin', keepFocus, true);
+      function finish(answer) {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('focusin', keepFocus, true);
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        try { if (returnFocus && returnFocus.focus) returnFocus.focus({ preventScroll: true }); } catch (e) {}
+        resolve(answer);
+      }
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (!ready()) return;
+        var values = {};
+        inputs.forEach(function(x) { if (x.name !== '__require') values[x.name] = x.value; });
+        finish(values);
+      });
+      cancelBtn.addEventListener('click', function() { finish(null); });
+      // The backdrop dismisses only a press that also began on it, so a
+      // text selection released outside the box never throws input away.
+      var pressedBackdrop = false;
+      overlay.addEventListener('pointerdown', function(e) { pressedBackdrop = e.target === overlay; });
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay && pressedBackdrop) finish(null);
+        pressedBackdrop = false;
+      });
+      overlay.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); return; }
+        if (e.key !== 'Tab') return;
+        var nodes = Array.prototype.slice.call(overlay.querySelectorAll('input, select, button:not([disabled])'));
+        if (!nodes.length) return;
+        var i = nodes.indexOf(document.activeElement);
+        e.preventDefault();
+        nodes[(i + (e.shiftKey ? nodes.length - 1 : 1) + nodes.length) % nodes.length].focus();
+      });
+      document.body.appendChild(overlay);
+      var f0 = first(); if (f0) f0.focus();
+    });
+  }
+
+  // Yes/no form of ask(): resolves true only on the confirm button.
+  function confirmAsk(options) {
+    var opts = typeof options === 'string' ? { message: options } : (options || {});
+    var plain = {};
+    for (var k in opts) { if (k !== 'fields' && k !== 'requireText') plain[k] = opts[k]; }
+    return ask(plain).then(function(answer) { return answer !== null; });
+  }
+
+  // The verb a destructive title starts with, for the button: a button
+  // says what it does ("Delete"), never just "Confirm".
+  var VERBS = ['Delete', 'Remove', 'Clear', 'Deactivate', 'Reject', 'Discard', 'Archive', 'Disconnect', 'Reset', 'Stop', 'Cancel', 'Unpublish', 'Uninstall', 'Forget', 'Revoke'];
+  function verbOf(title) {
+    var w = String(title || '').replace(/^[^A-Za-z]+/, '').split(/\s+/);
+    var first = (w[0] || '').replace(/[^A-Za-z]/g, '');
+    first = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    var tail = String(title || '').match(/\b(offline|down)\b/i);
+    if (first === 'Take' && tail) return 'Take ' + tail[1].toLowerCase();
+    if (first === 'Cancel') return 'Yes, cancel';
+    return VERBS.indexOf(first) >= 0 ? first : 'Confirm';
+  }
+
+  // Older callers: confirm(title, message, onConfirm). Every one of them is
+  // a destructive question, so it opens on Cancel and names its verb.
+  function confirm(title, message, onConfirm, confirmLabel) {
+    confirmAsk({ title: title, message: message, danger: true, confirmLabel: confirmLabel || verbOf(title) })
+      .then(function(yes) { if (yes && onConfirm) onConfirm(); });
+  }
+
+  // A toast with one action (usually "Undo"). The action runs at most once,
+  // and only while the toast is showing.
+  function action(message, label, onAction, duration) {
+    var id = toast(message, 'info', duration || 7000);
+    var el = getContainer().querySelector('[data-toast-id="' + id + '"]');
+    if (!el) return id;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = label || 'Undo';
+    var done = false;
+    btn.onclick = function() {
+      if (done) return;
+      done = true;
+      dismissToast(el);
+      if (onAction) onAction();
+    };
+    el.insertBefore(btn, el.querySelector('.toast-close'));
+    return id;
+  }
+  function undo(message, onUndo) { return action(message, 'Undo', onUndo); }
 
   return {
     toast: toast,
@@ -111,9 +265,98 @@ var OpenFangToast = (function() {
     error: error,
     warn: warn,
     info: info,
-    confirm: confirm
+    confirm: confirm,
+    ask: ask,
+    confirmAsk: confirmAsk,
+    action: action,
+    undo: undo,
+    verbOf: verbOf
   };
 })();
+
+// ── Every pop-up window behaves the same (V4: bounded, focus kept) ──
+// Pages open windows with Alpine (x-show on a .modal-overlay, or a sheet
+// marked role="dialog"). This watcher gives each one the same manners
+// without touching the pages: it is announced as a dialog, focus moves
+// into it, Tab stays inside it, and when it closes focus goes back to
+// what opened it. Escape and backdrop closing stay with each page.
+var StaxDialogs = (function() {
+  var open = [];  // { el, back }
+  var SEL = '.modal-overlay, [role="dialog"][aria-modal="true"]';
+  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  function shown(el) {
+    if (!el.isConnected) return false;
+    var r = el.getBoundingClientRect();
+    var st = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && st.display !== 'none' && st.visibility !== 'hidden';
+  }
+  function focusables(el) {
+    return Array.prototype.slice.call(el.querySelectorAll(FOCUSABLE)).filter(function(n) {
+      var r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+    });
+  }
+  function panelOf(el) { return el.classList.contains('modal-overlay') ? (el.querySelector('.modal') || el) : el; }
+  function opened(el) {
+    var panel = panelOf(el);
+    if (!panel.getAttribute('role')) panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    if (!panel.getAttribute('aria-label') && !panel.getAttribute('aria-labelledby')) {
+      var h = panel.querySelector('h1, h2, h3, h4, .modal-title');
+      if (h && h.textContent.trim()) panel.setAttribute('aria-label', h.textContent.trim().slice(0, 80));
+    }
+    open.push({ el: el, back: document.activeElement });
+    setTimeout(function() {
+      if (!shown(el) || el.contains(document.activeElement)) return;
+      var f = focusables(panel);
+      var target = f.filter(function(n) { return /^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName); })[0] || f[0];
+      if (target) target.focus({ preventScroll: true });
+      else { panel.setAttribute('tabindex', '-1'); panel.focus({ preventScroll: true }); }
+    }, 30);
+  }
+  function closed(entry) {
+    var back = entry.back;
+    if (back && back.isConnected && back.focus && !document.querySelector('.confirm-overlay')) {
+      try { back.focus({ preventScroll: true }); } catch (e) {}
+    }
+  }
+  function scan() {
+    var now = Array.prototype.slice.call(document.querySelectorAll(SEL)).filter(shown);
+    open = open.filter(function(o) {
+      if (now.indexOf(o.el) >= 0) return true;
+      closed(o); return false;
+    });
+    now.forEach(function(el) {
+      if (!open.some(function(o) { return o.el === el; })) opened(el);
+    });
+  }
+  var pending = false;
+  function later() { if (pending) return; pending = true; requestAnimationFrame(function() { pending = false; scan(); }); }
+  function top() { return open.length ? open[open.length - 1].el : null; }
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Tab' || document.querySelector('.confirm-overlay')) return;
+    var el = top(); if (!el) return;
+    var f = focusables(panelOf(el)); if (!f.length) return;
+    var i = f.indexOf(document.activeElement);
+    if (i < 0) { e.preventDefault(); f[0].focus(); return; }
+    if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    else if (e.shiftKey && i === 0) { e.preventDefault(); f[f.length - 1].focus(); }
+  }, true);
+  function start() {
+    new MutationObserver(later).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+    scan();
+  }
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  return { scan: scan, openCount: function() { return open.length; } };
+})();
+
+// The shared UI primitives under one name (V4 calls these AppShell.ask /
+// AppShell.confirm). Pages use StaxUI; OpenFangToast keeps working.
+var StaxUI = {
+  ask: OpenFangToast.ask,
+  confirm: OpenFangToast.confirmAsk,
+  undo: OpenFangToast.undo,
+  action: OpenFangToast.action
+};
 
 // ── Friendly Error Messages ──
 function friendlyError(status, serverMsg) {

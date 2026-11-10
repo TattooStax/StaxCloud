@@ -3503,3 +3503,45 @@ mark.search-highlight {
 .rec-split.is-wide { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .rec-split.is-wide .rec-list { position: sticky; top: 12px; max-height: calc(100vh - 150px); overflow: auto; padding-right: 2px; }
 .fb-setting .pv-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+
+/* ── Shared primitives, Strike 9 (V4 behaviour, fork look) ─────────────── */
+/* The one question box: fields, and kept inside the visible screen even
+   with the iPad keyboard up or a notch. */
+.confirm-overlay { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.confirm-modal { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; outline: none; }
+.confirm-message { font-size: 14px; white-space: pre-wrap; }
+.confirm-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.confirm-field .form-input { width: 100%; min-height: 44px; font-size: 16px; }
+.confirm-actions .btn { min-height: 44px; padding: 0 18px; }
+.confirm-actions .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Pop-up windows never run off the screen. */
+.modal-overlay { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.modal { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+.modal:focus, .confirm-modal:focus { outline: none; }
+
+/* Toast with an action ("Undo"). */
+.toast-action { flex-shrink: 0; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; position: relative; }
+.toast-action::after { content: ""; position: absolute; inset: -4px 0; }
+.toast-close { min-width: 32px; min-height: 32px; }
+
+/* One visible focus ring for every control a keyboard can reach. Pages
+   that draw their own ring keep it (theirs is more specific). */
+:where(button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [role="radio"], [role="option"], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The iPad's Reduce Motion setting is honoured everywhere: motion only
+   ever says "opened", "selected" or "saved", so nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* A spinner that stops looks frozen, so "still working" keeps turning,
+     slowly. Pulses and shimmers simply stop. */
+  .spinner, .tool-card-spinner { animation-duration: 1.6s !important; animation-iteration-count: infinite !important; }
+}

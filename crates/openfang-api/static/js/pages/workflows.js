@@ -79,7 +79,7 @@ function workflowsPage() {
     },
 
     async deleteWorkflow(wf) {
-      if (!confirm('Delete workflow "' + wf.name + '"? This cannot be undone.')) return;
+      if (!(await StaxUI.confirm({ title: 'Delete workflow?', message: '"' + wf.name + '" is removed for good.', confirmLabel: 'Delete', danger: true }))) return;
       try {
         await OpenFangAPI.delete('/api/workflows/' + wf.id);
         OpenFangToast.success('Workflow "' + wf.name + '" deleted');

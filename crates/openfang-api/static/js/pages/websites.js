@@ -208,7 +208,7 @@ function websitesPage() {
             OpenFangToast.error(e.message || 'Could not take the site offline. Try again.');
           }
           self.busySlug = '';
-        });
+        }, 'Take offline');
     },
 
     async showPreview(s) {

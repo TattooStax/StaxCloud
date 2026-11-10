@@ -267,7 +267,7 @@ function settingsPage() {
     },
 
     async deleteCustomModel(modelId) {
-      if (!confirm('Delete custom model "' + modelId + '"?')) return;
+      if (!(await StaxUI.confirm({ title: 'Delete custom model?', message: '"' + modelId + '" is removed from your model list.', confirmLabel: 'Delete', danger: true }))) return;
       try {
         await OpenFangAPI.del('/api/models/custom/' + encodeURIComponent(modelId));
         OpenFangToast.success('Model deleted');
