@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Form</title>
+<style nonce="__NONCE__">
+:root { --bg:#f4f2ec; --surface:#ffffff; --text:#1b1b1f; --dim:#5b5b66; --border:#d9d5ca; --accent:#146e68; --on-accent:#ffffff; --error:#b3261e; --radius:12px; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#0c0c0e; --surface:#17171b; --text:#f1efe9; --dim:#a9a7b2; --border:#2c2c33; --accent:#3fb3aa; --on-accent:#06201e; --error:#ff8a80; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width:640px; margin:0 auto; padding:20px 16px calc(40px + env(safe-area-inset-bottom)); }
+h1 { font-size:24px; line-height:1.2; margin:8px 0 4px; text-wrap:balance; }
+.studio { color:var(--dim); font-size:14px; margin:0 0 18px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 16px; }
+.field { margin:0 0 20px; }
+.field:last-child { margin-bottom:0; }
+.label { display:block; font-weight:600; font-size:15px; margin:0 0 6px; }
+.sub-label { display:block; font-size:14px; color:var(--dim); margin:0 0 4px; }
+.help, .note { font-size:13px; color:var(--dim); margin:0 0 8px; }
+.req { color:var(--error); }
+input[type=text], input[type=email], input[type=tel], input[type=url], input[type=number], input[type=date], select, textarea {
+  width:100%; min-height:48px; padding:10px 12px; font:inherit; color:var(--text); background:var(--bg);
+  border:1px solid var(--border); border-radius:10px; }
+textarea { min-height:96px; resize:vertical; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, canvas:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.stack { display:flex; flex-direction:column; gap:12px; }
+.check { display:flex; gap:10px; align-items:flex-start; min-height:44px; padding:8px 0; cursor:pointer; }
+.check input { width:22px; height:22px; margin:1px 0 0; flex:none; accent-color:var(--accent); }
+.pills { display:flex; flex-wrap:wrap; gap:8px; }
+.pill { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:6px 14px; border:1px solid var(--border); border-radius:999px; cursor:pointer; background:var(--bg); }
+.pill input { accent-color:var(--accent); }
+.pill img { width:44px; height:44px; object-fit:cover; border-radius:6px; }
+.rich { font-size:15px; }
+.rich p { margin:0 0 10px; }
+.rich > :last-child { margin-bottom:0; }
+.terms { max-height:260px; overflow:auto; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg); margin-bottom:8px; }
+h2.block-heading { font-size:18px; margin:6px 0 0; }
+.sig-wrap { border:1px dashed var(--border); border-radius:10px; background:var(--bg); position:relative; }
+canvas.sig { display:block; width:100%; height:160px; touch-action:none; border-radius:10px; }
+.sig-hint { position:absolute; left:12px; bottom:8px; font-size:13px; color:var(--dim); pointer-events:none; }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+button { font:inherit; }
+.btn { min-height:48px; padding:10px 18px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+.btn-primary { background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:700; width:100%; margin-top:20px; }
+.btn[disabled] { opacity:.6; cursor:default; }
+.btn-small { min-height:40px; padding:6px 12px; font-size:14px; }
+.thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.thumb { position:relative; }
+.thumb img { width:84px; height:84px; object-fit:cover; border-radius:8px; border:1px solid var(--border); display:block; }
+.thumb button { position:absolute; top:-8px; right:-8px; width:28px; height:28px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+.error-msg { color:var(--error); font-size:14px; margin:6px 0 0; }
+.banner { border:1px solid var(--error); color:var(--error); border-radius:10px; padding:10px 12px; margin:16px 0 0; font-size:15px; }
+.field.invalid input, .field.invalid select, .field.invalid textarea, .field.invalid .sig-wrap { border-color:var(--error); }
+.hp { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+.center { text-align:center; padding:36px 12px; }
+.center h1 { margin-bottom:10px; }
+.muted { color:var(--dim); }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted" role="status">Loading…</p></main>
+<script nonce="__NONCE__">
+'use strict';
+__HELPERS__
+
+(function() {
+  var slug = decodeURIComponent(location.pathname.replace(/^\/f\//, '').replace(/\/+$/, ''));
+  var app = document.getElementById('app');
+  var def = null, artists = [], data = {}, busy = false, uid = 0;
+  var startedAt = Date.now();
+
+  function h(tag, attrs) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k === 'html') el.innerHTML = v;
+      else if (k.indexOf('on') === 0) el.addEventListener(k.slice(2), v);
+      else if (v === true) el.setAttribute(k, '');
+      else el.setAttribute(k, v);
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c === null || c === undefined || c === false) continue;
+      if (Array.isArray(c)) c.forEach(function(x) { if (x) el.appendChild(x); });
+      else el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return el;
+  }
+  function nid() { uid += 1; return 'f' + uid; }
+
+  function input(type, key, placeholder, label) {
+    var el = h('input', { type: type, id: nid(), placeholder: placeholder || null, 'aria-label': label || null,
+      autocomplete: type === 'email' ? 'email' : type === 'tel' ? 'tel' : null });
+    if (data[key] !== undefined && data[key] !== null) el.value = data[key];
+    el.addEventListener('input', function() { data[key] = el.value; });
+    return el;
+  }
+  function textarea(key, placeholder, rows, label) {
+    var el = h('textarea', { id: nid(), rows: String(rows || 4), placeholder: placeholder || null, 'aria-label': label || null });
+    if (data[key]) el.value = data[key];
+    el.addEventListener('input', function() { data[key] = el.value; });
+    return el;
+  }
+  function select(key, options, label) {
+    var el = h('select', { id: nid(), 'aria-label': label || null }, h('option', { value: '', text: 'Choose…' }));
+    options.forEach(function(o) { el.appendChild(h('option', { value: o.value, text: o.label })); });
+    if (data[key]) el.value = data[key];
+    el.addEventListener('change', function() { data[key] = el.value; });
+    return el;
+  }
+  function labeled(labelText, control) {
+    return h('div', null, h('label', { class: 'sub-label', 'for': control.id, text: labelText }), control);
+  }
+  // A checkbox bound to membership of `value` in the array at data[key].
+  function checkIn(key, value, text) {
+    var box = h('input', { type: 'checkbox' });
+    if (!Array.isArray(data[key])) data[key] = [];
+    box.checked = data[key].indexOf(value) >= 0;
+    box.addEventListener('change', function() {
+      var arr = data[key].filter(function(x) { return x !== value; });
+      if (box.checked) arr.push(value);
+      data[key] = arr;
+    });
+    return h('label', { class: 'check' }, box, h('span', { text: text }));
+  }
+  function checkBool(key, text) {
+    var box = h('input', { type: 'checkbox' });
+    box.checked = data[key] === true;
+    box.addEventListener('change', function() { data[key] = box.checked; });
+    return h('label', { class: 'check' }, box, h('span', { text: text }));
+  }
+  function radios(key, options, cls, multiple) {
+    var name = nid();
+    var wrap = h('div', { class: cls === 'pill' ? 'pills' : 'stack', style: null });
+    if (multiple && !Array.isArray(data[key])) data[key] = [];
+    options.forEach(function(o) {
+      var el = h('input', { type: multiple ? 'checkbox' : 'radio', name: name, value: o.value });
+      el.checked = multiple ? data[key].indexOf(o.value) >= 0 : data[key] === o.value;
+      el.addEventListener('change', function() {
+        if (multiple) {
+          var arr = data[key].filter(function(x) { return x !== o.value; });
+          if (el.checked) arr.push(o.value);
+          data[key] = arr;
+        } else if (el.checked) { data[key] = o.value; if (o.onpick) o.onpick(); }
+      });
+      wrap.appendChild(h('label', { class: cls || 'check' }, el,
+        o.image ? h('img', { src: o.image, alt: '' }) : null, h('span', { text: o.label })));
+    });
+    return wrap;
+  }
+
+  // Drawn signature: strokes on a canvas, uploaded as a PNG when the form is sent.
+  var pads = [];
+  function sigPad(key, label) {
+    var canvas = h('canvas', { class: 'sig', tabindex: '0', role: 'img', 'aria-label': label + ' — draw with your finger or mouse' });
+    var hint = h('span', { class: 'sig-hint', text: 'Sign here' });
+    var pad = { key: key, canvas: canvas, dirty: false };
+    var ctx = null, drawing = false, last = null;
+    function fit() {
+      var r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+      if (!r.width) return;
+      canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+      ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+      pad.dirty = false; hint.style.display = '';
+    }
+    function pos(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    canvas.addEventListener('pointerdown', function(e) {
+      if (!ctx) fit();
+      drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function(e) {
+      if (!drawing) return;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p; pad.dirty = true; hint.style.display = 'none';
+    });
+    ['pointerup', 'pointercancel'].forEach(function(n) { canvas.addEventListener(n, function() { drawing = false; }); });
+    pad.clear = fit;
+    pads.push(pad);
+    setTimeout(fit, 0);
+    return h('div', null,
+      h('div', { class: 'sig-wrap', style: 'background:#fff' }, canvas, hint),
+      h('div', { class: 'row', style: 'margin-top:6px' },
+        h('button', { type: 'button', class: 'btn btn-small', text: 'Clear', onclick: function() { fit(); } })));
+  }
+
+  // Photo upload: each picture is sent as it is chosen; the form keeps its address.
+  function uploader(key, images) {
+    if (!Array.isArray(data[key])) data[key] = [];
+    var thumbs = h('div', { class: 'thumbs' });
+    var msg = h('p', { class: 'error-msg', role: 'alert' });
+    var file = h('input', { type: 'file', id: nid(), accept: 'image/png,image/jpeg,image/webp', multiple: true, style: 'display:none' });
+    function paint() {
+      thumbs.textContent = '';
+      data[key].forEach(function(item, i) {
+        thumbs.appendChild(h('div', { class: 'thumb' },
+          h('img', { src: item.url, alt: item.name || 'Uploaded photo' }),
+          h('button', { type: 'button', 'aria-label': 'Remove photo', text: '×', onclick: function() { data[key].splice(i, 1); paint(); } })));
+      });
+    }
+    file.addEventListener('change', async function() {
+      msg.textContent = '';
+      var files = Array.prototype.slice.call(file.files || []);
+      for (var i = 0; i < files.length; i++) {
+        if (data[key].length >= 6) { msg.textContent = 'Up to 6 photos.'; break; }
+        var f = files[i];
+        if (f.size > 8 * 1024 * 1024) { msg.textContent = f.name + ' is over 8 MB.'; continue; }
+        try {
+          var r = await fetch('/f/' + encodeURIComponent(slug) + '/upload', { method: 'POST', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+          var j = await r.json();
+          if (!r.ok) throw new Error(j.error || 'Upload failed');
+          data[key].push({ url: j.url, name: f.name });
+          paint();
+        } catch (e) { msg.textContent = e.message || 'That photo did not upload. Try again.'; }
+      }
+      file.value = '';
+    });
+    paint();
+    return h('div', null, file,
+      h('button', { type: 'button', class: 'btn', text: images ? 'Add photos' : 'Add a file', onclick: function() { file.click(); } }),
+      thumbs, msg);
+  }
+
+  function renderField(f) {
+    var kind = pvKind(f), key = f.key, cfg = pvCfg(f);
+    var wrap = h('div', { class: 'field', 'data-key': key });
+    if (kind === 'hidden') return null;
+    if (kind === 'heading') { wrap.appendChild(h('h2', { class: 'block-heading', text: pvText(f) || f.label || '' })); return wrap; }
+    if (kind === 'paragraph') { wrap.appendChild(h('div', { class: 'rich', html: pvRich(pvText(f) || f.label || '') })); return wrap; }
+
+    var title = pvTitle(f) || f.label || '';
+    var lab = h('div', { class: 'label' }, title, f.required ? h('span', { class: 'req', 'aria-hidden': 'true', text: ' *' }) : null);
+    wrap.appendChild(lab);
+    if (pvHelp(f) && kind !== 'minor') wrap.appendChild(h('p', { class: 'help', text: pvHelp(f) }));
+    var body = null;
+
+    if (['text', 'email', 'phone', 'website', 'number', 'date', 'initials'].indexOf(kind) >= 0) {
+      body = input(pvInputType(f), key, pvPlaceholder(f), title);
+      if (kind === 'initials') body.setAttribute('maxlength', '5');
+    } else if (kind === 'textarea') {
+      body = textarea(key, pvPlaceholder(f), 4, title);
+    } else if (kind === 'dropdown') {
+      body = select(key, pvOptions(f).map(function(o) { return { value: o.label, label: o.label }; }), title);
+    } else if (kind === 'choice' || kind === 'image-choice') {
+      body = radios(key, pvOptions(f).map(function(o) { return { value: o.label, label: o.label, image: kind === 'image-choice' ? o.image : '' }; }),
+        kind === 'image-choice' ? 'pill' : 'check', !!cfg.allow_multiple);
+    } else if (kind.indexOf('scale-') === 0) {
+      body = radios(key, pvScaleOpts(f), 'pill', false);
+    } else if (kind.indexOf('checks-') === 0) {
+      body = h('div', null, h('div', null, pvChecksItems(f).map(function(c) { return checkIn(key, c, c); })));
+      if (kind === 'checks-medical' || kind === 'checks-allergy') body.appendChild(textarea(key + '_notes', 'Anything else we should know?', 2, 'Anything else we should know?'));
+      if (kind === 'checks-photo-sig') body.appendChild(h('div', { style: 'margin-top:10px' }, h('span', { class: 'sub-label', text: 'Signature' }), sigPad(key + '_signature', 'Signature')));
+    } else if (kind === 'disclosure') {
+      body = h('div', null,
+        h('div', null, pvSec1(f).map(function(c) { return checkIn(key + '_conditions', c, c); })),
+        h('div', { class: 'rich', style: 'margin:10px 0' }, pvSec2(f).map(function(it) {
+          return h('p', null, it.head ? h('strong', { text: it.head + ': ' }) : null, it.body);
+        })),
+        textarea(key + '_details', 'Details', 2, 'Details'));
+    } else if (kind === 'agree' || kind === 'consent-agree') {
+      body = h('div', null,
+        pvText(f) ? h('div', { class: 'rich terms', tabindex: '0', html: pvRich(pvText(f)) }) : null,
+        pvAgreeParts(f).map(function(p) { return checkBool(key + p.suffix, p.label); }));
+    } else if (['composite-info', 'composite-details', 'composite-desc', 'booking', 'composite-age'].indexOf(kind) >= 0) {
+      body = h('div', { class: 'stack' }, pvSubFields(f).map(function(s) {
+        var k = key + '_' + s.suffix, c;
+        if (s.control === 'textarea') c = textarea(k, s.placeholder, 3);
+        else if (s.control === 'select') c = select(k, s.options || []);
+        else c = input(s.control, k, s.placeholder);
+        return labeled(s.label, c);
+      }));
+      if (kind === 'composite-age') body.appendChild(h('p', { class: 'note', text: pvAgeNote(f) }));
+      if (kind === 'booking') body.appendChild(h('div', null, h('span', { class: 'sub-label', text: 'Reference photos' }), uploader(key + '_photos', true)));
+    } else if (kind === 'composite-prev') {
+      var extra = h('div', { class: 'stack', style: 'margin-top:12px' });
+      var subs = pvSubFields(f);
+      var paintExtra = function() {
+        extra.textContent = '';
+        if (data[key + '_has_prev'] !== 'yes') return;
+        subs.forEach(function(s) {
+          if (s.suffix === 'has_prev') return;
+          var k = key + '_' + s.suffix;
+          extra.appendChild(labeled(s.label, s.control === 'textarea' ? textarea(k, s.placeholder, 3) : input('text', k, s.placeholder)));
+        });
+      };
+      body = h('div', null);
+      subs.forEach(function(s) {
+        if (s.suffix !== 'has_prev') return;
+        body.appendChild(h('span', { class: 'sub-label', text: s.label }));
+        body.appendChild(radios(key + '_has_prev', [{ value: 'yes', label: 'Yes', onpick: paintExtra }, { value: 'no', label: 'No', onpick: paintExtra }], 'pill', false));
+      });
+      body.appendChild(extra);
+      paintExtra();
+    } else if (kind === 'minor') {
+      var m = pvMinorCfg(f);
+      var ids = [{ value: 'drivers_license', label: 'Driver’s License' }, { value: 'passport', label: 'Passport' }, { value: 'state_id', label: 'State ID' }, { value: 'military_id', label: 'Military ID' }];
+      body = h('div', null,
+        pvText(f) ? h('div', { class: 'rich terms', tabindex: '0', html: pvRich(pvText(f)) }) : null,
+        m.help ? h('p', { class: 'note', text: m.help }) : null,
+        h('div', { class: 'stack' },
+          labeled('Minor’s full name', input('text', key + '_minor_name')),
+          labeled('Minor’s date of birth', input('date', key + '_minor_dob')),
+          labeled('Parent or guardian name', input('text', key + '_parent_name')),
+          labeled('Relationship to minor', input('text', key + '_parent_relationship')),
+          labeled('Parent date of birth', input('date', key + '_parent_dob')),
+          labeled('Parent phone', input('tel', key + '_parent_phone')),
+          m.requireParentId ? labeled('Parent ID type', select(key + '_parent_id_type', ids)) : null,
+          m.requireParentId ? labeled('Parent ID number', input('text', key + '_parent_id_number')) : null,
+          h('div', null, h('span', { class: 'sub-label', text: 'Parent or guardian signature' }), sigPad(key + '_parent_signature', 'Parent or guardian signature')),
+          m.requireBothSigs ? h('div', null, h('span', { class: 'sub-label', text: 'Minor’s signature' }), sigPad(key + '_minor_signature', 'Minor’s signature')) : null),
+        checkBool(key + '_parent_agree', 'I am the parent or legal guardian and I consent'));
+    } else if (kind === 'artist') {
+      var fixed = pvArtistFixed(f, artists);
+      body = fixed ? h('p', { text: 'With ' + fixed.name })
+        : select(key, artists.map(function(a) { return { value: a.id, label: a.name }; }), title);
+    } else if (kind === 'signature') {
+      var mode = pvSigMode(f);
+      body = h('div', null,
+        mode !== 'typed' ? sigPad(key, title || 'Signature') : null,
+        mode !== 'draw' ? h('div', { style: 'margin-top:10px' },
+          mode === 'dual' ? h('p', { class: 'note', text: 'Or type your name instead:' }) : null,
+          input('text', key + '_typed', 'Type your full name', 'Type your full name'),
+          checkBool(key + '_typed_agree', 'My typed name is my signature')) : null);
+    } else if (kind === 'upload') {
+      body = uploader(key, (f.stype || '') === 'studio-ref-images' || cfg.accept === 'images');
+    } else if (kind === 'widget') {
+      return null; // live widgets (chat box, appointment picker) are not part of a hosted form
+    } else {
+      body = input('text', key, pvPlaceholder(f), title);
+    }
+    wrap.appendChild(body);
+    var err = h('p', { class: 'error-msg', role: 'alert', 'data-err': '1' });
+    wrap.appendChild(err);
+    // A flagged field clears as soon as the client works on it.
+    ['input', 'change', 'pointerup'].forEach(function(n) {
+      wrap.addEventListener(n, function() { wrap.classList.remove('invalid'); err.textContent = ''; });
+    });
+    return wrap;
+  }
+
+  // Required rules on the real form: the shared rule, plus the kinds a
+  // preview can only stand in for (signatures, uploads).
+  function padDirty(key) { return pads.some(function(p) { return p.key === key && p.dirty; }); }
+  function missing(f) {
+    var kind = pvKind(f), key = f.key;
+    if (kind === 'email' && data[key] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data[key]).trim())) return 'Enter a valid email address.';
+    if (!f.required) return '';
+    if (kind === 'signature') {
+      var typed = String(data[key + '_typed'] || '').trim() && data[key + '_typed_agree'] === true;
+      return (padDirty(key) || typed) ? '' : 'Please sign.';
+    }
+    if (kind === 'upload') return (Array.isArray(data[key]) && data[key].length) ? '' : 'Please add at least one.';
+    if (kind === 'checks-photo-sig' && !padDirty(key + '_signature')) return 'Please sign.';
+    if (kind === 'minor' && !padDirty(key + '_parent_signature')) return 'The parent or guardian needs to sign.';
+    if (!pvMissing(f, data)) return '';
+    if (kind === 'checks-list') return 'Tick each one to confirm.';
+    if (kind === 'disclosure' || kind === 'checks-medical' || kind === 'checks-allergy') return 'Tick what applies, or tell us in the box.';
+    if (kind === 'agree' || kind === 'consent-agree') return 'Please tick the box to agree.';
+    if (kind.indexOf('composite') === 0 || kind === 'booking' || kind === 'minor') return 'Please fill in each part.';
+    return 'This one is needed.';
+  }
+
+  async function sendPads() {
+    for (var i = 0; i < pads.length; i++) {
+      var p = pads[i];
+      if (!p.dirty) { delete data[p.key]; continue; }
+      var blob = await new Promise(function(res) { p.canvas.toBlob(res, 'image/png'); });
+      var r = await fetch('/f/' + encodeURIComponent(slug) + '/upload', { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'The signature did not save. Try again.');
+      data[p.key] = { signature: true, file_id: j.file_id };
+    }
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (busy) return;
+    var banner = document.getElementById('banner');
+    banner.hidden = true;
+    var first = null;
+    def.fields.forEach(function(f) {
+      var el = app.querySelector('[data-key="' + (window.CSS && CSS.escape ? CSS.escape(f.key) : f.key) + '"]');
+      if (!el) return;
+      var msg = missing(f), slot = el.querySelector('[data-err]');
+      el.classList.toggle('invalid', !!msg);
+      if (slot) slot.textContent = msg;
+      if (msg && !first) first = el;
+    });
+    if (first) {
+      banner.textContent = 'A few things still need filling in.'; banner.hidden = false;
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var focusable = first.querySelector('input, select, textarea, canvas');
+      if (focusable) focusable.focus({ preventScroll: true });
+      return;
+    }
+    busy = true;
+    var btn = document.getElementById('send'); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      await sendPads();
+      var body = { data: pvCompose(def, data), hp: document.getElementById('hp').value, elapsed_ms: Date.now() - startedAt };
+      var r = await fetch('/f/' + encodeURIComponent(slug), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      var j = await r.json().catch(function() { return {}; });
+      if (!r.ok) throw new Error(j.error || 'That did not go through. Please try again.');
+      app.textContent = '';
+      app.appendChild(h('div', { class: 'card center' }, h('h1', { text: 'Thank you' }),
+        h('p', { class: 'muted', text: (def.studio ? def.studio + ' has' : 'We have') + ' your form. You can close this page.' })));
+      window.scrollTo(0, 0);
+    } catch (err) {
+      banner.textContent = err.message || 'That did not go through. Please try again.'; banner.hidden = false;
+      btn.disabled = false; btn.textContent = 'Send';
+    }
+    busy = false;
+  }
+
+  function render() {
+    document.title = def.title + (def.studio ? ' — ' + def.studio : '');
+    data = pvSeed(def, artists);
+    app.textContent = '';
+    var form = h('form', { novalidate: true, onsubmit: submit });
+    var card = h('div', { class: 'card' });
+    def.fields.forEach(function(f) { var el = renderField(f); if (el) card.appendChild(el); });
+    form.appendChild(card);
+    form.appendChild(h('div', { class: 'hp', 'aria-hidden': 'true' }, h('label', null, 'Leave this empty', h('input', { type: 'text', id: 'hp', tabindex: '-1', autocomplete: 'off' }))));
+    form.appendChild(h('div', { class: 'banner', id: 'banner', role: 'alert', hidden: true }));
+    form.appendChild(h('button', { type: 'submit', class: 'btn btn-primary', id: 'send', text: 'Send' }));
+    app.appendChild(h('h1', { text: def.title }));
+    if (def.studio) app.appendChild(h('p', { class: 'studio', text: def.studio }));
+    app.appendChild(form);
+  }
+
+  fetch('/f/' + encodeURIComponent(slug) + '/def').then(function(r) {
+    if (!r.ok) throw new Error('gone');
+    return r.json();
+  }).then(function(j) {
+    def = { slug: slug, title: j.title || 'Form', studio: j.studio || '', fields: Array.isArray(j.fields) ? j.fields : [] };
+    artists = Array.isArray(j.artists) ? j.artists : [];
+    render();
+  }).catch(function() {
+    app.textContent = '';
+    app.appendChild(h('div', { class: 'card center' }, h('h1', { text: 'This form isn’t available' }),
+      h('p', { class: 'muted', text: 'It may have been taken down. Ask the studio for a new link.' })));
+  });
+})();
+</script>
+</body>
+</html>

@@ -334,6 +334,26 @@ pub async fn build_router(
             "/api/templates/{name}",
             axum::routing::get(routes::get_template),
         )
+        // Hosted forms: published forms anyone with the link can open and
+        // send (public; bounded and rate limited in stax_forms).
+        .route(
+            "/f/{slug}",
+            axum::routing::get(crate::stax_forms::page)
+                .post(crate::stax_forms::submit)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::stax_forms::MAX_SUBMIT_BYTES,
+                )),
+        )
+        .route(
+            "/f/{slug}/def",
+            axum::routing::get(crate::stax_forms::definition),
+        )
+        .route(
+            "/f/{slug}/upload",
+            axum::routing::post(crate::stax_forms::upload).layer(
+                axum::extract::DefaultBodyLimit::max(crate::stax_forms::MAX_UPLOAD_BYTES),
+            ),
+        )
         // Studio export / import (auth required — not in the public list)
         .route(
             "/api/studio/export",

@@ -157,7 +157,7 @@ document.addEventListener('alpine:init', function() {
     // page's Alpine scope: the page mirrors its control here, the dock
     // writes here (via the *Go methods below) and reads here.
     contactsView: 'all',
-    contactsCounts: { all: 0, prep: 0, archived: 0 },
+    contactsCounts: { all: 0, today: 0, prep: 0, archived: 0 },
     leadsArtist: 'all',
     leadsArtistCounts: { all: 0, shawn: 0, leni: 0 },
     workSection: 'needsyou',
@@ -1406,6 +1406,12 @@ function staxHumanKey(key) {
 function staxAnswerRows(data, fields, labelMap) {
   var own = {};
   (fields || []).forEach(function(f) { if (f && f.key) own[f.key] = f.label || ''; });
+  // Sub-answers (a client-details block's email, an agreement's tick)
+  // take their label from the block they belong to.
+  if (typeof pvAnswerLabels === 'function') {
+    var sub = pvAnswerLabels({ fields: fields || [] });
+    Object.keys(sub).forEach(function(k) { if (!own[k] && sub[k]) own[k] = sub[k]; });
+  }
   var rows = [];
   Object.keys(data || {}).forEach(function(key) {
     var label = own[key] || (labelMap && labelMap[key]) || staxHumanKey(key);

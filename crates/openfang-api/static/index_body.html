@@ -5028,6 +5028,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
           </div>
 
           <div x-show="!loading && !loadError">
+            <div class="rec-split" :class="{ 'is-wide': wide }">
+            <div class="rec-list">
             <div class="card" x-show="showNew" style="margin-bottom:14px">
               <div style="font-weight:600;margin-bottom:10px">New contact</div>
               <div style="display:flex;flex-direction:column;gap:10px">
@@ -5074,13 +5076,13 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>
             </div>
 
-            <div class="artist-seg" role="group" aria-label="Filter contacts by artist" x-show="!selected">
+            <div class="artist-seg" role="group" aria-label="Filter contacts by artist" x-show="!selected || wide">
               <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'; visibleCount = 60">All · <span x-text="artistCount('all')"></span></button>
               <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'; visibleCount = 60">Shawn · <span x-text="artistCount('shawn')"></span></button>
               <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'; visibleCount = 60">Leni · <span x-text="artistCount('leni')"></span></button>
             </div>
 
-            <div class="people-alert" x-show="!selected && view !== 'archived' && flagged.length > 0">
+            <div class="people-alert" x-show="(!selected || wide) && view !== 'archived' && flagged.length > 0">
               <p class="people-alert-title"><span x-text="flagged.length"></span> <span x-text="flagged.length === 1 ? 'contact needs' : 'contacts need'"></span> fixing</p>
               <template x-for="c in flagged.slice(0, 5)" :key="c.key">
                 <button class="people-alert-row" @click="fixPerson(c)"><span x-text="c.name || '(no name)'"></span> — <span x-text="issuesText(c)"></span></button>
@@ -5088,23 +5090,25 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
               <p class="text-xs" style="margin:4px 0 0" x-show="flagged.length > 5" x-text="'+' + (flagged.length - 5) + ' more'"></p>
             </div>
 
-            <div class="list-toolbar" x-show="!selected">
+            <div class="list-toolbar" x-show="!selected || wide">
               <input class="list-search" type="search" placeholder="Search name, email, or phone" aria-label="Search contacts" x-model="query" @input="visibleCount = 60">
             </div>
-            <div x-show="filtered.length === 0 && !selected" class="empty-state people-empty">
+            <div x-show="filtered.length === 0 && (!selected || wide)" class="empty-state people-empty">
               <h4 x-show="contacts.length === 0">No contacts yet</h4>
               <h4 x-show="contacts.length > 0 && view === 'prep' && !query">Nobody needs prep right now</h4>
               <h4 x-show="contacts.length > 0 && view === 'archived' && !query">Nobody is archived</h4>
-              <h4 x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived'))">No matching contacts</h4>
+              <h4 x-show="contacts.length > 0 && view === 'today' && !query">Nobody new today</h4>
+              <h4 x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived' && view !== 'today'))">No matching contacts</h4>
               <p class="hint" x-show="contacts.length === 0">People who send a form land here automatically. You can also add someone yourself.</p>
               <p class="hint" x-show="contacts.length > 0 && view === 'prep' && !query">When a design request is waiting on an artist, the person lands here.</p>
+              <p class="hint" x-show="contacts.length > 0 && view === 'today' && !query">People who send a form or are added today show up here.</p>
               <p class="hint" x-show="contacts.length > 0 && view === 'archived' && !query">People you archive rest here, one tap from the book.</p>
-              <p class="hint" x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived'))">Try a different search or filter.</p>
+              <p class="hint" x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived' && view !== 'today'))">Try a different search or filter.</p>
             </div>
 
-            <div class="people-list" x-show="!selected">
+            <div class="people-list" x-show="!selected || wide">
               <template x-for="c in visible" :key="c.key">
-                <button class="people-row" :data-ckey="c.key" @click="selectPerson(c)">
+                <button class="people-row" :class="{ 'is-current': selectedKey === c.key }" :aria-current="selectedKey === c.key ? 'true' : null" :data-ckey="c.key" @click="selectPerson(c)">
                   <span class="people-copy">
                     <span class="people-name"><span class="people-prep-dot" x-show="c._prep" title="Design work waiting"></span><span x-text="c.name || '(no name)'"></span></span>
                     <span class="people-sub" x-text="c.email || c.phone || 'No contact info'"></span>
@@ -5117,10 +5121,16 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 </button>
               </template>
             </div>
-            <button class="btn btn-ghost" style="width:100%;margin-top:10px" x-show="!selected && filtered.length > visibleCount" @click="visibleCount += 60">Show more · <span x-text="filtered.length - visibleCount"></span> more</button>
+            <button class="btn btn-ghost" style="width:100%;margin-top:10px" x-show="(!selected || wide) && filtered.length > visibleCount" @click="visibleCount += 60">Show more · <span x-text="filtered.length - visibleCount"></span> more</button>
 
+            </div>
+            <div class="rec-detail">
+            <div class="rec-placeholder" x-show="wide && !selected">
+              <span class="stax-tile stax-tile--book" aria-hidden="true"></span>
+              <p>Pick someone to see their record.</p>
+            </div>
             <div x-show="selected" style="max-width:640px">
-              <button class="btn btn-ghost btn-sm" @click="closeDetail()" style="margin-bottom:10px">&larr; All contacts</button>
+              <button class="btn btn-ghost btn-sm" x-show="!wide" @click="closeDetail()" style="margin-bottom:10px">&larr; All contacts</button>
               <div class="card" x-show="selected">
                 <div style="display:flex;gap:14px;align-items:center">
                   <span class="people-avatar" x-text="selected ? initials(selected.name) : ''"></span>
@@ -5259,6 +5269,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                   <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="addNote()" :disabled="savingNote">Save note</button>
                 </div>
               </div>
+            </div>
+            </div>
             </div>
           </div>
         </div>
@@ -6221,7 +6233,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
           </div>
         </div>
-        <div class="page-body">
+        <div class="page-body" :class="{ 'fb-split': building }">
           <div x-show="loading" class="text-dim" style="padding:12px">Loading forms...</div>
           <div x-show="!loading && loadError" class="error-state">
             <h3 style="color:var(--error)">Could not load forms</h3>
@@ -6231,20 +6243,48 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
 
           <!-- My Forms -->
           <div x-show="!loading && !loadError && tab === 'forms'">
-            <p class="text-sm text-dim" style="margin:2px 0 16px">Your forms and what each one has collected. Want a new form, or changes? Ask the Forms helper — the Agent tab below.</p>
-            <div x-show="defs.length === 0" class="empty-state">
+            <div class="fb-bar">
+              <p class="text-sm text-dim" style="margin:0;flex:1;min-width:200px">Your forms and what each one has collected. Build one here, or ask the Forms helper in the Agent tab.</p>
+              <button class="btn btn-primary" style="min-height:44px" @click="showTemplates = !showTemplates" :aria-expanded="showTemplates">+ New form</button>
+            </div>
+            <div class="card fb-templates" x-show="showTemplates">
+              <div style="font-weight:600;margin-bottom:10px">Start from</div>
+              <div class="fb-template-grid">
+                <button class="fb-template" @click="startNew('consent')"><strong>Tattoo consent</strong><span>Client details, medical disclosure, terms, aftercare, photo release, signature</span></button>
+                <button class="fb-template" @click="startNew('booking')"><strong>Booking request</strong><span>Who they are, the tattoo they want, which artist, reference photos</span></button>
+                <button class="fb-template" @click="startNew('contact')"><strong>Contact form</strong><span>Name, email, phone and a message</span></button>
+                <button class="fb-template" @click="startNew('blank')"><strong>Blank</strong><span>Start empty and add your own blocks</span></button>
+              </div>
+            </div>
+            <div class="people-alert" x-show="draft && draftDirty" style="margin-bottom:14px">
+              <p class="people-alert-title">Unsaved changes to <span x-text="draft ? draft.title : ''"></span></p>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <button class="btn btn-primary btn-sm" @click="$store.app.formsTab = 'build'">Keep editing</button>
+                <button class="btn btn-ghost btn-sm" @click="discardDraft()">Discard</button>
+              </div>
+            </div>
+            <div x-show="defs.length === 0 && !showTemplates" class="empty-state">
               <h4>No forms yet</h4>
-              <p class="hint">Ask the Forms helper: "Make me a contact form for the website."</p>
+              <p class="hint">Tap New form to build one — a consent form takes about a minute from the template.</p>
             </div>
             <div class="card-grid">
               <template x-for="d in defs" :key="d.slug">
                 <div class="card">
-                  <div class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="d.title"></div>
-                  <div class="text-sm text-dim" style="margin-top:4px" x-text="d.fields.length + ' fields - ' + subsOf(d.slug).length + ' submission(s)'"></div>
-                  <div x-show="d.public_url" class="text-xs" style="margin-top:6px"><a :href="d.public_url" target="_blank" rel="noopener" style="color:var(--accent)">Public form</a></div>
-                  <div style="display:flex;gap:8px;margin-top:10px">
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <div class="card-header" style="margin:0;font-size:15px;font-weight:600;flex:1;min-width:0" x-text="d.title"></div>
+                    <span class="badge" :class="d.published ? 'badge-success' : 'badge-dim'" style="font-size:10px" x-text="d.published ? 'Published' : 'Draft'"></span>
+                  </div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-text="d.fields.length + (d.fields.length === 1 ? ' block · ' : ' blocks · ') + subsOf(d.slug).length + (subsOf(d.slug).length === 1 ? ' submission' : ' submissions')"></div>
+                  <div x-show="d.published" class="fb-link">
+                    <a :href="formLink(d.slug)" target="_blank" rel="noopener" x-text="formLink(d.slug)"></a>
+                    <button class="btn btn-ghost btn-sm" @click="copyLink(d.slug)">Copy link</button>
+                  </div>
+                  <div x-show="d.public_url" class="text-xs" style="margin-top:6px"><a :href="d.public_url" target="_blank" rel="noopener" style="color:var(--accent)">Older public link</a></div>
+                  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                    <button class="btn btn-primary btn-sm" @click="editForm(d.slug)">Edit</button>
                     <button class="btn btn-ghost btn-sm" @click="setPreview(d.slug); $store.app.formsTab = 'preview'">Preview</button>
                     <button class="btn btn-ghost btn-sm" @click="$store.app.formsTab = 'subs'">Submissions</button>
+                    <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="deleteForm(d.slug)" x-text="confirmDelete === d.slug ? 'Tap again to remove' : 'Remove'"></button>
                   </div>
                 </div>
               </template>
@@ -6280,14 +6320,103 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
             </div>
           </div>
 
+          <!-- Build: the working copy on the left, its live preview beside it -->
+          <div class="fb-editor" x-show="!loading && !loadError && building">
+            <template x-if="draft">
+              <div>
+                <div class="fb-bar">
+                  <button class="btn btn-ghost btn-sm" @click="leaveBuilder()">&larr; All forms</button>
+                  <span class="badge" :class="draft.published ? 'badge-success' : 'badge-dim'" style="font-size:10px" x-text="draft.published ? 'Published' : 'Draft'"></span>
+                  <span class="text-xs text-dim" x-show="draftDirty">Unsaved changes</span>
+                  <span style="flex:1"></span>
+                  <button class="btn btn-ghost" style="min-height:44px" @click="saveDraft()" :disabled="saving || !draftDirty" x-text="saving ? 'Saving…' : 'Save'"></button>
+                  <button class="btn btn-primary" style="min-height:44px" x-show="!draft.published" @click="saveDraft(true)" :disabled="saving">Publish</button>
+                  <button class="btn btn-ghost" style="min-height:44px" x-show="draft.published" @click="saveDraft(false)" :disabled="saving">Take down</button>
+                </div>
+                <label class="stax-field-label" for="fb-title">Form name</label>
+                <input id="fb-title" class="form-input" style="width:100%;font-size:17px;font-weight:600" x-model="draft.title" @input="touch()" placeholder="Tattoo consent">
+                <div class="fb-link" x-show="draft.published && !draft.isNew">
+                  <a :href="formLink(draft.slug)" target="_blank" rel="noopener" x-text="formLink(draft.slug)"></a>
+                  <button class="btn btn-ghost btn-sm" @click="copyLink(draft.slug)">Copy link</button>
+                </div>
+                <p class="text-xs text-dim" style="margin:6px 0 14px" x-show="draft.published && draftDirty">Clients see your changes once you save.</p>
+
+                <div class="fb-blocks">
+                  <p class="text-sm text-dim" x-show="draft.fields.length === 0" style="margin:14px 0">This form is empty. Add its first block.</p>
+                  <template x-for="(f, i) in draft.fields" :key="f.key">
+                    <div class="fb-block" :class="{ 'is-open': openBlock === i }" :data-fb-index="i">
+                      <div class="fb-block-head">
+                        <button class="fb-block-main" @click="openBlock = openBlock === i ? -1 : i" :aria-expanded="openBlock === i">
+                          <span class="fb-block-label" x-text="f.label || fbBlockName(f)"></span>
+                          <span class="fb-block-kind"><span x-text="fbBlockName(f)"></span><span x-show="f.required"> · required</span></span>
+                        </button>
+                        <button class="fb-icon-btn" @click="moveBlock(i, -1)" :disabled="i === 0" :aria-label="'Move ' + (f.label || 'block') + ' up'">&uarr;</button>
+                        <button class="fb-icon-btn" @click="moveBlock(i, 1)" :disabled="i === draft.fields.length - 1" :aria-label="'Move ' + (f.label || 'block') + ' down'">&darr;</button>
+                      </div>
+                      <template x-if="openBlock === i">
+                        <div class="fb-settings">
+                          <template x-for="(row, ri) in settingsOf(f)" :key="f.key + ri">
+                            <div class="fb-setting">
+                              <template x-if="row.type === 'text' || row.type === 'number'">
+                                <label><span class="stax-field-label" x-text="row.label"></span>
+                                  <input class="form-input" style="width:100%" :type="row.type" :value="row.get()" @input="setSetting(row, $event.target.value)"></label>
+                              </template>
+                              <template x-if="row.type === 'textarea' || row.type === 'lines'">
+                                <label><span class="stax-field-label" x-text="row.label + (row.hint ? ' — ' + row.hint.toLowerCase() : '')"></span>
+                                  <textarea class="form-textarea" style="width:100%" :rows="row.type === 'lines' ? 5 : 7" :value="row.get()" @change="setSetting(row, $event.target.value); reseed()"></textarea></label>
+                              </template>
+                              <template x-if="row.type === 'toggle'">
+                                <label class="pv-check"><input type="checkbox" :checked="row.get()" @change="setSetting(row, $event.target.checked); reseed()"><span x-text="row.label"></span></label>
+                              </template>
+                              <template x-if="row.type === 'select'">
+                                <label><span class="stax-field-label" x-text="row.label"></span>
+                                  <select class="form-select" style="width:100%" @change="setSetting(row, $event.target.value)">
+                                    <template x-for="o in row.options" :key="o[0]"><option :value="o[0]" :selected="row.get() === o[0]" x-text="o[1]"></option></template>
+                                  </select></label>
+                              </template>
+                            </div>
+                          </template>
+                          <div style="display:flex;gap:8px;margin-top:4px">
+                            <button class="btn btn-ghost btn-sm" @click="openAdd(i + 1)">+ Add block below</button>
+                            <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--error)" @click="removeBlock(i)">Remove block</button>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+
+                <button class="btn btn-ghost fb-add" x-show="!adding" @click="openAdd(draft.fields.length)">+ Add block</button>
+                <div class="card fb-palette" x-show="adding">
+                  <div style="display:flex;align-items:center;margin-bottom:8px">
+                    <strong style="flex:1">Add a block</strong>
+                    <button class="btn btn-ghost btn-sm" @click="adding = false">Cancel</button>
+                  </div>
+                  <template x-for="g in palette" :key="g.group">
+                    <div>
+                      <div class="fb-palette-group" x-text="g.group"></div>
+                      <div class="fb-palette-grid">
+                        <template x-for="it in g.items" :key="it.name">
+                          <button class="fb-palette-item" @click="addBlock(it)" x-text="it.name"></button>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+                <p class="text-sm" style="color:var(--error);margin-top:10px" x-show="draftDirty && draftProblem()" x-text="draftProblem()"></p>
+              </div>
+            </template>
+          </div>
+
           <!-- Preview -->
-          <div x-show="!loading && !loadError && tab === 'preview'">
-            <div x-show="defs.length === 0" class="empty-state">
+          <div :class="{ 'fb-preview': building }" x-show="!loading && !loadError && (tab === 'preview' || building)">
+            <div x-show="defs.length === 0 && !building" class="empty-state">
               <h4>Nothing to preview</h4>
               <p class="hint">Once a form exists, you can see it and test it here.</p>
             </div>
-            <div x-show="defs.length > 0">
-              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+            <div x-show="defs.length > 0 || building">
+              <div class="fb-preview-title" x-show="building">What clients see</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px" x-show="!building">
                 <template x-for="d in defs" :key="d.slug">
                   <button class="stax-chip" :class="{ active: previewSlug === d.slug }" @click="setPreview(d.slug)" x-text="d.title"></button>
                 </template>
@@ -7537,7 +7666,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
       <span>Agent</span>
     </button>
-    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' || $store.app.formsTab === 'build' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
       <span>My Forms</span>
     </button>
@@ -7637,6 +7766,11 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
       <span>All clients</span>
       <span class="stax-dock-badge" x-show="$store.app.contactsCounts.all > 0" x-text="$store.app.contactsCounts.all"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'today' }" :aria-current="$store.app.contactsView === 'today' ? 'page' : null" @click="$store.app.contactsGo('today')" aria-label="Today">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span>
+      <span>Today</span>
+      <span class="stax-dock-badge" x-show="$store.app.contactsCounts.today > 0" x-text="$store.app.contactsCounts.today"></span>
     </button>
     <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'prep' }" :aria-current="$store.app.contactsView === 'prep' ? 'page' : null" @click="$store.app.contactsGo('prep')" aria-label="Prep queue">
       <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--machine"></span></span>

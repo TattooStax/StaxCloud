@@ -175,6 +175,7 @@ pub async fn auth(
     // sign-in unless OPENFANG_LEGACY_PUBLIC_READS=1.
     let is_get = method == axum::http::Method::GET;
     let is_public = is_always_public(path, is_get)
+        || crate::stax_forms::is_public_form_path(path, &method)
         || (auth_state.legacy_public_reads && is_legacy_dashboard_read(path, is_get));
 
     if is_public {

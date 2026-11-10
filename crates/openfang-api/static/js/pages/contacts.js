@@ -133,6 +133,8 @@ function contactsPage() {
     set view(v) { Alpine.store('app').contactsView = v; },
     visibleCount: 60,
     selectedKey: '',
+    // Records layout: on a wide screen the list stays beside the open record.
+    wide: window.matchMedia('(min-width: 900px)').matches,
     noteText: '',
     savingNote: false,
     showNew: false,
@@ -158,10 +160,14 @@ function contactsPage() {
         self.editing = false;
       };
       window.addEventListener('stax-contacts-view', this._onDockView);
+      this._mq = window.matchMedia('(min-width: 900px)');
+      this._onMq = function(e) { self.wide = e.matches; };
+      this._mq.addEventListener('change', this._onMq);
     },
 
     destroy() {
       if (this._onDockView) window.removeEventListener('stax-contacts-view', this._onDockView);
+      if (this._mq && this._onMq) this._mq.removeEventListener('change', this._onMq);
     },
 
     async loadData() {
@@ -261,7 +267,7 @@ function contactsPage() {
         this.contacts = people;
         // The module dock's counts are this page's own, mirrored to
         // the store on every load (mutations all end in a reload).
-        Alpine.store('app').contactsCounts = { all: this.allCount, prep: this.prepCount, archived: this.archivedCount };
+        Alpine.store('app').contactsCounts = { all: this.allCount, today: this.todayCount, prep: this.prepCount, archived: this.archivedCount };
         this.subs = subs;
         this.defs = defs;
         this.labelMap = labelMap;
@@ -319,6 +325,19 @@ function contactsPage() {
     get prepCount() { return this.contacts.filter(function(c) { return !c.archived && c._prep; }).length; },
     get archivedCount() { return this.contacts.filter(function(c) { return c.archived; }).length; },
 
+    // Today: people who came in today — first seen, seen again, or sent
+    // a form since local midnight.
+    isToday(c) {
+      var start = new Date(); start.setHours(0, 0, 0, 0);
+      function today(ts) { var t = ts ? Date.parse(ts) : NaN; return !isNaN(t) && t >= start.getTime(); }
+      if (today(c.last_seen) || today(c.first_seen)) return true;
+      return this.subsOf(c).some(function(s) { return today(s.ts); });
+    },
+    get todayCount() {
+      var self = this;
+      return this.contacts.filter(function(c) { return !c.archived && self.isToday(c); }).length;
+    },
+
     get flagged() {
       return this.contacts.filter(function(c) { return !c.archived && c._issues && c._issues.length; });
     },
@@ -329,6 +348,7 @@ function contactsPage() {
       var list = this.contacts.filter(function(c) {
         if (view === 'archived' ? !c.archived : c.archived) return false;
         if (view === 'prep' && !c._prep) return false;
+        if (view === 'today' && !self.isToday(c)) return false;
         return self.matchesArtist(c);
       });
       var q = (this.query || '').trim().toLowerCase();

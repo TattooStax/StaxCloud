@@ -202,6 +202,11 @@ function pvDataKeys(f) {
   if (kind === 'disclosure') { keys.push(key + '_conditions'); keys.push(key + '_details'); }
   if (kind === 'signature') { keys.push(key + '_typed'); keys.push(key + '_typed_agree'); }
   if (kind === 'minor') PV_MINOR_KEYS.forEach(function(s) { keys.push(key + '_' + s); });
+  // Captured only on the real (hosted) form, where the pads and the
+  // photo picker exist; the preview never fills them.
+  if (kind === 'checks-photo-sig') keys.push(key + '_signature');
+  if (kind === 'minor') { keys.push(key + '_parent_signature'); keys.push(key + '_minor_signature'); }
+  if (kind === 'booking') keys.push(key + '_photos');
   return keys;
 }
 function pvAgreeKeys(f) {
@@ -417,7 +422,255 @@ function pvMinorCfg(f) {
     help: cfg.help || ''
   };
 }
+// Labels for every answer key a form can store, sub-answers included:
+// "Your details — Email", "I have read and agree…", "Signature (typed)".
+function pvAnswerLabels(def) {
+  var map = {};
+  ((def && def.fields) || []).forEach(function(f) {
+    if (!f || !f.key) return;
+    var kind = pvKind(f), key = f.key, label = pvTitle(f) || f.label || '';
+    map[key] = label;
+    if (kind === 'agree' || kind === 'consent-agree') pvAgreeParts(f).forEach(function(p) { if (p.suffix) map[key + p.suffix] = label + ' — ' + p.label; });
+    if (kind.indexOf('composite') === 0 || kind === 'booking') pvSubFields(f).forEach(function(s) { map[key + '_' + s.suffix] = label + ' — ' + s.label; });
+    if (kind === 'checks-medical' || kind === 'checks-allergy') map[key + '_notes'] = label + ' — notes';
+    if (kind === 'disclosure') { map[key + '_conditions'] = label; map[key + '_details'] = label + ' — details'; }
+    if (kind === 'signature') { map[key + '_typed'] = label + ' (typed name)'; map[key + '_typed_agree'] = label + ' — typed name is my signature'; }
+    if (kind === 'checks-photo-sig') map[key + '_signature'] = label + ' — signature';
+    if (kind === 'booking') map[key + '_photos'] = label + ' — reference photos';
+    if (kind === 'minor') {
+      [['minor_name', 'minor’s name'], ['minor_dob', 'minor’s date of birth'], ['parent_name', 'parent or guardian'], ['parent_relationship', 'relationship'], ['parent_dob', 'parent date of birth'], ['parent_phone', 'parent phone'], ['parent_id_type', 'parent ID type'], ['parent_id_number', 'parent ID number'], ['parent_agree', 'parent consents'], ['parent_signature', 'parent signature'], ['minor_signature', 'minor’s signature']]
+        .forEach(function(p) { map[key + '_' + p[0]] = label + ' — ' + p[1]; });
+    }
+  });
+  return map;
+}
 /*PURE-END pvforms*/
+
+
+/*PURE-BEGIN fbbuilder*/
+// ── Form builder: the blocks an owner can add, and their settings ────
+// Each palette entry is the block's stored shape: `stype` is the real
+// kind, `type` the coarse fallback older readers understand.
+var FB_PALETTE = [
+  { group: 'Basics', items: [
+    { stype: 'field-heading', type: 'text', name: 'Heading', label: 'Section heading' },
+    { stype: 'field-paragraph', type: 'text', name: 'Text', label: 'Text', config: { text: 'Write something for the client to read.' } },
+    { stype: 'field-name', type: 'text', name: 'Name', label: 'Your name', required: true },
+    { stype: 'field-email', type: 'email', name: 'Email', label: 'Email', required: true },
+    { stype: 'field-phone', type: 'phone', name: 'Phone', label: 'Phone' },
+    { stype: 'field-short-text', type: 'text', name: 'Short answer', label: 'Short answer' },
+    { stype: 'field-long-text', type: 'textarea', name: 'Long answer', label: 'Tell us more' },
+    { stype: '', type: 'date', name: 'Date', label: 'Date' },
+    { stype: 'field-number', type: 'number', name: 'Number', label: 'Number' },
+    { stype: 'field-dropdown', type: 'select', name: 'Dropdown', label: 'Choose one', config: { options: ['Option 1', 'Option 2'] } },
+    { stype: 'field-choice', type: 'select', name: 'Choices', label: 'Pick what applies', config: { options: ['Option 1', 'Option 2'], allow_multiple: true } },
+    { stype: 'field-consent', type: 'text', name: 'Agree box', label: 'Agreement', config: { text: 'I agree to the terms and conditions' }, required: true }
+  ] },
+  { group: 'Tattoo', items: [
+    { stype: 'consent-client-info', type: 'text', name: 'Client details', label: 'Your details', required: true },
+    { stype: 'consent-tattoo-details', type: 'text', name: 'Tattoo details', label: 'About the tattoo' },
+    { stype: 'artist-select', type: 'select', name: 'Artist', label: 'Which artist?' },
+    { stype: 'studio-ref-images', type: 'text', name: 'Reference photos', label: 'Reference photos' },
+    { stype: 'studio-age-verify', type: 'text', name: 'Age check', label: 'Age verification', required: true },
+    { stype: 'studio-prev-tattoo', type: 'text', name: 'Previous tattoos', label: 'Previous tattoos' }
+  ] },
+  { group: 'Consent', items: [
+    { stype: 'consent-legal', type: 'text', name: 'Terms', label: 'Consent and release', required: true },
+    { stype: 'consent-medical-disclosure', type: 'text', name: 'Medical disclosure', label: 'Medical disclosure', required: true },
+    { stype: 'consent-medical', type: 'text', name: 'Medical checklist', label: 'Medical conditions' },
+    { stype: 'studio-allergy', type: 'text', name: 'Allergies', label: 'Allergies and skin' },
+    { stype: 'consent-aftercare', type: 'text', name: 'Aftercare', label: 'Aftercare', required: true },
+    { stype: 'consent-photo-release', type: 'text', name: 'Photo release', label: 'Photo release' },
+    { stype: 'studio-deposit', type: 'text', name: 'Deposit terms', label: 'Deposit', required: true },
+    { stype: 'consent-touchup', type: 'text', name: 'Touch-up policy', label: 'Touch-ups' },
+    { stype: 'consent-minor-parent', type: 'text', name: 'Parent consent', label: 'Parent or guardian consent', required: true },
+    { stype: 'consent-initials', type: 'text', name: 'Initials', label: 'Initials', required: true },
+    { stype: 'consent-signature', type: 'text', name: 'Signature', label: 'Signature', required: true }
+  ] }
+];
+function fbPaletteEntry(stype, type) {
+  for (var g = 0; g < FB_PALETTE.length; g++) {
+    for (var i = 0; i < FB_PALETTE[g].items.length; i++) {
+      var it = FB_PALETTE[g].items[i];
+      if (it.stype === (stype || '') && (it.stype || it.type === type)) return it;
+    }
+  }
+  return null;
+}
+// What a block is called in the builder — its palette name, else its kind.
+function fbBlockName(f) {
+  var it = fbPaletteEntry(f.stype, f.type);
+  if (it) return it.name;
+  var k = pvKind(f);
+  return k.charAt(0).toUpperCase() + k.slice(1).replace(/-/g, ' ');
+}
+function fbSlug(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+}
+// A key no other field uses. Keys never change once a block exists:
+// stored submissions are read back by them.
+function fbUniqueKey(base, fields) {
+  var stem = fbSlug(base).replace(/-/g, '_') || 'field';
+  var taken = {};
+  (fields || []).forEach(function(f) { if (f && f.key) taken[f.key] = 1; });
+  // A key must not be another key's "<key>_" prefix either: sub-answers
+  // are stored as <key>_<suffix>.
+  function clash(k) {
+    if (taken[k]) return true;
+    return Object.keys(taken).some(function(t) { return t.indexOf(k + '_') === 0 || k.indexOf(t + '_') === 0; });
+  }
+  if (!clash(stem)) return stem;
+  for (var n = 2; n < 500; n++) { if (!clash(stem + n)) return stem + n; }
+  return stem + Date.now();
+}
+function fbNewBlock(entry, fields) {
+  var f = { key: fbUniqueKey(entry.name, fields), label: entry.label, type: entry.type, required: !!entry.required };
+  if (entry.stype) f.stype = entry.stype;
+  if (entry.config) f.config = JSON.parse(JSON.stringify(entry.config));
+  // Health checklists get a way to say "none": a required list must be
+  // answerable by someone with nothing to declare.
+  var none = 'None of the above';
+  if (entry.stype === 'consent-medical-disclosure') f.config = { sec1_conditions: PV_DISCLOSURE_DEFAULTS.concat([none]) };
+  if (entry.stype === 'consent-medical') f.config = { conditions: PV_MEDICAL_DEFAULTS.concat([none]) };
+  if (entry.stype === 'studio-allergy') f.config = { conditions: PV_ALLERGY_DEFAULTS.concat([none]) };
+  return f;
+}
+function fbUniqueSlug(title, taken) {
+  var stem = fbSlug(title) || 'form';
+  if (!taken[stem]) return stem;
+  for (var n = 2; n < 500; n++) { if (!taken[stem + '-' + n]) return stem + '-' + n; }
+  return stem + '-' + Date.now();
+}
+// Plain typed text becomes paragraphs; text that already carries real
+// formatting tags is kept. A stray "<" in typed text is not a tag.
+var FB_HTML_TAG = /<\/?(p|br|strong|em|b|i|u|ul|ol|li|h[1-6]|div|span|a)\b[^>]*>/i;
+function fbTextToHtml(text) {
+  var t = String(text || '');
+  if (FB_HTML_TAG.test(t)) return t;
+  return t.split(/\n{2,}/).map(function(p) { return p.trim(); }).filter(Boolean).map(function(p) {
+    return '<p>' + p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>';
+  }).join('');
+}
+function fbHtmlToText(html) {
+  var t = String(html || '');
+  if (!FB_HTML_TAG.test(t)) return t;
+  return t.replace(/<\/p>\s*<p[^>]*>/gi, '\n\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(h[1-6]|li|div)>/gi, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+}
+function fbLines(text) {
+  return String(text || '').split('\n').map(function(x) { return x.trim(); }).filter(Boolean);
+}
+var FB_TOGGLES = {
+  'composite-info': [['show_name', 'Full name'], ['show_dob', 'Date of birth'], ['show_phone', 'Phone'], ['show_email', 'Email'], ['show_address', 'Street address'], ['show_emergency', 'Emergency contact']],
+  'composite-details': [['show_placement', 'Placement'], ['show_size', 'Size'], ['show_description', 'Description'], ['show_style', 'Style'], ['show_color', 'Color']],
+  'composite-desc': [['show_style', 'Style'], ['show_placement', 'Placement'], ['show_size', 'Size'], ['show_description', 'Description']],
+  'composite-prev': [['show_prevwork', 'Tattooed before?'], ['show_location', 'Where'], ['show_reactions', 'Reactions']]
+};
+// The settings a block offers, as rows the builder draws: each row reads
+// and writes the block itself.
+function fbSettings(f) {
+  var kind = pvKind(f), rows = [];
+  function cfg() { if (!f.config) f.config = {}; return f.config; }
+  function row(type, label, get, set, extra) {
+    var r = { type: type, label: label, get: get, set: set };
+    if (extra) Object.keys(extra).forEach(function(k) { r[k] = extra[k]; });
+    rows.push(r);
+  }
+  function linesRow(label, prop, fallback) {
+    row('lines', label, function() {
+      var list = Array.isArray(cfg()[prop]) && cfg()[prop].length ? cfg()[prop] : fallback;
+      return list.map(function(o) { return typeof o === 'string' ? o : (o && (o.label || o.value)) || ''; }).join('\n');
+    }, function(v) { cfg()[prop] = fbLines(v); }, { hint: 'One per line' });
+  }
+  if (kind === 'heading') {
+    row('text', 'Heading', function() { return f.label || ''; }, function(v) { f.label = v; });
+    return rows;
+  }
+  if (kind === 'paragraph') {
+    row('textarea', 'Text', function() { return fbHtmlToText(cfg().text || ''); }, function(v) { cfg().text = fbTextToHtml(v); });
+    return rows;
+  }
+  row('text', kind === 'disclosure' ? 'Title' : 'Question', function() { return (kind === 'disclosure' && cfg().title) || f.label || ''; },
+    function(v) { f.label = v; if (kind === 'disclosure') cfg().title = v; });
+  if (kind !== 'widget') row('toggle', 'Required', function() { return !!f.required; }, function(v) { f.required = !!v; });
+  if (['text', 'email', 'phone', 'website', 'number', 'date', 'textarea', 'dropdown', 'choice', 'upload', 'initials', 'artist'].indexOf(kind) >= 0) {
+    row('text', 'Help text', function() { return cfg().help || ''; }, function(v) { cfg().help = v; });
+  }
+  if (['text', 'email', 'phone', 'website', 'number', 'textarea'].indexOf(kind) >= 0) {
+    row('text', 'Placeholder', function() { return cfg().placeholder || ''; }, function(v) { cfg().placeholder = v; });
+  }
+  if (kind === 'dropdown' || kind === 'choice') linesRow('Options', 'options', []);
+  if (kind === 'choice') row('toggle', 'Allow more than one', function() { return !!cfg().allow_multiple; }, function(v) { cfg().allow_multiple = !!v; });
+  if (kind === 'agree' || kind === 'consent-agree' || kind === 'minor') {
+    row('textarea', 'Terms the client reads', function() { return fbHtmlToText(cfg().text || pvText(f)); }, function(v) { cfg().text = fbTextToHtml(v); });
+  }
+  if (kind === 'checks-medical') linesRow('Conditions', 'conditions', PV_MEDICAL_DEFAULTS);
+  if (kind === 'checks-allergy') linesRow('Conditions', 'conditions', PV_ALLERGY_DEFAULTS);
+  if (kind === 'checks-list') linesRow('Items', 'items', PV_AFTERCARE_DEFAULTS);
+  if (kind === 'checks-photo' || kind === 'checks-photo-sig') linesRow('Choices', 'options', PV_PHOTO_DEFAULTS);
+  if (kind === 'disclosure') linesRow('Conditions', 'sec1_conditions', PV_DISCLOSURE_DEFAULTS);
+  (FB_TOGGLES[kind] || []).forEach(function(t) {
+    row('toggle', 'Ask for: ' + t[1], function() { return cfg()[t[0]] !== false; }, function(v) { cfg()[t[0]] = !!v; });
+  });
+  if (kind === 'composite-age') {
+    row('number', 'Minimum age', function() { return cfg().min_age || 18; }, function(v) { cfg().min_age = Math.max(1, parseInt(v, 10) || 18); });
+  }
+  if (kind === 'signature') {
+    row('select', 'How they sign', function() { return pvSigMode(f); }, function(v) { cfg().signature_mode = v; },
+      { options: [['dual', 'Draw or type'], ['draw', 'Draw only'], ['typed', 'Type only']] });
+  }
+  return rows;
+}
+// Starting points for a new form.
+function fbTemplate(name) {
+  var fields = [];
+  function add(stype, type, over) {
+    var entry = fbPaletteEntry(stype, type);
+    var f = fbNewBlock(entry, fields);
+    if (over) Object.keys(over).forEach(function(k) { f[k] = over[k]; });
+    fields.push(f);
+  }
+  if (name === 'contact') {
+    add('field-name'); add('field-email'); add('field-phone');
+    add('field-long-text', 'textarea', { label: 'How can we help?', required: true });
+    return { title: 'Contact us', fields: fields };
+  }
+  if (name === 'booking') {
+    add('consent-client-info', 'text', { config: { show_dob: false, show_address: false, show_emergency: false } });
+    add('consent-tattoo-details');
+    add('artist-select');
+    add('studio-ref-images');
+    return { title: 'Booking request', fields: fields };
+  }
+  if (name === 'consent') {
+    add('consent-client-info');
+    add('consent-tattoo-details', 'text', { config: { show_style: false, show_color: false } });
+    add('studio-age-verify');
+    add('consent-medical-disclosure');
+    add('consent-legal');
+    add('consent-aftercare');
+    add('consent-photo-release');
+    add('consent-signature');
+    return { title: 'Tattoo consent', fields: fields };
+  }
+  return { title: 'New form', fields: fields };
+}
+// What stops a draft from being saved or published, in plain words ('' = fine).
+function fbProblems(draft) {
+  if (!String(draft.title || '').trim()) return 'Give the form a name.';
+  var fields = draft.fields || [];
+  if (!fields.length) return 'Add at least one block.';
+  var seen = {};
+  for (var i = 0; i < fields.length; i++) {
+    var f = fields[i], kind = pvKind(f);
+    if (!f.key || seen[f.key]) return 'Two blocks share a name inside the form — remove one and add it again.';
+    seen[f.key] = 1;
+    if (kind !== 'paragraph' && !String(f.label || '').trim()) return 'Block ' + (i + 1) + ' needs a question or heading.';
+    if ((kind === 'dropdown' || kind === 'choice') && !pvOptions(f).length) return '"' + f.label + '" needs at least one option.';
+  }
+  return '';
+}
+/*PURE-END fbbuilder*/
 
 function formsPage() {
   return {
@@ -432,6 +685,19 @@ function formsPage() {
     contactNames: {},
     labelMap: {},
     artists: [],
+    // Builder state: the working copy of the form being edited.
+    draft: null,
+    draftRaw: null,
+    draftDirty: false,
+    openBlock: -1,
+    adding: false,
+    addAt: -1,
+    saving: false,
+    showTemplates: false,
+    confirmDelete: '',
+    palette: FB_PALETTE,
+    fbBlockName: fbBlockName,
+    raws: {},
 
     // Renderer helpers, exposed to the Preview template.
     pvKind: pvKind, pvInputType: pvInputType, pvOptions: pvOptions, pvCfg: pvCfg,
@@ -455,6 +721,7 @@ function formsPage() {
         var labelMap = {};
         var artistRecs = {};
         var artistOrder = [];
+        var raws = {};
         pairs.forEach(function(pr) {
           if (!pr.key) return;
           var v = pr.value;
@@ -468,6 +735,7 @@ function formsPage() {
             (Array.isArray(v.fields) ? v.fields : []).forEach(function(f) {
               if (f && f.key && f.label && !labelMap[f.key]) labelMap[f.key] = f.label;
             });
+            raws[pr.key.slice(5)] = v;
             if (!v.deleted) defs.push({ slug: pr.key.slice(5), title: v.title || pr.key.slice(5), fields: Array.isArray(v.fields) ? v.fields : [], public_url: v.public_url || '', published: !!v.published });
           } else if (pr.key === 'artist/index') {
             if (Array.isArray(v.artists)) artistOrder = v.artists.slice();
@@ -478,6 +746,9 @@ function formsPage() {
         defs.sort(function(a, b) { return a.title.localeCompare(b.title); });
         subs.sort(function(a, b) { return new Date(b.ts || 0) - new Date(a.ts || 0); });
         this.defs = defs;
+        this.raws = raws;
+        // The Build view only exists while a form is open in it.
+        if (Alpine.store('app').formsTab === 'build' && !this.draft) Alpine.store('app').formsTab = 'forms';
         this.subs = subs;
         this.contactNames = contactNames;
         this.labelMap = labelMap;
@@ -501,13 +772,143 @@ function formsPage() {
       return this.subs.filter(function(s) { return s.form === slug; });
     },
 
-    get previewDef() { return this.defOf(this.previewSlug); },
+    // While building, the preview pane shows the working copy.
+    get previewDef() { return this.tab === 'build' && this.draft ? this.draft : this.defOf(this.previewSlug); },
 
     setPreview(slug) {
       this.previewSlug = slug;
       this.submitted = false;
       var def = this.defOf(slug);
       this.previewData = def ? pvSeed(def, this.artists) : {};
+    },
+
+    // ── Builder ──────────────────────────────────────────────────────
+    get building() { return this.tab === 'build' && !!this.draft; },
+    formLink(slug) { return window.location.origin + '/f/' + slug; },
+    draftProblem() { return this.draft ? fbProblems(this.draft) : ''; },
+    settingsOf(f) { return fbSettings(f); },
+
+    reseed() { if (this.draft) this.previewData = pvSeed(this.draft, this.artists); this.submitted = false; },
+    touch() { this.draftDirty = true; },
+
+    startNew(template) {
+      var t = fbTemplate(template);
+      var taken = {};
+      Object.keys(this.raws).forEach(function(k) { taken[k] = 1; });
+      this.draft = { slug: fbUniqueSlug(t.title, taken), title: t.title, fields: t.fields, published: false, public_url: '', isNew: true };
+      this.draftRaw = {};
+      this.draftDirty = true;
+      this.openBlock = -1; this.adding = false; this.showTemplates = false;
+      Alpine.store('app').formsTab = 'build';
+      this.reseed();
+    },
+
+    editForm(slug) {
+      if (this.draft && this.draft.slug === slug && this.draftDirty) { Alpine.store('app').formsTab = 'build'; return; }
+      var d = this.defOf(slug);
+      if (!d) return;
+      this.draftRaw = JSON.parse(JSON.stringify(this.raws[slug] || {}));
+      this.draft = { slug: slug, title: d.title, fields: JSON.parse(JSON.stringify(d.fields)), published: d.published, public_url: d.public_url, isNew: false };
+      this.draftDirty = false;
+      this.openBlock = -1; this.adding = false;
+      Alpine.store('app').formsTab = 'build';
+      this.reseed();
+    },
+
+    leaveBuilder() { Alpine.store('app').formsTab = 'forms'; },
+    discardDraft() { this.draft = null; this.draftRaw = null; this.draftDirty = false; Alpine.store('app').formsTab = 'forms'; },
+
+    openAdd(at) { this.adding = true; this.addAt = at; this.openBlock = -1; },
+    addBlock(entry) {
+      var f = fbNewBlock(entry, this.draft.fields);
+      var at = this.addAt < 0 || this.addAt > this.draft.fields.length ? this.draft.fields.length : this.addAt;
+      this.draft.fields.splice(at, 0, f);
+      this.adding = false;
+      this.openBlock = at;
+      this.touch(); this.reseed();
+      var self = this;
+      this.$nextTick(function() {
+        var el = self.$root.querySelector('[data-fb-index="' + at + '"]');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    },
+    removeBlock(i) {
+      this.draft.fields.splice(i, 1);
+      this.openBlock = -1;
+      this.touch(); this.reseed();
+    },
+    moveBlock(i, by) {
+      var j = i + by;
+      if (j < 0 || j >= this.draft.fields.length) return;
+      var f = this.draft.fields.splice(i, 1)[0];
+      this.draft.fields.splice(j, 0, f);
+      if (this.openBlock === i) this.openBlock = j;
+      this.touch();
+    },
+    setSetting(row, value) { row.set(value); this.touch(); },
+
+    // The stored record: everything the form already carried (older
+    // fields this builder does not edit) plus what the builder owns.
+    draftRecord(published) {
+      var rec = JSON.parse(JSON.stringify(this.draftRaw || {}));
+      rec.title = String(this.draft.title || '').trim();
+      rec.fields = JSON.parse(JSON.stringify(this.draft.fields));
+      rec.published = !!published;
+      rec.updated = new Date().toISOString();
+      delete rec.deleted;
+      return rec;
+    },
+
+    async saveDraft(publish) {
+      if (!this.draft || this.saving) return false;
+      var problem = fbProblems(this.draft);
+      if (problem) { OpenFangToast.error(problem); return false; }
+      var published = publish === undefined ? !!this.draft.published : !!publish;
+      this.saving = true;
+      var ok = false;
+      try {
+        var rec = this.draftRecord(published);
+        var slug = this.draft.slug;
+        var path = '/api/memory/agents/shared/kv/' + encodeURIComponent('form/' + slug);
+        await OpenFangAPI.put(path, { value: rec });
+        // Read it back: "saved" is only said about a record that is there.
+        var back = await OpenFangAPI.get(path);
+        var stored = back && back.value;
+        if (typeof stored === 'string') { try { stored = JSON.parse(stored); } catch(e) { stored = null; } }
+        if (!stored || stored.title !== rec.title || (stored.fields || []).length !== rec.fields.length || !!stored.published !== published) {
+          throw new Error('The form did not save. Nothing was changed — try again.');
+        }
+        this.draftRaw = rec;
+        this.draft.published = published;
+        this.draft.isNew = false;
+        this.draftDirty = false;
+        ok = true;
+        OpenFangToast.success(publish === true ? 'Published — the link is live' : publish === false ? 'Taken down — the link no longer works' : 'Saved');
+        await this.loadData();
+      } catch(e) {
+        OpenFangToast.error(e.message || 'The form did not save.');
+      }
+      this.saving = false;
+      return ok;
+    },
+
+    async copyLink(slug) {
+      var link = this.formLink(slug);
+      try { await navigator.clipboard.writeText(link); OpenFangToast.success('Link copied'); }
+      catch(e) { OpenFangToast.error('Copy did not work here — the link is ' + link); }
+    },
+
+    async deleteForm(slug) {
+      if (this.confirmDelete !== slug) { this.confirmDelete = slug; return; }
+      this.confirmDelete = '';
+      try {
+        var rec = JSON.parse(JSON.stringify(this.raws[slug] || {}));
+        rec.deleted = true; rec.published = false; rec.updated = new Date().toISOString();
+        await OpenFangAPI.put('/api/memory/agents/shared/kv/' + encodeURIComponent('form/' + slug), { value: rec });
+        if (this.draft && this.draft.slug === slug) { this.draft = null; this.draftDirty = false; }
+        OpenFangToast.success('Form removed. Its submissions are kept.');
+        await this.loadData();
+      } catch(e) { OpenFangToast.error(e.message || 'The form could not be removed.'); }
     },
 
     fieldLabel(slug, key) {
@@ -544,6 +945,10 @@ function formsPage() {
     async submitPreview() {
       var def = this.previewDef;
       if (!def || this.submitting) return;
+      if (this.building && (this.draftDirty || this.draft.isNew)) {
+        OpenFangToast.error('Save the form first, then send a test.');
+        return;
+      }
       if (!def.fields.length) {
         OpenFangToast.error('This form has no fields to test yet.');
         return;
