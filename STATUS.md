@@ -20,11 +20,12 @@ the owner has used it.
 | 10 Lean and quiet | `strike-10-lean-quiet` | Helpers see only their own instructions, tools and listed skills (per step 40-50% smaller); [wake] rules skip the model when nothing new is waiting; background wakes start clean; a receipt per wake (woke/skipped, steps, tokens, cost) | Not yet deployed. Live test copy: empty sweep 0 model calls, new text wakes it, unchanged thread skips |
 | 11 Style in code | `strike-11-style-code` | style_learn/style_correct do the bookkeeping (find pictures, no re-reads, real dates, counts from records, profiles rebuilt); old duplicates merged; kernel keeps helpers' schedules; Style 8 steps on Gemma 4 26B | Not yet deployed. Against fargotattoo.com: 10 pages, 103 pictures found, no picture read twice, counts match records, ~5k tokens per wake |
 | 12 Stax finds and builds | `strike-12-stax-finds-builds` | customer_lookup (one call, one person), email_draft (held for approval, threaded), form_draft (builder's own blocks, unpublished, "Drafted by Stax"); Texts/Forms sweeps kept by the kernel (no schedule_create); pinned models in the built-in catalog | Not yet deployed. Live test copy: lookup merged two contacts, email in Needs you, blank refused, form opens in the builder, unknown block refused, restart keeps 4 schedules |
+| 13 Browser | `strike-13-browser` | Agent browser on two engines: Lightpanda first, Obscura (stealth) when a site blocks it, an engine is missing, stops answering, or a screenshot is needed; Chromium last. Stax can browse (read, click, type, scroll) but never submits, buys, posts or types passwords/personal details. `stax/install-browsers.sh` installs both engines | Not yet deployed. Tested here with stand-in engines (blocked site -> switch -> page read); the real Lightpanda/Obscura first run on the box |
 
 Still open, plainly:
 - Memory helper: the Strike 8 deploy is running on the box (its phases are
   in sidecar-phases.py since Strike 8); live result pending Muse's report.
-- No browser the agent can drive (log in, click): a later strike.
+- Browser logins (owner signs in once, saved for the agent) and one-tap approval for submitting on a site: not built.
 - Contacts has no Rewards and no appointment-based Today: the fork holds no
   visit, points or appointment data (Square holds the schedule).
 - The four Python sidecars are still separate processes; they now report health to Connections, and folding them into the daemon is a post-launch job.
@@ -33,6 +34,7 @@ Checks that exist: `cargo test`, `node stax/tests/forms_builder.test.js`,
 `python3 stax/tests/test_memcarry.py`, `node stax/tests/ui_primitives.test.js`,
 `node stax/tests/ui_primitives_browser.js` (local daemon),
 `node stax/tests/form_blocks_sync.test.js`,
+`BROWSER_ENGINE_TEST_CHROME=<chrome> cargo test -p openfang-runtime browser::` (engine switch end to end),
 `python3 -m unittest stax/bench/test_bench.py`, and
 `node stax/tests/surface_audit.js <dir>` (walks every screen on iPad and
 phone against a local daemon).

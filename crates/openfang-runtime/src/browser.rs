@@ -1,8 +1,12 @@
 //! Native browser automation via Chrome DevTools Protocol (CDP).
 //!
-//! Direct WebSocket connection to Chromium. No Python, no Playwright.
-//! Launches a Chromium process, connects over CDP WebSocket, and sends
-//! JSON-RPC commands for navigation, interaction, screenshots, etc.
+//! Three engines speak CDP and are tried in order (config `engines`):
+//! Lightpanda (light, no rendering), Obscura (renders, screenshots,
+//! optional stealth fingerprint) and Chromium. Lightpanda and Obscura run
+//! as a local CDP server per session; Chromium as before. A page that looks
+//! blocked, an empty page from Lightpanda, a screenshot Lightpanda can't
+//! take, or an engine that stops answering moves the session to the next
+//! engine and the command is tried once more there.
 //!
 //! # Security
 //! - SSRF check runs in Rust before navigate commands
@@ -83,6 +87,10 @@ impl BrowserResponse {
 
 /// Low-level Chrome DevTools Protocol connection over WebSocket.
 struct CdpConnection {
+    /// Target session (flattened `Target.attachToTarget`); page commands
+    /// carry it. None = commands go to the endpoint itself (Chromium page
+    /// socket, or browser-level calls before attaching).
+    session_id: Option<String>,
     write: Arc<Mutex<SplitSink<WsStream, WsMessage>>>,
     pending: Arc<DashMap<u64, oneshot::Sender<Result<serde_json::Value, String>>>>,
     next_id: AtomicU64,
@@ -109,6 +117,7 @@ impl CdpConnection {
         let reader_handle = tokio::spawn(Self::reader_loop(read, reader_pending));
 
         Ok(Self {
+            session_id: None,
             write,
             pending,
             next_id: AtomicU64::new(1),
@@ -167,7 +176,10 @@ impl CdpConnection {
         let (tx, rx) = oneshot::channel();
         self.pending.insert(id, tx);
 
-        let msg = serde_json::json!({ "id": id, "method": method, "params": params });
+        let mut msg = serde_json::json!({ "id": id, "method": method, "params": params });
+        if let Some(sid) = &self.session_id {
+            msg["sessionId"] = serde_json::Value::String(sid.clone());
+        }
         self.write
             .lock()
             .await
@@ -229,9 +241,123 @@ struct BrowserSession {
     cdp: CdpConnection,
     #[allow(dead_code)]
     last_active: Instant,
+    engine: Engine,
+    /// Last page address the session showed, so another engine can pick up
+    /// where this one left off.
+    last_url: Option<String>,
 }
 
 impl BrowserSession {
+    /// Start the first engine (in configured order, minus `skip`) that comes
+    /// up. Errors from every engine tried are reported together.
+    async fn launch_any(config: &BrowserConfig, skip: &[Engine]) -> Result<Self, String> {
+        let mut tried: Vec<String> = Vec::new();
+        for engine in engine_order(config) {
+            if skip.contains(&engine) {
+                continue;
+            }
+            match Self::launch_engine(config, engine).await {
+                Ok(s) => return Ok(s),
+                Err(e) => {
+                    debug!(engine = engine.label(), error = %e, "Browser engine did not start");
+                    tried.push(format!("{}: {e}", engine.label()));
+                }
+            }
+        }
+        if tried.is_empty() {
+            return Err("No other browser engine is left to try.".to_string());
+        }
+        Err(format!(
+            "No browser engine could start. {}",
+            tried.join(" | ")
+        ))
+    }
+
+    async fn launch_engine(config: &BrowserConfig, engine: Engine) -> Result<Self, String> {
+        match engine {
+            Engine::Chromium => Self::launch(config).await,
+            Engine::Lightpanda | Engine::Obscura => Self::launch_server(config, engine).await,
+        }
+    }
+
+    /// Start Lightpanda or Obscura as a local CDP server on a free port,
+    /// connect, and open one page target to drive.
+    async fn launch_server(config: &BrowserConfig, engine: Engine) -> Result<Self, String> {
+        let bin = find_engine_binary(config, engine)?;
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .map(|a| a.port())
+            .map_err(|e| format!("No free local port: {e}"))?;
+        let args = server_args(config, engine, port);
+        let mut cmd = tokio::process::Command::new(&bin);
+        cmd.args(&args);
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        cmd.stdin(std::process::Stdio::null());
+        cmd.kill_on_drop(true);
+        // SECURITY: clear environment, pass only essentials
+        cmd.env_clear();
+        for key in &[
+            "PATH",
+            "HOME",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+            "XDG_CACHE_HOME",
+            "XDG_CONFIG_HOME",
+        ] {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+        // Lightpanda reports usage by default; a studio's browsing stays here.
+        cmd.env("LIGHTPANDA_DISABLE_TELEMETRY", "true");
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("could not start {}: {e}", bin.display()))?;
+
+        // Wait for the server to accept connections (or exit early).
+        let deadline = Instant::now() + Duration::from_secs(CDP_CONNECT_TIMEOUT_SECS);
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(format!("exited before it was ready ({status})"));
+            }
+            if tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .is_ok()
+            {
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.start_kill();
+                return Err("did not start listening in time".to_string());
+            }
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+
+        let mut cdp = match connect_browser_endpoint(port).await {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = child.start_kill();
+                return Err(e);
+            }
+        };
+        if let Err(e) = attach_page(&mut cdp).await {
+            let _ = child.start_kill();
+            return Err(e);
+        }
+        let _ = cdp.send("Page.enable", serde_json::json!({})).await;
+        let _ = cdp.send("Runtime.enable", serde_json::json!({})).await;
+        info!(engine = engine.label(), port, "Browser engine started");
+        Ok(Self {
+            process: child,
+            cdp,
+            last_active: Instant::now(),
+            engine,
+            last_url: None,
+        })
+    }
+
     /// Launch Chromium and establish a CDP connection.
     async fn launch(config: &BrowserConfig) -> Result<Self, String> {
         let chrome_path = find_chromium(config)?;
@@ -327,6 +453,8 @@ impl BrowserSession {
             process: child,
             cdp,
             last_active: Instant::now(),
+            engine: Engine::Chromium,
+            last_url: None,
         })
     }
 
@@ -394,6 +522,21 @@ impl BrowserSession {
     /// Execute a browser command via CDP.
     async fn execute(&mut self, cmd: BrowserCommand) -> BrowserResponse {
         self.last_active = Instant::now();
+        let resp = self.execute_inner(cmd).await;
+        if resp.success {
+            if let Some(u) = resp
+                .data
+                .as_ref()
+                .and_then(|d| d["url"].as_str())
+                .filter(|u| u.starts_with("http"))
+            {
+                self.last_url = Some(u.to_string());
+            }
+        }
+        resp
+    }
+
+    async fn execute_inner(&mut self, cmd: BrowserCommand) -> BrowserResponse {
         match cmd {
             BrowserCommand::Navigate { url } => self.cmd_navigate(&url).await,
             BrowserCommand::Click { selector } => self.cmd_click(&selector).await,
@@ -669,6 +812,295 @@ impl Drop for BrowserSession {
     }
 }
 
+// ── Engines ────────────────────────────────────────────────────────────────
+
+/// A CDP browser engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    /// Lightpanda: small and fast, runs page scripts, draws nothing.
+    Lightpanda,
+    /// Obscura: renders and screenshots; optional stealth fingerprint.
+    Obscura,
+    /// Chromium/Chrome: the full browser, last resort.
+    Chromium,
+}
+
+impl Engine {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "lightpanda" => Some(Self::Lightpanda),
+            "obscura" => Some(Self::Obscura),
+            "chromium" | "chrome" => Some(Self::Chromium),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Lightpanda => "Lightpanda",
+            Self::Obscura => "Obscura",
+            Self::Chromium => "Chromium",
+        }
+    }
+
+    fn binary_name(self) -> &'static str {
+        match self {
+            Self::Lightpanda => "lightpanda",
+            Self::Obscura => "obscura",
+            Self::Chromium => "chromium",
+        }
+    }
+}
+
+/// The engines to try, in order, without repeats. Unknown names are
+/// skipped; nothing usable configured means all three in the default order.
+pub fn engine_order(config: &BrowserConfig) -> Vec<Engine> {
+    let mut out: Vec<Engine> = Vec::new();
+    for e in config.engines.iter().filter_map(|n| Engine::parse(n)) {
+        if !out.contains(&e) {
+            out.push(e);
+        }
+    }
+    if out.is_empty() {
+        out = vec![Engine::Lightpanda, Engine::Obscura, Engine::Chromium];
+    }
+    out
+}
+
+/// Command-line arguments for a server engine listening on `port`.
+fn server_args(config: &BrowserConfig, engine: Engine, port: u16) -> Vec<String> {
+    let mut a = vec!["serve".to_string()];
+    match engine {
+        Engine::Lightpanda => {
+            a.extend([
+                "--host".to_string(),
+                "127.0.0.1".to_string(),
+                "--port".to_string(),
+                port.to_string(),
+            ]);
+            if config.obey_robots {
+                a.push("--obey-robots".to_string());
+            }
+        }
+        Engine::Obscura => {
+            a.extend(["--port".to_string(), port.to_string()]);
+            if config.obscura_stealth {
+                a.push("--stealth".to_string());
+            }
+        }
+        Engine::Chromium => {}
+    }
+    a
+}
+
+/// Where a server engine's program is: the configured path, then
+/// $LIGHTPANDA_PATH / $OBSCURA_PATH, then <openfang home>/bin/<name>,
+/// then PATH.
+fn find_engine_binary(config: &BrowserConfig, engine: Engine) -> Result<PathBuf, String> {
+    let configured = match engine {
+        Engine::Lightpanda => config.lightpanda_path.clone(),
+        Engine::Obscura => config.obscura_path.clone(),
+        Engine::Chromium => config.chromium_path.clone(),
+    };
+    if let Some(p) = configured.filter(|p| !p.trim().is_empty()) {
+        let p = PathBuf::from(p);
+        return if p.is_file() {
+            Ok(p)
+        } else {
+            Err(format!("not found at configured path {}", p.display()))
+        };
+    }
+    let env_key = match engine {
+        Engine::Lightpanda => "LIGHTPANDA_PATH",
+        Engine::Obscura => "OBSCURA_PATH",
+        Engine::Chromium => "CHROME_PATH",
+    };
+    if let Ok(p) = std::env::var(env_key) {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    let home = std::env::var("OPENFANG_HOME")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".openfang"))
+        });
+    if let Some(h) = home {
+        let p = h.join("bin").join(engine.binary_name());
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    if let Ok(out) = std::process::Command::new("which")
+        .arg(engine.binary_name())
+        .output()
+    {
+        let found = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !found.is_empty() {
+            return Ok(PathBuf::from(found));
+        }
+    }
+    Err(format!(
+        "not installed (looked for {} in the config, ${env_key}, <home>/bin and PATH)",
+        engine.binary_name()
+    ))
+}
+
+/// Connect to a CDP server's browser endpoint on `port`. Tries the address
+/// /json/version announces, then the bare socket, then /devtools/browser,
+/// and keeps the first one that answers a command.
+async fn connect_browser_endpoint(port: u16) -> Result<CdpConnection, String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(resp) = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/json/version"))
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+    {
+        if let Ok(v) = resp.json::<serde_json::Value>().await {
+            if let Some(ws) = v["webSocketDebuggerUrl"].as_str() {
+                candidates.push(ws.to_string());
+            }
+        }
+    }
+    candidates.push(format!("ws://127.0.0.1:{port}"));
+    candidates.push(format!("ws://127.0.0.1:{port}/devtools/browser"));
+    let mut last = String::new();
+    for ws in candidates {
+        match CdpConnection::connect(&ws).await {
+            Ok(c) => {
+                let probe = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    c.send("Target.getTargets", serde_json::json!({})),
+                )
+                .await;
+                match probe {
+                    Ok(Ok(_)) => return Ok(c),
+                    Ok(Err(e)) => last = format!("{ws}: {e}"),
+                    Err(_) => last = format!("{ws}: no answer"),
+                }
+            }
+            Err(e) => last = e,
+        }
+    }
+    Err(format!("could not talk to it over CDP ({last})"))
+}
+
+/// Open a fresh page and attach to it (flattened session): every page
+/// command afterwards carries its session id.
+async fn attach_page(cdp: &mut CdpConnection) -> Result<(), String> {
+    let created = cdp
+        .send(
+            "Target.createTarget",
+            serde_json::json!({ "url": "about:blank" }),
+        )
+        .await
+        .map_err(|e| format!("could not open a page: {e}"))?;
+    let target = created["targetId"]
+        .as_str()
+        .ok_or("could not open a page: no target id")?
+        .to_string();
+    let attached = cdp
+        .send(
+            "Target.attachToTarget",
+            serde_json::json!({ "targetId": target, "flatten": true }),
+        )
+        .await
+        .map_err(|e| format!("could not attach to the page: {e}"))?;
+    let sid = attached["sessionId"]
+        .as_str()
+        .ok_or("could not attach to the page: no session id")?;
+    cdp.session_id = Some(sid.to_string());
+    Ok(())
+}
+
+/// Phrases a page shows when a site turned the browser away. Checked in
+/// the title always, and in the text only for short pages (a real page that
+/// merely mentions "captcha" in its footer is long).
+const BLOCK_PHRASES: &[&str] = &[
+    "just a moment",
+    "checking your browser",
+    "attention required",
+    "verify you are human",
+    "verify you are a human",
+    "are you a robot",
+    "are you human",
+    "access denied",
+    "request blocked",
+    "you have been blocked",
+    "pardon our interruption",
+    "unusual traffic",
+    "enable javascript and cookies to continue",
+    "please enable cookies",
+    "security check",
+    "bot detection",
+    "403 forbidden",
+    "error 1020",
+    "captcha-delivery",
+    "px-captcha",
+];
+
+/// Short pages (block walls are short) get their text checked too.
+const BLOCK_TEXT_MAX_CHARS: usize = 4000;
+
+/// Why a loaded page looks like a block wall instead of the site, or None.
+pub fn looks_blocked(title: &str, content: &str) -> Option<&'static str> {
+    let t = title.to_lowercase();
+    if let Some(p) = BLOCK_PHRASES.iter().find(|p| t.contains(*p)) {
+        return Some(p);
+    }
+    if content.chars().count() < BLOCK_TEXT_MAX_CHARS {
+        let c = content.to_lowercase();
+        if let Some(p) = BLOCK_PHRASES.iter().find(|p| c.contains(*p)) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Whether a command's result should move the session to the next engine,
+/// and why (in words for the owner and the agent).
+fn fallback_reason(cmd: &BrowserCommand, resp: &BrowserResponse, engine: Engine) -> Option<String> {
+    if !resp.success {
+        let err = resp.error.as_deref().unwrap_or("");
+        let lost = [
+            "CDP send failed",
+            "channel closed",
+            "CDP command timed out",
+            "WebSocket",
+        ]
+        .iter()
+        .any(|m| err.contains(m));
+        if lost {
+            return Some(format!("{} stopped responding", engine.label()));
+        }
+        if matches!(cmd, BrowserCommand::Screenshot) && engine == Engine::Lightpanda {
+            return Some("Lightpanda can't take screenshots".to_string());
+        }
+        return None;
+    }
+    if !matches!(cmd, BrowserCommand::Navigate { .. }) {
+        return None;
+    }
+    let data = resp.data.clone().unwrap_or_default();
+    let title = data["title"].as_str().unwrap_or("");
+    let content = data["content"].as_str().unwrap_or("");
+    if let Some(p) = looks_blocked(title, content) {
+        return Some(format!(
+            "the page looked blocked (\"{p}\") in {}",
+            engine.label()
+        ));
+    }
+    if engine == Engine::Lightpanda && content.trim().chars().count() < 20 {
+        return Some("the page came back empty in Lightpanda".to_string());
+    }
+    None
+}
+
 // ── Chromium discovery ─────────────────────────────────────────────────────
 
 /// Find a Chromium-based browser binary on this system.
@@ -816,6 +1248,12 @@ impl BrowserManager {
     }
 
     /// Send a command to an agent's browser session (creating one if needed).
+    ///
+    /// When the result says this engine can't do it (the page looked
+    /// blocked, came back empty in Lightpanda, the engine stopped answering,
+    /// or Lightpanda was asked for a screenshot), the session moves to the
+    /// next engine and the command is tried there: navigation as given;
+    /// reading and screenshots after reopening the last page.
     pub async fn send_command(
         &self,
         agent_id: &str,
@@ -823,15 +1261,65 @@ impl BrowserManager {
     ) -> Result<BrowserResponse, String> {
         let session = self.get_or_create(agent_id).await?;
         let mut guard = session.lock().await;
-        let resp = guard.execute(cmd).await;
-
-        if !resp.success {
-            if let Some(ref err) = resp.error {
-                warn!(agent_id, error = %err, "Browser command failed");
+        let mut resp = guard.execute(cmd.clone()).await;
+        let mut tried = vec![guard.engine];
+        let mut notes: Vec<String> = Vec::new();
+        while let Some(why) = fallback_reason(&cmd, &resp, guard.engine) {
+            let replay = match &cmd {
+                BrowserCommand::Navigate { .. } => true,
+                BrowserCommand::ReadPage | BrowserCommand::Screenshot => guard.last_url.is_some(),
+                _ => false,
+            };
+            let resume = guard.last_url.clone();
+            let next = match BrowserSession::launch_any(&self.config, &tried).await {
+                Ok(n) => n,
+                Err(e) => {
+                    debug!(agent_id, error = %e, "No other browser engine to fall back to");
+                    break;
+                }
+            };
+            info!(
+                agent_id,
+                from = guard.engine.label(),
+                to = next.engine.label(),
+                reason = %why,
+                "Browser switching engine"
+            );
+            notes.push(format!("{why} — switched to {}", next.engine.label()));
+            tried.push(next.engine);
+            *guard = next;
+            if !replay {
+                resp = BrowserResponse::err(format!(
+                    "{why}; the browser moved to {}. Open the page again with browser_navigate, then retry.",
+                    guard.engine.label()
+                ));
+                break;
             }
+            if !matches!(cmd, BrowserCommand::Navigate { .. }) {
+                if let Some(u) = resume {
+                    let _ = guard.execute(BrowserCommand::Navigate { url: u }).await;
+                }
+            }
+            resp = guard.execute(cmd.clone()).await;
         }
-
+        if resp.success {
+            if let Some(d) = resp.data.as_mut().filter(|d| d.is_object()) {
+                d["engine"] = serde_json::Value::String(guard.engine.label().to_string());
+                if !notes.is_empty() {
+                    d["switched"] = serde_json::Value::String(notes.join("; "));
+                }
+            }
+        } else if let Some(ref err) = resp.error {
+            warn!(agent_id, engine = guard.engine.label(), error = %err, "Browser command failed");
+        }
         Ok(resp)
+    }
+
+    /// Which engine an agent's browser session is running on, if any.
+    pub async fn engine_of(&self, agent_id: &str) -> Option<Engine> {
+        let s = self.sessions.get(agent_id).map(|e| Arc::clone(e.value()))?;
+        let g = s.lock().await;
+        Some(g.engine)
     }
 
     /// Close an agent's browser session.
@@ -860,10 +1348,11 @@ impl BrowserManager {
             ));
         }
 
-        let session = BrowserSession::launch(&self.config).await?;
+        let session = BrowserSession::launch_any(&self.config, &[]).await?;
+        let engine = session.engine.label();
         let arc = Arc::new(Mutex::new(session));
         self.sessions.insert(agent_id.to_string(), Arc::clone(&arc));
-        info!(agent_id, "Browser session created (native CDP)");
+        info!(agent_id, engine, "Browser session created (native CDP)");
         Ok(arc)
     }
 }
@@ -896,9 +1385,16 @@ pub async fn tool_browser_navigate(
     let page_url = data["url"].as_str().unwrap_or(url);
     let content = data["content"].as_str().unwrap_or("");
     let wrapped = crate::web_content::wrap_external_content(page_url, content);
-
+    let engine = data["engine"].as_str().unwrap_or("");
+    let switched = data["switched"]
+        .as_str()
+        .map(|s| format!("Browser note: {s}\n"))
+        .unwrap_or_default();
+    let blocked = looks_blocked(title, content)
+        .map(|p| format!("Browser note: this page still looks like a block wall (\"{p}\") — no engine got past it. Try web_fetch, another source, or tell the owner.\n"))
+        .unwrap_or_default();
     Ok(format!(
-        "Navigated to: {page_url}\nTitle: {title}\n\n{wrapped}"
+        "Navigated to: {page_url}\nTitle: {title}\nBrowser: {engine}\n{switched}{blocked}\n{wrapped}"
     ))
 }
 
@@ -1203,6 +1699,238 @@ fn is_running_as_root() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engines_default_order_and_parsing() {
+        let c = BrowserConfig::default();
+        assert_eq!(
+            engine_order(&c),
+            vec![Engine::Lightpanda, Engine::Obscura, Engine::Chromium]
+        );
+        let c = BrowserConfig {
+            engines: vec![
+                "Obscura".into(),
+                "nope".into(),
+                "obscura".into(),
+                "chrome".into(),
+            ],
+            ..BrowserConfig::default()
+        };
+        assert_eq!(engine_order(&c), vec![Engine::Obscura, Engine::Chromium]);
+        let c = BrowserConfig {
+            engines: vec!["nothing".into()],
+            ..BrowserConfig::default()
+        };
+        assert_eq!(engine_order(&c).len(), 3, "nothing usable = all three");
+    }
+
+    #[test]
+    fn server_engines_start_on_loopback_with_their_options() {
+        let c = BrowserConfig::default();
+        let lp = server_args(&c, Engine::Lightpanda, 9333);
+        assert_eq!(lp, vec!["serve", "--host", "127.0.0.1", "--port", "9333"]);
+        let ob = server_args(&c, Engine::Obscura, 9334);
+        assert_eq!(ob, vec!["serve", "--port", "9334", "--stealth"]);
+        let c = BrowserConfig {
+            obscura_stealth: false,
+            obey_robots: true,
+            ..BrowserConfig::default()
+        };
+        assert!(server_args(&c, Engine::Lightpanda, 1).contains(&"--obey-robots".to_string()));
+        assert!(!server_args(&c, Engine::Obscura, 1).contains(&"--stealth".to_string()));
+    }
+
+    #[test]
+    fn missing_configured_engine_says_where_it_looked() {
+        let c = BrowserConfig {
+            obscura_path: Some("/nonexistent/obscura".into()),
+            ..BrowserConfig::default()
+        };
+        let e = find_engine_binary(&c, Engine::Obscura).unwrap_err();
+        assert!(e.contains("/nonexistent/obscura"), "{e}");
+    }
+
+    #[test]
+    fn block_walls_are_recognised_and_real_pages_are_not() {
+        assert!(looks_blocked("Just a moment...", "").is_some());
+        assert!(looks_blocked("Attention Required! | Cloudflare", "").is_some());
+        assert!(looks_blocked("", "Access Denied. You don't have permission.").is_some());
+        assert!(looks_blocked("Studio", "Please verify you are a human to continue").is_some());
+        assert_eq!(
+            looks_blocked("Fargo Tattoo", "Black and grey realism in Fargo."),
+            None
+        );
+        // A real page that mentions reCAPTCHA in its footer is not a wall.
+        let long = format!(
+            "{} This site is protected by reCAPTCHA. access denied",
+            "Portfolio. ".repeat(500)
+        );
+        assert_eq!(looks_blocked("Fargo Tattoo — Portfolio", &long), None);
+    }
+
+    #[test]
+    fn engine_switch_rules() {
+        let nav = BrowserCommand::Navigate {
+            url: "https://x.example".into(),
+        };
+        let page = |t: &str, c: &str| {
+            BrowserResponse::ok(
+                serde_json::json!({"title": t, "url": "https://x.example", "content": c}),
+            )
+        };
+        assert!(fallback_reason(&nav, &page("Just a moment...", ""), Engine::Lightpanda).is_some());
+        assert!(fallback_reason(&nav, &page("Just a moment...", ""), Engine::Obscura).is_some());
+        assert!(fallback_reason(&nav, &page("Home", ""), Engine::Lightpanda)
+            .unwrap()
+            .contains("empty"));
+        assert_eq!(
+            fallback_reason(&nav, &page("Home", ""), Engine::Obscura),
+            None,
+            "only Lightpanda's empty pages move on"
+        );
+        assert_eq!(
+            fallback_reason(
+                &nav,
+                &page("Home", "A real page with words."),
+                Engine::Lightpanda
+            ),
+            None
+        );
+        let lost = BrowserResponse::err("Navigate failed: CDP command timed out");
+        assert!(fallback_reason(&nav, &lost, Engine::Obscura)
+            .unwrap()
+            .contains("stopped responding"));
+        let shot = BrowserCommand::Screenshot;
+        assert!(fallback_reason(
+            &shot,
+            &BrowserResponse::err("Screenshot failed: x"),
+            Engine::Lightpanda
+        )
+        .is_some());
+        assert_eq!(
+            fallback_reason(
+                &shot,
+                &BrowserResponse::err("Screenshot failed: x"),
+                Engine::Chromium
+            ),
+            None
+        );
+        let click = BrowserCommand::Click {
+            selector: "#go".into(),
+        };
+        assert_eq!(
+            fallback_reason(
+                &click,
+                &BrowserResponse::err("Element not found: #go"),
+                Engine::Lightpanda
+            ),
+            None,
+            "a missing button is not the engine's fault"
+        );
+    }
+
+    /// End to end with stand-in engines: two wrappers around a local Chrome
+    /// that start like Lightpanda/Obscura (`serve ... --port N`). A test site
+    /// turns the first away with a bot wall and lets the second through.
+    /// Runs only when BROWSER_ENGINE_TEST_CHROME points at a Chrome binary.
+    #[tokio::test]
+    async fn falls_back_to_the_next_engine_when_a_site_blocks() {
+        let Ok(chrome) = std::env::var("BROWSER_ENGINE_TEST_CHROME") else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("engines-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wrapper = |name: &str, ua: &str| {
+            let p = dir.join(name);
+            std::fs::write(
+                &p,
+                format!(
+                    "#!/bin/sh\nPORT=\nwhile [ $# -gt 0 ]; do [ \"$1\" = --port ] && PORT=$2; shift; done\nexec {chrome} --headless=new --no-sandbox --disable-gpu --user-data-dir={dir}/profile-{name} --remote-debugging-port=$PORT --user-agent='{ua}' about:blank\n",
+                    dir = dir.display(),
+                ),
+            )
+            .unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let lp = wrapper("lightpanda", "TestEngine/plain");
+        let ob = wrapper("obscura", "TestEngine/stealth");
+
+        // The site: a bot wall for the plain engine, the studio for the other.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let body = if req.contains("TestEngine/stealth") {
+                    "<html><head><title>Fargo Tattoo</title></head><body><main><h1>Fargo Tattoo</h1><p>Black and grey realism, portraits and cover-ups in Fargo.</p></main></body></html>"
+                } else {
+                    "<html><head><title>Just a moment...</title></head><body>Checking your browser before accessing the site.</body></html>"
+                };
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            }
+        });
+
+        let config = BrowserConfig {
+            lightpanda_path: Some(lp.display().to_string()),
+            obscura_path: Some(ob.display().to_string()),
+            engines: vec!["lightpanda".into(), "obscura".into()],
+            ..BrowserConfig::default()
+        };
+        let mgr = BrowserManager::new(config);
+        let url = format!("http://127.0.0.1:{port}/");
+        let resp = mgr
+            .send_command("agent-1", BrowserCommand::Navigate { url: url.clone() })
+            .await
+            .unwrap();
+        assert!(resp.success, "{:?}", resp.error);
+        let d = resp.data.unwrap();
+        assert_eq!(d["title"], "Fargo Tattoo", "{d}");
+        assert_eq!(d["engine"], "Obscura");
+        // Normally "looked blocked"; on a heavily loaded machine the first
+        // stand-in can be too slow to answer, which is also a reason to move
+        // on. Recognising block walls is pinned by its own unit test.
+        let switched = d["switched"].as_str().unwrap();
+        assert!(
+            switched.contains("switched to Obscura")
+                && (switched.contains("looked blocked") || switched.contains("stopped responding")),
+            "{d}"
+        );
+        assert_eq!(mgr.engine_of("agent-1").await, Some(Engine::Obscura));
+        // The session stays on the engine that got through.
+        let read = mgr
+            .send_command("agent-1", BrowserCommand::ReadPage)
+            .await
+            .unwrap();
+        assert!(read.data.unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("cover-ups"));
+
+        mgr.close_session("agent-1").await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // An engine that isn't installed is skipped at start.
+        let config = BrowserConfig {
+            lightpanda_path: Some("/nonexistent/lightpanda".into()),
+            obscura_path: Some(ob.display().to_string()),
+            engines: vec!["lightpanda".into(), "obscura".into()],
+            ..BrowserConfig::default()
+        };
+        let mgr2 = BrowserManager::new(config);
+        let resp = mgr2
+            .send_command("agent-2", BrowserCommand::Navigate { url })
+            .await
+            .unwrap();
+        assert_eq!(resp.data.unwrap()["engine"], "Obscura");
+        mgr2.close_session("agent-2").await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn test_browser_config_defaults() {

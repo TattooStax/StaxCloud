@@ -382,6 +382,21 @@ pub struct BrowserConfig {
     pub max_sessions: usize,
     /// Path to Chromium/Chrome binary. Auto-detected if None.
     pub chromium_path: Option<String>,
+    /// Browser engines to try, in order: "lightpanda", "obscura",
+    /// "chromium". The first that starts is used; a page that looks blocked
+    /// (or an engine that fails mid-session) moves on to the next.
+    pub engines: Vec<String>,
+    /// Path to the Lightpanda binary. Auto-detected if None
+    /// ($LIGHTPANDA_PATH, <home>/bin/lightpanda, PATH).
+    pub lightpanda_path: Option<String>,
+    /// Path to the Obscura binary (its `obscura-worker` must sit beside it).
+    /// Auto-detected if None ($OBSCURA_PATH, <home>/bin/obscura, PATH).
+    pub obscura_path: Option<String>,
+    /// Run Obscura with `--stealth` (browser fingerprint that sites built to
+    /// turn away automated browsers accept more often).
+    pub obscura_stealth: bool,
+    /// Lightpanda only: respect each site's robots.txt.
+    pub obey_robots: bool,
 }
 
 impl Default for BrowserConfig {
@@ -395,6 +410,15 @@ impl Default for BrowserConfig {
             idle_timeout_secs: 300,
             max_sessions: 5,
             chromium_path: None,
+            engines: vec![
+                "lightpanda".to_string(),
+                "obscura".to_string(),
+                "chromium".to_string(),
+            ],
+            lightpanda_path: None,
+            obscura_path: None,
+            obscura_stealth: true,
+            obey_robots: false,
         }
     }
 }
