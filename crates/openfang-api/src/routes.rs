@@ -279,6 +279,10 @@ pub fn resolve_attachments(
             continue;
         }
 
+        blocks.push(openfang_types::message::ContentBlock::Text {
+            text: format!("[Attached image: file_id {}]", att.file_id),
+            provider_metadata: None,
+        });
         let file_path = openfang_types::uploads::resolve(&att.file_id);
         match std::fs::read(&file_path) {
             Ok(data) => {
@@ -286,14 +290,6 @@ pub fn resolve_attachments(
                 blocks.push(openfang_types::message::ContentBlock::Image {
                     media_type: content_type,
                     data: b64,
-                });
-                // Name the upload so the agent can hand the same picture to a
-                // tool (image_generate references, image_describe) even when
-                // its own model cannot see images and the block above is
-                // dropped for it.
-                blocks.push(openfang_types::message::ContentBlock::Text {
-                    text: format!("[Attached image: file_id {}]", att.file_id),
-                    provider_metadata: None,
                 });
             }
             Err(e) => {
@@ -11160,9 +11156,7 @@ pub async fn get_approval(
     }
 }
 
-fn approval_status_str(
-    decision: openfang_types::approval::ApprovalDecision,
-) -> &'static str {
+fn approval_status_str(decision: openfang_types::approval::ApprovalDecision) -> &'static str {
     match decision {
         openfang_types::approval::ApprovalDecision::Approved => "approved",
         openfang_types::approval::ApprovalDecision::Denied => "rejected",
@@ -12918,8 +12912,7 @@ pub async fn auth_login(
     // secret (see session_auth::load_or_create_session_secret) —
     // never the API key or the password hash, which API-token
     // holders can read.
-    let secret =
-        crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
+    let secret = crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
 
     let token =
         crate::session_auth::create_session_token(username, &secret, auth_cfg.session_ttl_hours);
@@ -12974,8 +12967,7 @@ pub async fn auth_check(
 
     // Same single source as login and the middleware: the daemon's
     // persisted session secret.
-    let secret =
-        crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
+    let secret = crate::session_auth::load_or_create_session_secret(&state.kernel.config.data_dir);
 
     // Check session cookie
     let session_user = crate::session_auth::extract_session_cookie(request.headers())
@@ -13305,5 +13297,20 @@ mod uninstall_agent_tests {
             home.join("escape").is_dir(),
             "sibling dir outside agents/ must NOT be deleted"
         );
+    }
+}
+
+#[cfg(test)]
+mod attachment_reference_contract_tests {
+    #[test]
+    fn missing_upload_keeps_reference_identity_for_an_honest_tool_error() {
+        let file_id = uuid::Uuid::new_v4().to_string();
+        let refs = vec![crate::types::AttachmentRef {
+            file_id: file_id.clone(),
+            content_type: "image/png".into(),
+            filename: "tiger.png".into(),
+        }];
+        let blocks = super::resolve_attachments(&refs);
+        assert!(blocks.iter().any(|b| matches!(b, openfang_types::message::ContentBlock::Text {text,..} if text.contains(&file_id))), "missing upload must not turn an edit into unreferenced generation");
     }
 }

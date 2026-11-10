@@ -52,6 +52,7 @@ pub mod think_filter;
 pub mod tool_policy;
 pub mod tool_runner;
 pub mod tts;
+mod turn_contract;
 pub mod web_cache;
 pub mod web_content;
 pub mod web_fetch;
