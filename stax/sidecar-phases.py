@@ -240,7 +240,7 @@ def memwake_phase(tok):
            "playbook (candidates only — quote or nothing). Keys not named "
            "here are not yours to process.")
     r = req(tok, "POST", f"/api/agents/{mem_id}/message",
-            {"message": msg}, timeout=220)
+            {"message": msg, "fresh": True}, timeout=220)
     if not (isinstance(r, dict) and r.get("response")):
         print(stamp, "memwake: wake got no response — ledger untouched, will retry")
         return

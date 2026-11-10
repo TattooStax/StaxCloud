@@ -81,6 +81,27 @@ pub struct PromptContext {
 /// Produces an ordered, multi-section prompt. Sections with no content are
 /// omitted entirely (no empty headers). Subagent mode skips sections that
 /// add unnecessary context overhead.
+/// Trim a helper's prompt to what it can use. A helper (hand) is defined by
+/// its own instructions: the stock OpenFang persona, first-run, heartbeat
+/// and workspace files are generic boilerplate it pays for on every step
+/// and never needs, and the catalog of every installed skill is noise unless
+/// the helper listed skills of its own (`listed_skills`).
+pub fn make_lean(ctx: &mut PromptContext, listed_skills: bool) {
+    if !listed_skills {
+        ctx.skill_summary.clear();
+        ctx.skill_prompt_context.clear();
+    }
+    ctx.soul_md = None;
+    ctx.user_md = None;
+    ctx.memory_md = None;
+    ctx.agents_md = None;
+    ctx.bootstrap_md = None;
+    ctx.workspace_context = None;
+    ctx.identity_md = None;
+    ctx.heartbeat_md = None;
+    ctx.context_md = None;
+}
+
 pub fn build_system_prompt(ctx: &PromptContext) -> String {
     let mut sections: Vec<String> = Vec::with_capacity(12);
 
@@ -690,6 +711,48 @@ fn capitalize(s: &str) -> String {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod lean_tests {
+    use super::*;
+
+    #[test]
+    fn lean_drops_boilerplate_and_unlisted_skills() {
+        let mut ctx = PromptContext {
+            agent_name: "sms".into(),
+            base_system_prompt: "You are the Texts agent.".into(),
+            granted_tools: vec!["memory_recall".into()],
+            skill_summary: "--- Available Skills (61) --- kubernetes ...".into(),
+            skill_prompt_context: "--- Skill: ci-cd --- pipelines".into(),
+            soul_md: Some("# Soul\nBe curious and warm.".into()),
+            bootstrap_md: Some("# First-Run Bootstrap\nAsk the user their name.".into()),
+            heartbeat_md: Some("# Heartbeat Checklist\nEvery heartbeat check things.".into()),
+            identity_md: Some("# Identity\nname".into()),
+            workspace_context: Some("Workspace: /x".into()),
+            is_autonomous: true,
+            ..Default::default()
+        };
+        let fat = build_system_prompt(&ctx);
+        make_lean(&mut ctx, false);
+        let lean = build_system_prompt(&ctx);
+        assert!(lean.contains("You are the Texts agent."));
+        for gone in ["Available Skills", "ci-cd", "Soul", "First-Run", "Heartbeat Checklist", "Workspace: /x"] {
+            assert!(fat.contains(gone), "fixture should include {gone}");
+            assert!(!lean.contains(gone), "lean prompt still has {gone}");
+        }
+        assert!(lean.len() < fat.len());
+    }
+
+    #[test]
+    fn lean_keeps_skills_a_helper_listed() {
+        let mut ctx = PromptContext {
+            skill_summary: "--- Available Skills (1) --- web-search".into(),
+            ..Default::default()
+        };
+        make_lean(&mut ctx, true);
+        assert!(build_system_prompt(&ctx).contains("web-search"));
+    }
+}
 
 #[cfg(test)]
 mod tests {

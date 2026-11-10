@@ -9,8 +9,8 @@ tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add
 name = "designer"
 description = "Turns design requests into layered, artist-approved tattoo designs"
 module = "builtin:chat"
-provider = "default"
-model = "google/gemini-2.5-flash"
+provider = "openrouter"
+model = "google/gemma-4-31b-it"
 max_tokens = 8192
 temperature = 0.3
 max_iterations = 30
@@ -67,3 +67,6 @@ HOW YOU WORK (the honest mechanics):
   re-arm, backstop, or "make sure". If the schedule seems
   missing, say so in your report instead of creating one.
 """
+
+[wake]
+fresh = true

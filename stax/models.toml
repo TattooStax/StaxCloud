@@ -7,31 +7,32 @@
 #
 # "default" means the daemon's default model from config.toml.
 #
-# These are the values the hands ran with before this file existed, except
-# decider and memory, whose placeholder ("PART2-WINNER-SET-AT-ACTIVATION")
-# could not activate; they now use the default until Strike 2's benchmark
-# picks real winners. Candidates per role are listed in the ship plan.
+# Values as running on the live box after the strike-7/8 deploys (Muse's
+# reports, 2026-11-10), plus Strike 10: the background workers move off the
+# daemon default (meta-llama/llama-3.3-70b-instruct) onto the benchmarked
+# cheap driver. Prices synced 2026-11-10: gemma-4-26b $0.08/$0.10 per M,
+# qwen3.7-flash $0.03/$0.13, gemma-4-31b $0.20/$0.40.
 
 [roles.lead]
 hands = ["stax"]
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "google/gemma-4-26b-a4b-it"
 
 [roles.workers]
 # background sweeps: form intake, text threads, boards
 hands = ["forms", "sms", "surface-builder", "style"]
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "google/gemma-4-26b-a4b-it"
 
 [roles.router]
 hands = ["decider"]
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "qwen/qwen3.7-flash"
 
 [roles.memory]
 hands = ["memory"]
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "qwen/qwen3.7-flash"
 
 [roles.deep_work]
 hands = ["deep-work"]
@@ -41,8 +42,8 @@ model = "moonshotai/kimi-k2-0905"
 [roles.vision]
 # reads reference photos and the artist's portfolio
 hands = ["designer"]
-provider = "default"
-model = "google/gemini-2.5-flash"
+provider = "openrouter"
+model = "google/gemma-4-31b-it"
 
 [roles.upstream]
 # OpenFang's own hands, kept on the default
@@ -54,9 +55,9 @@ model = "default"
 # Designs made in chat (image_generate reads STAX_IMAGE_MODEL) and by the
 # designer sidecar (DESIGNER_GEN_MODEL). apply-models.py prints the lines to
 # set; it never edits env files, which also hold the API key.
-model = "google/gemini-2.5-flash-image"
+model = "openai/gpt-image-2"
 
 [vision]
 # Reads pictures for image_describe — the Style helper's portfolio reading and
 # customer references (STAX_VISION_MODEL).
-model = "google/gemini-2.5-flash"
+model = "google/gemma-4-31b-it"

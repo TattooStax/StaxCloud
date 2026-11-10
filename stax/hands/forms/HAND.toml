@@ -9,8 +9,8 @@ tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add
 name = "forms"
 description = "Turns form submissions into contacts and held reply drafts"
 module = "builtin:chat"
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "google/gemma-4-26b-a4b-it"
 max_tokens = 8192
 temperature = 0.3
 max_iterations = 30
@@ -40,3 +40,9 @@ RULES
 - Never invent facts about the business in a draft (prices, hours, availability). Never include a link or URL you were not given — the one booking link you may use is https://squareup.com/appointments/book/L7VAHB1TPFGN2/start . Keep drafts to greeting + acknowledgement + a next step the owner controls.
 - Report plainly after a sweep: how many new submissions, who the contacts are, and that drafts are waiting in Needs you.
 """
+
+# Submissions already wake this helper the moment they land; the scheduled
+# sweep is a backstop and only reaches the model for unprocessed ones.
+[wake]
+fresh = true
+when = [ { prefix = "formsub/", unless = "processed" } ]

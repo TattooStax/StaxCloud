@@ -9,8 +9,8 @@ tools = ["memory_store", "memory_recall", "memory_list", "web_fetch", "page_imag
 name = "style"
 description = "Maps each artist's style from their portfolio, one profile per artist"
 module = "builtin:chat"
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "google/gemma-4-26b-a4b-it"
 max_tokens = 8192
 temperature = 0.2
 max_iterations = 60
@@ -41,3 +41,6 @@ RULES
 - STOP RULE: if a tool call fails, never retry it with the same arguments. Change approach once, or finish with what you have and say what you couldn't do.
 - Talk about the work, never machinery: no keys, ids or model names in your report.
 """
+
+[wake]
+fresh = true

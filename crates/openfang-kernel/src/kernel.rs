@@ -2270,7 +2270,7 @@ impl OpenFangKernel {
                     .collect()
             };
 
-            let prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
+            let mut prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
                 agent_name: manifest.name.clone(),
                 agent_description: manifest.description.clone(),
                 base_system_prompt: manifest.model.system_prompt.clone(),
@@ -2353,6 +2353,17 @@ impl OpenFangKernel {
                     openfang_runtime::agent_context::load_context_md(w, manifest.cache_context)
                 }),
             };
+            if manifest
+                .metadata
+                .get("lean_prompt")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                openfang_runtime::prompt_builder::make_lean(
+                    &mut prompt_ctx,
+                    !manifest.skills.is_empty(),
+                );
+            }
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);
             // Store canonical context separately for injection as user message
@@ -2717,20 +2728,32 @@ impl OpenFangKernel {
             .check_quota(agent_id, &entry.manifest.resources)
             .map_err(KernelError::OpenFang)?;
 
-        let mut session = self
-            .memory
-            .get_session(entry.session_id)
-            .map_err(KernelError::OpenFang)?
-            .unwrap_or_else(|| openfang_memory::session::Session {
-                id: entry.session_id,
+        // A background wake marked fresh runs in a scratch conversation:
+        // nothing old rides along, and nothing from it is kept.
+        let fresh = FRESH_TURN.try_with(|f| *f).unwrap_or(false);
+        let mut session = if fresh {
+            openfang_memory::session::Session {
+                id: SessionId::new(),
                 agent_id,
                 messages: Vec::new(),
                 context_window_tokens: 0,
-                label: None,
-            });
+                label: Some("background wake".to_string()),
+            }
+        } else {
+            self.memory
+                .get_session(entry.session_id)
+                .map_err(KernelError::OpenFang)?
+                .unwrap_or_else(|| openfang_memory::session::Session {
+                    id: entry.session_id,
+                    agent_id,
+                    messages: Vec::new(),
+                    context_window_tokens: 0,
+                    label: None,
+                })
+        };
 
         // Pre-emptive compaction: compact before LLM call if session is large or quota headroom is low
-        {
+        if !fresh {
             use openfang_runtime::compactor::{
                 estimate_token_count, needs_compaction as check_compact,
                 needs_compaction_by_tokens, CompactionConfig,
@@ -2867,7 +2890,7 @@ impl OpenFangKernel {
                     .collect()
             };
 
-            let prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
+            let mut prompt_ctx = openfang_runtime::prompt_builder::PromptContext {
                 agent_name: manifest.name.clone(),
                 agent_description: manifest.description.clone(),
                 base_system_prompt: manifest.model.system_prompt.clone(),
@@ -2948,6 +2971,17 @@ impl OpenFangKernel {
                     openfang_runtime::agent_context::load_context_md(w, manifest.cache_context)
                 }),
             };
+            if manifest
+                .metadata
+                .get("lean_prompt")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                openfang_runtime::prompt_builder::make_lean(
+                    &mut prompt_ctx,
+                    !manifest.skills.is_empty(),
+                );
+            }
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);
             // Store canonical context separately for injection as user message
@@ -3063,8 +3097,12 @@ impl OpenFangKernel {
         .await
         .map_err(KernelError::OpenFang)?;
 
+        if fresh {
+            let _ = self.memory.delete_session(session.id);
+        }
+
         // Append new messages to canonical session for cross-channel memory
-        if session.messages.len() > messages_before {
+        if !fresh && session.messages.len() > messages_before {
             let new_messages = session.messages[messages_before..].to_vec();
             if let Err(e) = self.memory.append_canonical(agent_id, &new_messages, None) {
                 warn!("Failed to update canonical session: {e}");
@@ -3073,7 +3111,7 @@ impl OpenFangKernel {
 
         // Write JSONL session mirror and daily memory log to the agent's
         // private state directory, not the user-facing workspace. See #1097.
-        if let Some(ref state_dir) = manifest.state_dir {
+        if let Some(ref state_dir) = manifest.state_dir.as_ref().filter(|_| !fresh) {
             if let Err(e) = self
                 .memory
                 .write_jsonl_mirror(&session, &state_dir.join("sessions"))
@@ -3986,6 +4024,17 @@ impl OpenFangKernel {
             manifest
                 .metadata
                 .insert("owner_facing".to_string(), serde_json::Value::Bool(true));
+        }
+        // Every helper is defined by its own instructions: no stock persona
+        // or first-run boilerplate, and no catalog of skills it never listed.
+        manifest
+            .metadata
+            .insert("lean_prompt".to_string(), serde_json::Value::Bool(true));
+        if def.wake != openfang_types::wake::WakeSpec::default() {
+            manifest.metadata.insert(
+                "wake".to_string(),
+                serde_json::to_value(&def.wake).unwrap_or_default(),
+            );
         }
 
         // Inject skill content into system prompt
@@ -6831,6 +6880,97 @@ impl OpenFangKernel {
     /// This is the same logic used by the background cron tick loop, extracted
     /// so the API can trigger a job immediately via `POST /api/cron/jobs/{id}/run`.
     /// Records success/failure on the job's metadata just like the scheduler does.
+    /// A helper's wake rules and name, when its HAND.toml has a `[wake]`.
+    fn wake_spec_of(&self, agent_id: AgentId) -> Option<(openfang_types::wake::WakeSpec, String)> {
+        let entry = self.registry.get(agent_id)?;
+        let spec: openfang_types::wake::WakeSpec =
+            serde_json::from_value(entry.manifest.metadata.get("wake")?.clone()).ok()?;
+        Some((spec, entry.name.clone()))
+    }
+
+    /// Every shared record (the kv namespace the helpers work in).
+    fn shared_records(&self) -> Vec<(String, serde_json::Value)> {
+        let mut pairs = self
+            .memory
+            .list_kv(shared_memory_agent_id())
+            .unwrap_or_default();
+        pairs.retain(|(k, _)| !k.starts_with("__openfang_"));
+        pairs
+    }
+
+    fn wake_receipt(&self, agent_name: &str) -> serde_json::Map<String, serde_json::Value> {
+        self.memory
+            .structured_get(
+                shared_memory_agent_id(),
+                &openfang_types::wake::receipt_key(agent_name),
+            )
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default()
+    }
+
+    /// Update a helper's wake receipt (`wake/<name>`): today's woke/skipped
+    /// counts, tokens and cost, the last outcome, and — after a wake — the
+    /// fingerprint of the work as the helper left it, so the next scheduled
+    /// wake only runs for something new.
+    fn write_wake_receipt(
+        &self,
+        agent_name: &str,
+        mut rec: serde_json::Map<String, serde_json::Value>,
+        woke: bool,
+        outcome: &str,
+        result: Option<(AgentId, &AgentLoopResult)>,
+    ) {
+        use serde_json::json;
+        let now = chrono::Local::now();
+        let today = now.format("%Y-%m-%d").to_string();
+        if rec.get("day").and_then(|v| v.as_str()) != Some(today.as_str()) {
+            for k in ["woke", "skipped", "tokens_in", "tokens_out", "cost_usd"] {
+                rec.insert(k.into(), json!(0));
+            }
+            rec.insert("day".into(), json!(today));
+        }
+        let bump = |rec: &mut serde_json::Map<String, serde_json::Value>, k: &str, by: f64| {
+            let v = rec.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0) + by;
+            rec.insert(k.into(), json!(v));
+        };
+        bump(&mut rec, if woke { "woke" } else { "skipped" }, 1.0);
+        rec.insert("last".into(), json!(outcome));
+        rec.insert("last_at".into(), json!(now.to_rfc3339()));
+        if let Some((agent_id, r)) = result {
+            bump(&mut rec, "tokens_in", r.total_usage.input_tokens as f64);
+            bump(&mut rec, "tokens_out", r.total_usage.output_tokens as f64);
+            let model = self
+                .registry
+                .get(agent_id)
+                .map(|e| e.manifest.model.model.clone())
+                .unwrap_or_default();
+            let cost = MeteringEngine::estimate_cost_with_catalog(
+                &self.model_catalog.read().unwrap_or_else(|e| e.into_inner()),
+                &model,
+                r.total_usage.input_tokens,
+                r.total_usage.output_tokens,
+            );
+            bump(&mut rec, "cost_usd", cost);
+            rec.insert("last_steps".into(), json!(r.iterations));
+            if let Some((spec, _)) = self.wake_spec_of(agent_id) {
+                if spec.is_gated() {
+                    let records = self.shared_records();
+                    let fp = openfang_types::wake::fingerprint(
+                        &openfang_types::wake::work_items(&spec, &records),
+                    );
+                    rec.insert("fingerprint".into(), json!(fp));
+                }
+            }
+        }
+        let _ = self.memory.structured_set(
+            shared_memory_agent_id(),
+            &openfang_types::wake::receipt_key(agent_name),
+            serde_json::Value::Object(rec),
+        );
+    }
+
     pub async fn cron_run_job(
         self: &Arc<Self>,
         job: &openfang_types::scheduler::CronJob,
@@ -6867,13 +7007,53 @@ impl OpenFangKernel {
                 let timeout = std::time::Duration::from_secs(timeout_s);
                 let delivery = job.delivery.clone();
                 let delivery_targets = job.delivery_targets.clone();
+                // Deterministic first: a helper with wake rules only reaches
+                // its model when the watched records hold work it has not
+                // seen. A skipped wake costs nothing and leaves a receipt.
+                let wake = self.wake_spec_of(agent_id);
+                if let Some((spec, name)) = wake.as_ref().filter(|(s, _)| s.is_gated()) {
+                    let records = self.shared_records();
+                    let receipt = self.wake_receipt(name);
+                    let last = receipt
+                        .get("fingerprint")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    let (decision, _) =
+                        openfang_types::wake::decide(spec, &records, last.as_deref());
+                    if decision != openfang_types::wake::WakeDecision::Run {
+                        let why = if decision == openfang_types::wake::WakeDecision::NoWork {
+                            "no work waiting"
+                        } else {
+                            "nothing new since last wake"
+                        };
+                        self.write_wake_receipt(name, receipt, false, why, None);
+                        self.cron_scheduler.record_success(job_id);
+                        return Ok(format!("skipped: {why}"));
+                    }
+                }
+                let fresh = wake.as_ref().map(|(s, _)| s.fresh).unwrap_or(false);
                 let kh: Arc<dyn KernelHandle> = self.clone();
-                match tokio::time::timeout(
+                let run = tokio::time::timeout(
                     timeout,
-                    self.send_message_with_handle(agent_id, message, Some(kh), None, None),
+                    FRESH_TURN.scope(
+                        fresh,
+                        self.send_message_with_handle(agent_id, message, Some(kh), None, None),
+                    ),
                 )
-                .await
-                {
+                .await;
+                if let Some((_, name)) = wake.as_ref() {
+                    let receipt = self.wake_receipt(name);
+                    match &run {
+                        Ok(Ok(r)) => {
+                            self.write_wake_receipt(name, receipt, true, "woke", Some((agent_id, r)))
+                        }
+                        Ok(Err(e)) => {
+                            self.write_wake_receipt(name, receipt, true, &format!("failed: {e}"), None)
+                        }
+                        Err(_) => self.write_wake_receipt(name, receipt, true, "timed out", None),
+                    }
+                }
+                match run {
                     Ok(Ok(result)) => {
                         // Multi-destination fan-out (never aborts the job on delivery error).
                         cron_fan_out_targets(self, job_name, &result.response, &delivery_targets)
@@ -7217,6 +7397,14 @@ fn infer_provider_from_model(model: &str) -> Option<String> {
         None
     }
 }
+
+tokio::task_local! {
+    /// Set while a background wake runs that must start from an empty
+    /// conversation (a helper's `[wake] fresh = true`, or an API message
+    /// sent with `"fresh": true`).
+    pub static FRESH_TURN: bool;
+}
+
 
 /// A well-known agent ID used for shared memory operations across agents.
 /// This is a fixed UUID so all agents read/write to the same namespace.

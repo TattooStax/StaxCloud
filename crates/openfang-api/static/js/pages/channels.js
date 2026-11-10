@@ -341,6 +341,7 @@ function connectionsPage() {
     email: null,
     team: null,
     helpers: null,
+    wakes: null,
 
     gateRow(gate) {
       if (!gate || gate.mode === 'unknown') {
@@ -404,9 +405,10 @@ function connectionsPage() {
         leg(function() { return one('mailbox/status'); }),
         leg(function() { return pairs('teammsg/'); }),
         store.refreshTextGate(),
-        leg(function() { return pairs('health/'); })
+        leg(function() { return pairs('health/'); }),
+        leg(function() { return pairs('wake/'); })
       ]);
-      var smsR = results[0], attR = results[1], mbR = results[2], teamR = results[3], gate = results[4], hpR = results[5];
+      var smsR = results[0], attR = results[1], mbR = results[2], teamR = results[3], gate = results[4], hpR = results[5], wkR = results[6];
 
       // ── Text line: the shop's texting, from its thread records ──
       if (!smsR.ok) {
@@ -468,6 +470,7 @@ function connectionsPage() {
 
       // ── Background helpers: each records health/<name> after every run ──
       this.helpers = staxHelperHealth(hpR, Date.now());
+      this.wakes = staxWakeSummary(wkR, new Date());
 
       this.checkedAt = new Date().toISOString();
       if (!smsR.ok && !mbR.ok && !teamR.ok && (!gate || gate.mode === 'unknown')) {
@@ -476,6 +479,28 @@ function connectionsPage() {
       this.loading = false;
     }
   };
+}
+
+// Today's scheduled wakes, from each helper's wake/<name> receipt: how many
+// reached a model, how many were skipped because there was nothing new, and
+// what the woken ones cost. Receipts from an earlier day count as zero.
+var STAX_WAKE_NAMES = { sms: 'Texts', forms: 'Forms', style: 'Style', memory: 'Memory', designer: 'Designs', stax: 'Stax' };
+function staxWakeSummary(r, now) {
+  if (!r || !r.ok) return null;
+  var y = now.getFullYear(), m = ('0' + (now.getMonth() + 1)).slice(-2), d = ('0' + now.getDate()).slice(-2);
+  var today = y + '-' + m + '-' + d;
+  var woke = 0, skipped = 0, cost = 0, parts = [];
+  (r.v || []).forEach(function(pr) {
+    var v = pr.value || {};
+    if (v.day !== today) return;
+    var w = Math.round(+v.woke || 0), s = Math.round(+v.skipped || 0);
+    woke += w; skipped += s; cost += +v.cost_usd || 0;
+    var name = STAX_WAKE_NAMES[pr.key.slice(5)] || pr.key.slice(5);
+    parts.push(name + ' ' + w + ' woke, ' + s + ' skipped');
+  });
+  if (!parts.length) return { tone: 'quiet', status: 'No wakes yet today', sub: 'Scheduled checks show here once they run' };
+  var money = cost < 0.01 ? 'under a cent' : '$' + cost.toFixed(2);
+  return { tone: 'ok', status: woke + ' woke · ' + skipped + ' skipped', sub: parts.join(' · ') + ' — ' + money + ' today', woke: woke, skipped: skipped, cost: cost };
 }
 
 // What the background helpers' last runs say, in one row. A helper is

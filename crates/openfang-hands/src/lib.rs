@@ -400,6 +400,10 @@ pub struct HandDefinition {
     /// Dashboard metrics schema.
     #[serde(default)]
     pub dashboard: HandDashboard,
+    /// When scheduled wakes may call the model (the `[wake]` table): checked
+    /// in code first, so a wake with no new work costs nothing.
+    #[serde(default)]
+    pub wake: openfang_types::wake::WakeSpec,
     /// Bundled skill content (populated at load time, not in TOML).
     #[serde(skip)]
     pub skill_content: Option<String>,

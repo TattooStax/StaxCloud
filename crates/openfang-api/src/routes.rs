@@ -393,15 +393,17 @@ pub async fn send_message(
     let image_unseen = content_blocks.is_some() && !state.kernel.agent_vision_allowed(agent_id);
 
     let kernel_handle: Arc<dyn KernelHandle> = state.kernel.clone() as Arc<dyn KernelHandle>;
-    match state
-        .kernel
-        .send_message_with_handle_and_blocks(
-            agent_id,
-            &req.message,
-            Some(kernel_handle),
-            content_blocks,
-            req.sender_id,
-            req.sender_name,
+    match openfang_kernel::kernel::FRESH_TURN
+        .scope(
+            req.fresh,
+            state.kernel.send_message_with_handle_and_blocks(
+                agent_id,
+                &req.message,
+                Some(kernel_handle),
+                content_blocks,
+                req.sender_id,
+                req.sender_name,
+            ),
         )
         .await
     {

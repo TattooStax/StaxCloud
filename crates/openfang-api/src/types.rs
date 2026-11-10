@@ -48,6 +48,10 @@ pub struct MessageRequest {
     /// Sender display name.
     #[serde(default)]
     pub sender_name: Option<String>,
+    /// Run this turn in a scratch conversation: nothing earlier rides along
+    /// and nothing from it is kept. For background wakes from scripts.
+    #[serde(default)]
+    pub fresh: bool,
 }
 
 /// Response from sending a message.

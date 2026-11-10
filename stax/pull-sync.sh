@@ -56,7 +56,7 @@ if [ -s /tmp/pull-sync-new.$$ ]; then
   NEWKEYS="$(paste -sd', ' /tmp/pull-sync-new.$$)"
   FORMS_ID="$(curl -s "$API/api/agents" -H "Authorization: Bearer $TOK" | python3 -c "import sys,json; print(next((a['id'] for a in json.load(sys.stdin) if a.get('name')=='forms'), ''))" 2>/dev/null)"
   if [ -n "$FORMS_ID" ]; then
-    curl -s -X POST "$API/api/agents/$FORMS_ID/message" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "{\"message\": \"New form submission(s) just landed in shared memory at these exact keys: $NEWKEYS. Recall each key exactly and process it per your playbook (resolve the contact, hold the reply draft, mark it processed).\"}" > /dev/null
+    curl -s -X POST "$API/api/agents/$FORMS_ID/message" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "{\"fresh\": true, \"message\": \"New form submission(s) just landed in shared memory at these exact keys: $NEWKEYS. Recall each key exactly and process it per your playbook (resolve the contact, hold the reply draft, mark it processed).\"}" > /dev/null
     echo "$(date -Is) woke forms agent for: $NEWKEYS" >> pull-sync.log
   fi
 fi

@@ -29,6 +29,10 @@
                   <span class="sys-text"><span class="sys-name">Team</span><span class="sys-sub" x-text="team.sub"></span></span>
                   <span class="sys-status" :data-tone="team.tone"><span class="sys-dot" aria-hidden="true"></span><span x-text="team.status"></span></span>
                 </li>
+                <li class="sys-row" x-show="wakes">
+                  <span class="sys-text"><span class="sys-name">Helper check-ins today</span><span class="sys-sub" x-text="wakes ? wakes.sub : ''"></span></span>
+                  <span class="sys-status" :data-tone="wakes ? wakes.tone : ''"><span class="sys-dot" aria-hidden="true"></span><span x-text="wakes ? wakes.status : ''"></span></span>
+                </li>
                 <li class="sys-row" x-show="helpers">
                   <span class="sys-text"><span class="sys-name">Background helpers</span><span class="sys-sub" x-text="helpers ? helpers.sub : ''"></span></span>
                   <span class="sys-status" :data-tone="helpers ? helpers.tone : ''"><span class="sys-dot" aria-hidden="true"></span><span x-text="helpers ? helpers.status : ''"></span></span>

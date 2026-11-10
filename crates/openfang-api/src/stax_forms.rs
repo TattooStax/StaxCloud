@@ -643,8 +643,12 @@ pub async fn submit(
         );
         tokio::spawn(async move {
             let handle: Arc<dyn KernelHandle> = kernel.clone() as Arc<dyn KernelHandle>;
-            if let Err(e) = kernel
-                .send_message_with_handle(forms.id, &msg, Some(handle), None, None)
+            // A background wake: a clean conversation, nothing old along.
+            if let Err(e) = openfang_kernel::kernel::FRESH_TURN
+                .scope(
+                    true,
+                    kernel.send_message_with_handle(forms.id, &msg, Some(handle), None, None),
+                )
                 .await
             {
                 tracing::warn!("Forms helper could not be woken for {sub_key}: {e}");

@@ -9,12 +9,12 @@ tools = ["memory_propose", "memory_recall", "memory_list", "schedule_list"]
 name = "memory"
 description = "Proposes durable customer facts from conversation records, as approval-gated candidates with verbatim quotes"
 module = "builtin:chat"
-provider = "default"
+provider = "openrouter"
 # MODEL: the same measured winner the Decider Shadow's Part 2 check selects
 # (one measurement serves both seats) — set at activation per
 # ACTIVATION-RUNBOOK.md step 1. Do not install this hand while the
 # placeholder below is still in place.
-model = "default"
+model = "qwen/qwen3.7-flash"
 max_tokens = 4096
 temperature = 0.2
 max_iterations = 20
@@ -50,3 +50,6 @@ RULES
 - STOP RULE: if a tool call is blocked or fails, never retry the same call with the same arguments. Change approach once, or finish with what you have and state plainly what you couldn't do.
 - Report plainly after a wake: how many records you read, how many facts you proposed of each field, how many the tool refused and why — and what you skipped, and why.
 """
+
+[wake]
+fresh = true

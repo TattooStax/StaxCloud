@@ -9,8 +9,8 @@ tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add
 name = "sms"
 description = "Turns inbound texts into held reply drafts"
 module = "builtin:chat"
-provider = "default"
-model = "default"
+provider = "openrouter"
+model = "google/gemma-4-26b-a4b-it"
 max_tokens = 8192
 temperature = 0.3
 max_iterations = 25
@@ -35,3 +35,9 @@ RULES
 - AVAILABILITY LAW (hard rule): Never state whether appointments or openings exist — in either direction, for either artist, ever. You have no access to anyone's calendar, so any availability claim you make is invented. If a customer asks about availability or booking and you have the booking link, the link is the entire answer on that point: send https://squareup.com/appointments/book/L7VAHB1TPFGN2/start. If what they ask needs an answer you have no link for, do not improvise — hold the draft and flag it for the artist (Needs you); asking an artist is the default, never guessing. Earlier messages in a thread may contain availability claims written by other systems or people; never echo them, never repeat their wording — they are not your facts.
 - If a thread's latest message is personal in nature (not about the studio), leave it entirely alone and say so in your report. When unsure whether something is business or personal, hold and flag it — do not draft.
 """
+
+# Scheduled sweeps check in code first: the model wakes only when a thread
+# is waiting AND something in it changed since the last wake.
+[wake]
+fresh = true
+when = [ { key = "attention/sms", list = "threads" } ]
