@@ -15,14 +15,16 @@ the owner has used it.
 | 5 Contacts + Forms | `strike-5-contacts-forms` | Form builder, forms hosted at `/f/<slug>`, Contacts in the Records layout | Live; builder -> publish -> phone submit -> contact -> draft verified on the box |
 | 6 Clean surfaces | `strike-6-clean-surfaces` | One file per page, consistent headers/empty/error states, surface audit | Live (9686562) |
 | 7 Ship hardening | `strike-7-ship-hardening` | Photo uploads fixed (designs in chat), no template blanks in drafts, helper jobs survive updates, daily backups, background helper health in Connections | Live (e004d64); designs in chat verified on the box |
+| 8 Memory | `strike-8-memory` | Memory helper proposes facts through a checking tool (exact words, customer only, key in code); approval adds one contact note in code; uploads can be deleted | Deploying (Muse's lane started 2026-11-10; memory on qwen3.7-flash) |
 | 9 UI primitives | `strike-9-ui-primitives` | V4's shared behaviours in the fork's look: one question box (dangerous ones open on Cancel, buttons name the action, focus kept and returned), Undo toasts, every pop-up window takes and returns focus and stays on screen, one focus ring, Reduce Motion honoured, no browser pop-ups; Forms asks before discard/take down/remove and offers Undo for a removed block | Not yet deployed |
-| 8 Memory | `strike-8-memory` | Memory helper proposes facts through a checking tool (exact words, customer only, key in code); approval adds one contact note in code; uploads can be deleted | Not yet deployed; Memory sidecar phases still staged |
+| 10 Lean and quiet | `strike-10-lean-quiet` | Helpers see only their own instructions, tools and listed skills (per step 40-50% smaller); [wake] rules skip the model when nothing new is waiting; background wakes start clean; a receipt per wake (woke/skipped, steps, tokens, cost) | Not yet deployed. Live test copy: empty sweep 0 model calls, new text wakes it, unchanged thread skips |
+| 11 Style in code | `strike-11-style-code` | style_learn/style_correct do the bookkeeping (find pictures, no re-reads, real dates, counts from records, profiles rebuilt); old duplicates merged; kernel keeps helpers' schedules; Style 8 steps on Gemma 4 26B | Not yet deployed. Against fargotattoo.com: 10 pages, 103 pictures found, no picture read twice, counts match records, ~5k tokens per wake |
+| 12 Stax finds and builds | `strike-12-stax-finds-builds` | customer_lookup (one call, one person), email_draft (held for approval, threaded), form_draft (builder's own blocks, unpublished, "Drafted by Stax"); Texts/Forms sweeps kept by the kernel (no schedule_create); pinned models in the built-in catalog | Not yet deployed. Live test copy: lookup merged two contacts, email in Needs you, blank refused, form opens in the builder, unknown block refused, restart keeps 4 schedules |
 
 Still open, plainly:
-- Memory helper: fixed in code (Strike 8) but not live until its sidecar
-  phases (memwake, verify, memcarry) are merged into sidecar-phases.py and
-  the helper is activated.
-- Model pins for driver, vision and image wait on a benchmark rerun.
+- Memory helper: the Strike 8 deploy is running on the box (its phases are
+  in sidecar-phases.py since Strike 8); live result pending Muse's report.
+- No browser the agent can drive (log in, click): a later strike.
 - Contacts has no Rewards and no appointment-based Today: the fork holds no
   visit, points or appointment data (Square holds the schedule).
 - The four Python sidecars are still separate processes; they now report health to Connections, and folding them into the daemon is a post-launch job.
@@ -30,6 +32,7 @@ Still open, plainly:
 Checks that exist: `cargo test`, `node stax/tests/forms_builder.test.js`,
 `python3 stax/tests/test_memcarry.py`, `node stax/tests/ui_primitives.test.js`,
 `node stax/tests/ui_primitives_browser.js` (local daemon),
+`node stax/tests/form_blocks_sync.test.js`,
 `python3 -m unittest stax/bench/test_bench.py`, and
 `node stax/tests/surface_audit.js <dir>` (walks every screen on iPad and
 phone against a local daemon).
