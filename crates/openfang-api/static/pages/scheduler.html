@@ -1,0 +1,491 @@
+
+    <!-- Page: Scheduler -->
+    <template x-if="page === 'scheduler'">
+      <div x-data="schedulerPage()">
+        <div class="page-header">
+          <h2>Scheduled</h2>
+          <div class="flex gap-2">
+            <button class="btn btn-primary btn-sm" x-show="tab === 'jobs'" @click="showCreateForm = true">+ New Job</button>
+          <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="tabs" role="tablist">
+          <div class="tab" role="tab" :class="{ active: tab === 'jobs' }" @click="tab = 'jobs'">
+            Scheduled Jobs <span class="badge badge-dim" x-show="jobs.length" x-text="jobCount() + '/' + jobs.length + ' active'" style="margin-left:4px"></span>
+          </div>
+          <div class="tab" role="tab" :class="{ active: tab === 'triggers' }" @click="tab = 'triggers'; if (!triggers.length && !trigLoading) loadTriggers()">
+            Event Triggers <span class="badge badge-dim" x-show="triggers.length" x-text="triggers.length" style="margin-left:4px"></span>
+          </div>
+          <div class="tab" :class="{ active: tab === 'history' }" @click="tab = 'history'; loadHistory()">
+            Run History
+          </div>
+        </div>
+        <div class="page-body" x-init="loadData()">
+
+          <!-- ── TAB: Scheduled Jobs ── -->
+          <div x-show="tab === 'jobs'">
+            <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading scheduled jobs...</span></div>
+            <div x-show="!loading && loadError" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="loadError"></p>
+              <button class="btn btn-ghost btn-sm" @click="loadData()">Retry</button>
+            </div>
+            <div x-show="!loading && !loadError">
+              <!-- Explainer -->
+              <div class="card mb-4" style="border-left:3px solid var(--accent)">
+                <div class="font-bold" style="font-size:13px;margin-bottom:4px">Scheduled Jobs</div>
+                <div class="text-sm text-dim" style="line-height:1.6">
+                  Create cron-based scheduled jobs that send messages to agents on a recurring schedule.
+                  Use cron expressions like <code style="color:var(--accent)">*/5 * * * *</code> (every 5 min) or
+                  <code style="color:var(--accent)">0 9 * * 1-5</code> (weekdays at 9am). You can also run any job
+                  manually with the "Run Now" button.
+                </div>
+              </div>
+
+              <!-- Jobs Table -->
+              <div class="table-wrap" x-show="jobs.length">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Schedule</th>
+                      <th>Agent</th>
+                      <th>Status</th>
+                      <th>Delivery</th>
+                      <th>Last Run</th>
+                      <th>Next Run</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="job in jobs" :key="job.id">
+                      <tr>
+                        <td>
+                          <span class="font-bold" x-text="job.name || job.description || '(unnamed)'"></span>
+                          <div class="text-xs text-dim" x-show="job.message" x-text="(job.message || '').substring(0, 60) + ((job.message || '').length > 60 ? '...' : '')" :title="job.message"></div>
+                          <div x-show="expandedJobId === job.id" style="margin-top:8px;padding:8px;background:rgba(148,163,184,0.06);border-left:3px solid var(--accent);border-radius:3px">
+                            <div class="font-bold" style="font-size:12px;margin-bottom:6px">Delivery Log</div>
+                            <div x-show="deliveryLogLoading" class="text-xs text-dim">Loading delivery log...</div>
+                            <div x-show="!deliveryLogLoading && deliveryLogError" class="text-xs" style="color:var(--error)" x-text="deliveryLogError"></div>
+                            <div x-show="!deliveryLogLoading && !deliveryLogError">
+                              <div class="text-xs text-dim" style="margin-bottom:4px">Configured targets (<span x-text="(deliveryLog.targets || []).length"></span>):</div>
+                              <div x-show="!(deliveryLog.targets || []).length" class="text-xs text-dim">No fan-out targets configured.</div>
+                              <template x-for="(t, ti) in (deliveryLog.targets || [])" :key="ti">
+                                <div class="text-xs" style="padding:2px 0">
+                                  <span class="badge" :class="targetChipClass(t)" x-text="targetChipLabel(t)"></span>
+                                  <span class="text-dim" style="margin-left:6px" x-text="targetSummary(t)"></span>
+                                </div>
+                              </template>
+                              <div class="text-xs text-dim" style="margin-top:8px">Recent deliveries (<span x-text="(deliveryLog.entries || []).length"></span>):</div>
+                              <div x-show="!(deliveryLog.entries || []).length" class="text-xs text-dim">
+                                Delivery history will appear here after the next run. Per-run results are not yet
+                                persisted — the fan-out engine emits tracing events you can view under
+                                <a href="#logs" style="color:var(--accent)">Logs</a>.
+                              </div>
+                              <template x-for="(e, ei) in (deliveryLog.entries || [])" :key="ei">
+                                <div class="text-xs" style="padding:2px 0">
+                                  <span class="badge" :class="e.success ? 'badge-success' : 'badge-error'" x-text="e.success ? 'ok' : 'err'"></span>
+                                  <span style="margin-left:6px" x-text="e.target"></span>
+                                  <span class="text-dim" style="margin-left:6px" x-show="e.error" x-text="e.error"></span>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <code style="font-size:11px;color:var(--accent)" x-text="job.cron"></code>
+                          <div class="text-xs text-dim" x-text="describeCron(job.cron)"></div>
+                        </td>
+                        <td class="truncate" style="max-width:120px" x-text="agentName(job.agent_id || job.agent)" :title="job.agent_id || job.agent"></td>
+                        <td>
+                          <span class="badge" :class="job.enabled ? 'badge-success' : 'badge-dim'" x-text="job.enabled ? 'Active' : 'Paused'"></span>
+                        </td>
+                        <td>
+                          <div class="flex gap-1" style="flex-wrap:wrap;max-width:240px" x-show="(job.delivery_targets || []).length">
+                            <template x-for="(t, ti) in (job.delivery_targets || [])" :key="ti">
+                              <span class="badge" :class="targetChipClass(t)" :title="targetSummary(t)" x-text="targetChipLabel(t)"></span>
+                            </template>
+                          </div>
+                          <span class="text-xs text-dim" x-show="!(job.delivery_targets || []).length">(none)</span>
+                        </td>
+                        <td class="text-xs" :title="formatTime(job.last_run)" x-text="relativeTime(job.last_run)"></td>
+                        <td class="text-xs" :title="formatTime(job.next_run)" x-text="relativeTime(job.next_run)"></td>
+                        <td>
+                          <div class="flex gap-1" style="flex-wrap:wrap">
+                            <button class="btn btn-primary btn-sm" @click="runNow(job)" :disabled="runningJobId === job.id">
+                              <span x-show="runningJobId !== job.id">Run</span>
+                              <span x-show="runningJobId === job.id">...</span>
+                            </button>
+                            <button class="btn btn-ghost btn-sm" @click="toggleJob(job)" x-text="job.enabled ? 'Pause' : 'Enable'"></button>
+                            <button class="btn btn-ghost btn-sm" @click="toggleExpand(job)" x-text="expandedJobId === job.id ? 'Hide' : 'Details'"></button>
+                            <button class="btn btn-ghost btn-sm" @click="startEditTargets(job)">Targets</button>
+                            <button class="btn btn-danger btn-sm" @click="deleteJob(job)">Del</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Empty State -->
+              <div class="empty-state" x-show="!jobs.length">
+                <h4>No scheduled jobs</h4>
+                <p class="hint">Create a cron job to run agents on a recurring schedule. Jobs are stored persistently and survive restarts.</p>
+                <button class="btn btn-primary mt-4" @click="showCreateForm = true">+ Create Scheduled Job</button>
+              </div>
+            </div>
+
+            <!-- Create Job Modal -->
+            <template x-if="showCreateForm">
+              <div class="modal-overlay" @click.self="showCreateForm = false" @keydown.escape.window="showCreateForm = false">
+                <div class="modal">
+                  <div class="modal-header">
+                    <h3>Create Scheduled Job</h3>
+                    <button class="modal-close" @click="showCreateForm = false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Job Name</label>
+                    <input class="form-input" x-model="newJob.name" placeholder="daily-report">
+                  </div>
+
+                  <div class="form-group">
+                    <label>Cron Expression</label>
+                    <input class="form-input" x-model="newJob.cron" placeholder="0 9 * * 1-5" style="font-family:monospace">
+                    <div class="text-xs text-dim mt-1" x-show="newJob.cron" x-text="describeCron(newJob.cron)"></div>
+                    <div class="text-xs text-dim mt-1">Format: <code>minute hour day-of-month month day-of-week</code></div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Quick Presets</label>
+                    <div class="flex gap-1 flex-wrap">
+                      <template x-for="preset in cronPresets" :key="preset.cron">
+                        <button class="btn btn-sm" :class="newJob.cron === preset.cron ? 'btn-primary' : 'btn-ghost'" @click="applyCronPreset(preset)" x-text="preset.label"></button>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Target Agent</label>
+                    <select class="form-select" x-model="newJob.agent_id">
+                      <option value="">Any available agent</option>
+                      <template x-for="a in availableAgents" :key="a.id">
+                        <option :value="a.id" x-text="a.name + ' (' + (a.model_provider || 'unknown') + ':' + (a.model_name || 'unknown') + ')'"></option>
+                      </template>
+                    </select>
+                    <div class="text-xs text-dim mt-1" x-show="!availableAgents.length">No agents running. <a href="#agents" style="color:var(--accent)">Spawn one first.</a></div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Message to Send</label>
+                    <textarea class="form-textarea" x-model="newJob.message" placeholder="Generate and email the daily status report..." rows="3"></textarea>
+                    <div class="text-xs text-dim mt-1">The message sent to the agent each time this job runs.</div>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="flex items-center gap-2">
+                      <div class="toggle" :class="{ active: newJob.enabled }" @click="newJob.enabled = !newJob.enabled"></div>
+                      <span x-text="newJob.enabled ? 'Enabled (will start running immediately)' : 'Disabled (create paused)'"></span>
+                    </label>
+                  </div>
+
+                  <div class="form-group">
+                    <div class="flex items-center justify-between" style="margin-bottom:6px">
+                      <label style="margin:0">Delivery Targets</label>
+                      <button class="btn btn-ghost btn-sm" type="button" @click="openTargetPicker()">+ Add target</button>
+                    </div>
+                    <div class="text-xs text-dim mt-1" x-show="!(newJob.delivery_targets || []).length">
+                      The job output is delivered to the agent's last channel by default. Add one or more
+                      fan-out destinations — channels, webhooks, local files, or email — to copy the output
+                      to extra destinations each run.
+                    </div>
+                    <div x-show="(newJob.delivery_targets || []).length" style="margin-top:6px">
+                      <template x-for="(t, ti) in (newJob.delivery_targets || [])" :key="ti">
+                        <div class="card" style="padding:8px;margin-bottom:6px">
+                          <div class="flex items-center justify-between">
+                            <span class="badge" :class="targetChipClass(t)" x-text="targetChipLabel(t)"></span>
+                            <button class="btn btn-ghost btn-sm" type="button" @click="removeTarget(ti)">Remove</button>
+                          </div>
+                          <div class="text-xs text-dim" style="margin-top:4px" x-text="targetSummary(t)"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- Target picker (shared by create + edit flows) -->
+                  <div class="card" x-show="showTargetPicker && !editingTargetsJobId" style="border-left:3px solid var(--accent);margin-top:8px">
+                    <div class="font-bold" style="font-size:12px;margin-bottom:6px">New Delivery Target</div>
+                    <div class="form-group">
+                      <label>Type</label>
+                      <select class="form-select" x-model="pickerType" @change="onPickerTypeChange()">
+                        <option value="channel">Channel</option>
+                        <option value="webhook">Webhook</option>
+                        <option value="local_file">Local File</option>
+                        <option value="email">Email</option>
+                      </select>
+                    </div>
+                    <template x-if="draftTarget && draftTarget.type === 'channel'">
+                      <div>
+                        <div class="form-group">
+                          <label>Channel type</label>
+                          <select class="form-select" x-model="draftTarget.channel_type" x-show="channelTypes.length">
+                            <option value="">-- pick --</option>
+                            <template x-for="c in channelTypes" :key="c">
+                              <option :value="c" x-text="c"></option>
+                            </template>
+                          </select>
+                          <input class="form-input" x-model="draftTarget.channel_type" placeholder="telegram" x-show="!channelTypes.length">
+                        </div>
+                        <div class="form-group">
+                          <label>Recipient</label>
+                          <input class="form-input" x-model="draftTarget.recipient" placeholder="chat_12345">
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'webhook'">
+                      <div>
+                        <div class="form-group">
+                          <label>URL</label>
+                          <input class="form-input" x-model="draftTarget.url" placeholder="https://example.com/hook">
+                        </div>
+                        <div class="form-group">
+                          <label>Authorization header (optional)</label>
+                          <input class="form-input" x-model="draftTarget.auth_header" placeholder="Bearer abc123">
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'local_file'">
+                      <div>
+                        <div class="form-group">
+                          <label>Path</label>
+                          <input class="form-input" x-model="draftTarget.path" placeholder="/var/log/openfang-cron.log">
+                        </div>
+                        <div class="form-group">
+                          <label class="flex items-center gap-2">
+                            <div class="toggle" :class="{ active: draftTarget.append }" @click="draftTarget.append = !draftTarget.append"></div>
+                            <span x-text="draftTarget.append ? 'Append' : 'Overwrite'"></span>
+                          </label>
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'email'">
+                      <div>
+                        <div class="form-group">
+                          <label>To</label>
+                          <input class="form-input" x-model="draftTarget.to" placeholder="alice@example.com">
+                        </div>
+                        <div class="form-group">
+                          <label>Subject template (optional)</label>
+                          <input class="form-input" x-model="draftTarget.subject_template" placeholder="Cron: {job}">
+                          <div class="text-xs text-dim mt-1">Placeholders: <code>{job}</code></div>
+                        </div>
+                      </div>
+                    </template>
+                    <div class="flex gap-2" style="margin-top:6px">
+                      <button class="btn btn-primary btn-sm" type="button" @click="addDraftTarget()">Add</button>
+                      <button class="btn btn-ghost btn-sm" type="button" @click="cancelTargetPicker()">Cancel</button>
+                    </div>
+                  </div>
+
+                  <button class="btn btn-primary btn-block mt-4" @click="createJob()" :disabled="creating">
+                    <span x-show="!creating">Create Schedule</span>
+                    <span x-show="creating">Creating...</span>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <!-- Edit Targets Modal -->
+            <template x-if="editingTargetsJobId">
+              <div class="modal-overlay" @click.self="cancelEditTargets()" @keydown.escape.window="cancelEditTargets()">
+                <div class="modal">
+                  <div class="modal-header">
+                    <h3>Edit Delivery Targets</h3>
+                    <button class="modal-close" @click="cancelEditTargets()">x</button>
+                  </div>
+                  <div class="form-group">
+                    <div class="flex items-center justify-between" style="margin-bottom:6px">
+                      <div class="text-xs text-dim">
+                        Targets are replaced on save. Leave empty to remove all fan-out destinations.
+                      </div>
+                      <button class="btn btn-ghost btn-sm" type="button" @click="addEditTarget()">+ Add target</button>
+                    </div>
+                    <div x-show="!editingTargets.length" class="text-xs text-dim">No targets configured.</div>
+                    <template x-for="(t, ti) in editingTargets" :key="ti">
+                      <div class="card" style="padding:8px;margin-bottom:6px">
+                        <div class="flex items-center justify-between">
+                          <span class="badge" :class="targetChipClass(t)" x-text="targetChipLabel(t)"></span>
+                          <button class="btn btn-ghost btn-sm" type="button" @click="removeEditTarget(ti)">Remove</button>
+                        </div>
+                        <div class="text-xs text-dim" style="margin-top:4px" x-text="targetSummary(t)"></div>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="card" x-show="showTargetPicker" style="border-left:3px solid var(--accent)">
+                    <div class="font-bold" style="font-size:12px;margin-bottom:6px">New Delivery Target</div>
+                    <div class="form-group">
+                      <label>Type</label>
+                      <select class="form-select" x-model="pickerType" @change="onPickerTypeChange()">
+                        <option value="channel">Channel</option>
+                        <option value="webhook">Webhook</option>
+                        <option value="local_file">Local File</option>
+                        <option value="email">Email</option>
+                      </select>
+                    </div>
+                    <template x-if="draftTarget && draftTarget.type === 'channel'">
+                      <div>
+                        <div class="form-group">
+                          <label>Channel type</label>
+                          <select class="form-select" x-model="draftTarget.channel_type" x-show="channelTypes.length">
+                            <option value="">-- pick --</option>
+                            <template x-for="c in channelTypes" :key="c">
+                              <option :value="c" x-text="c"></option>
+                            </template>
+                          </select>
+                          <input class="form-input" x-model="draftTarget.channel_type" placeholder="telegram" x-show="!channelTypes.length">
+                        </div>
+                        <div class="form-group">
+                          <label>Recipient</label>
+                          <input class="form-input" x-model="draftTarget.recipient" placeholder="chat_12345">
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'webhook'">
+                      <div>
+                        <div class="form-group">
+                          <label>URL</label>
+                          <input class="form-input" x-model="draftTarget.url" placeholder="https://example.com/hook">
+                        </div>
+                        <div class="form-group">
+                          <label>Authorization header (optional)</label>
+                          <input class="form-input" x-model="draftTarget.auth_header" placeholder="Bearer abc123">
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'local_file'">
+                      <div>
+                        <div class="form-group">
+                          <label>Path</label>
+                          <input class="form-input" x-model="draftTarget.path" placeholder="/var/log/openfang-cron.log">
+                        </div>
+                        <div class="form-group">
+                          <label class="flex items-center gap-2">
+                            <div class="toggle" :class="{ active: draftTarget.append }" @click="draftTarget.append = !draftTarget.append"></div>
+                            <span x-text="draftTarget.append ? 'Append' : 'Overwrite'"></span>
+                          </label>
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="draftTarget && draftTarget.type === 'email'">
+                      <div>
+                        <div class="form-group">
+                          <label>To</label>
+                          <input class="form-input" x-model="draftTarget.to" placeholder="alice@example.com">
+                        </div>
+                        <div class="form-group">
+                          <label>Subject template (optional)</label>
+                          <input class="form-input" x-model="draftTarget.subject_template" placeholder="Cron: {job}">
+                          <div class="text-xs text-dim mt-1">Placeholders: <code>{job}</code></div>
+                        </div>
+                      </div>
+                    </template>
+                    <div class="flex gap-2" style="margin-top:6px">
+                      <button class="btn btn-primary btn-sm" type="button" @click="addDraftTargetToEdit()">Add</button>
+                      <button class="btn btn-ghost btn-sm" type="button" @click="cancelTargetPicker()">Cancel</button>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 mt-4">
+                    <button class="btn btn-primary" @click="saveEditTargets()" :disabled="savingTargets">
+                      <span x-show="!savingTargets">Save</span>
+                      <span x-show="savingTargets">Saving...</span>
+                    </button>
+                    <button class="btn btn-ghost" @click="cancelEditTargets()">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- ── TAB: Event Triggers ── -->
+          <div x-show="tab === 'triggers'">
+            <div x-show="trigLoading" class="loading-state"><div class="spinner"></div><span>Loading triggers...</span></div>
+            <div x-show="!trigLoading && trigLoadError" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="trigLoadError"></p>
+              <button class="btn btn-ghost btn-sm" @click="loadTriggers()">Retry</button>
+            </div>
+            <div x-show="!trigLoading && !trigLoadError">
+              <div class="card mb-4" style="border-left:3px solid var(--accent)">
+                <div class="font-bold" style="font-size:13px;margin-bottom:4px">Event Triggers</div>
+                <div class="text-sm text-dim" style="line-height:1.6">
+                  Event triggers fire agents in response to system events (agent lifecycle, memory updates, custom events).
+                  Create and manage triggers on the <a href="#workflows" style="color:var(--accent)">Workflows</a> page.
+                  This view shows all active triggers for monitoring.
+                </div>
+              </div>
+              <div class="table-wrap" x-show="triggers.length">
+                <table>
+                  <thead><tr><th>Agent</th><th>Pattern</th><th>Prompt</th><th>Fires</th><th>Enabled</th><th>Created</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    <template x-for="t in triggers" :key="t.id">
+                      <tr>
+                        <td class="font-bold truncate" style="max-width:120px" x-text="agentName(t.agent_id)" :title="t.agent_id"></td>
+                        <td><span class="badge badge-created trigger-type" x-text="triggerType(t.pattern)"></span></td>
+                        <td class="truncate text-xs text-dim" style="max-width:180px" x-text="t.prompt_template" :title="t.prompt_template"></td>
+                        <td x-text="t.fire_count + (t.max_fires > 0 ? '/' + t.max_fires : '')"></td>
+                        <td>
+                          <div class="toggle" :class="{ active: t.enabled }" @click="toggleTrigger(t)"></div>
+                        </td>
+                        <td class="text-xs" x-text="new Date(t.created_at).toLocaleDateString()"></td>
+                        <td>
+                          <button class="btn btn-danger btn-sm" @click="deleteTrigger(t)">Delete</button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="empty-state" x-show="!triggers.length">
+                <h4>No event triggers</h4>
+                <p class="hint">Create event triggers on the <a href="#workflows" style="color:var(--accent)">Workflows page</a> to fire agents in response to system events.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── TAB: Run History ── -->
+          <div x-show="tab === 'history'">
+            <div x-show="historyLoading" class="loading-state"><div class="spinner"></div><span>Loading run history...</span></div>
+            <div x-show="!historyLoading">
+              <div class="card mb-4" style="border-left:3px solid var(--accent)">
+                <div class="font-bold" style="font-size:13px;margin-bottom:4px">Run History</div>
+                <div class="text-sm text-dim" style="line-height:1.6">
+                  Recent executions of scheduled jobs and event trigger fires. History is aggregated from schedule run counts and trigger fire counts.
+                </div>
+              </div>
+              <div class="table-wrap" x-show="history.length">
+                <table>
+                  <thead><tr><th>Time</th><th>Name</th><th>Type</th><th>Status</th><th>Total Runs</th></tr></thead>
+                  <tbody>
+                    <template x-for="(h, idx) in history" :key="idx">
+                      <tr>
+                        <td class="text-xs" style="white-space:nowrap" x-text="formatTime(h.timestamp)"></td>
+                        <td class="font-bold" x-text="h.name"></td>
+                        <td><span class="badge" :class="h.type === 'schedule' ? 'badge-created' : 'badge-dim'" x-text="h.type === 'schedule' ? 'Cron Job' : 'Trigger'"></span></td>
+                        <td><span class="badge badge-success" x-text="h.status"></span></td>
+                        <td x-text="h.run_count"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="empty-state" x-show="!history.length">
+                <h4>No run history yet</h4>
+                <p class="hint">Run history will appear here after scheduled jobs or triggers execute.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>

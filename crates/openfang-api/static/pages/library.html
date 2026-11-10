@@ -1,0 +1,32 @@
+
+    <!-- Page: Boards (R6 surfaces engine) -->
+    <!-- Page: Library — the shop's records shelf (libraryPage, app.js) -->
+    <template x-if="page === 'library'">
+      <div class="sys-page" x-data="libraryPage()" x-init="loadData()">
+        <div class="page-header">
+          <h2>Library</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading the library...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load the library</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+          <p class="text-sm text-dim" x-show="!loading && !loadError" style="margin:2px 0 16px">Designs and files Stax saves for the shop.</p>
+          <div x-show="!loading && !loadError && items.length === 0" class="empty-state">
+            <h4>Nothing saved yet</h4>
+            <p class="hint">Ask Stax for a design — "draw a rose and dagger in my style" — and it lands here.</p>
+          </div>
+          <ul class="sys-list" x-show="!loading && !loadError && items.length > 0" aria-label="Library">
+            <template x-for="it in items" :key="it.key">
+              <li class="sys-row"><span class="sys-text"><span class="sys-name" x-text="it.title"></span><span class="sys-sub" x-text="it.kind + (fmtDate(it.when) ? ' · ' + fmtDate(it.when) : '')"></span></span></li>
+            </template>
+          </ul>
+        </div>
+      </div>
+    </template>

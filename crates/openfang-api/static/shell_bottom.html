@@ -1,0 +1,430 @@
+
+  </main>
+
+  <!-- Dock: four tabs. Stax is the conversation's only dock home; the
+       needs-you badge is the shell fixture after the docks. -->
+  <nav class="stax-dock" x-cloak x-show="page !== 'forms' && page !== 'websites' && page !== 'sms' && page !== 'team' && page !== 'email' && page !== 'contacts' && page !== 'leads' && page !== 'approvals' && page !== 'canvas' && !inSystemCorner()" aria-label="Primary">
+      <button class="stax-dock-btn" :class="{ active: surf() === 'home' }" :aria-current="surf() === 'home' ? 'page' : null" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Stax">
+        <svg class="stax-ic stax-ic--reaper" aria-hidden="true"><use href="#stax-reaper"/></svg>
+        <span>Stax</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surf() === 'work' }" :aria-current="surf() === 'work' ? 'page' : null" @click="goSurface('work')" aria-label="Work">
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span>
+        <span>Work</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surf() === 'boards' }" :aria-current="surf() === 'boards' ? 'page' : null" @click="goSurface('boards')" aria-label="Boards">
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
+        <span>Boards</span>
+      </button>
+      <button class="stax-dock-btn" :class="{ active: surf() === 'leads' }" :aria-current="surf() === 'leads' ? 'page' : null" @click="goSurface('leads')" aria-label="Leads">
+        <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
+        <span>Leads</span>
+      </button>
+  </nav>
+
+  <!-- System corner module dock: Settings, Connections, Advanced (every
+       console under Advanced keeps Advanced lit), on the owned tiles.
+       Done is the header exit on those surfaces, not a tab. -->
+  <nav class="stax-dock" x-cloak x-show="inSystemCorner() && page !== 'canvas'" aria-label="System">
+    <button class="stax-dock-btn" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')" aria-label="Settings">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--toolbox"></span></span>
+      <span>Settings</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: page === 'channels' }" :aria-current="page === 'channels' ? 'page' : false" @click="navigate('channels')" aria-label="Connections">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--envelope"></span></span>
+      <span>Connections</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: surf() === 'advanced' }" :aria-current="page === 'advanced' ? 'page' : false" @click="navigate('advanced')" aria-label="Advanced">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>Advanced</span>
+    </button>
+  </nav>
+
+  <!-- StaxCloud module dock — Canvas: the bench's own tabs, front
+       screen first. No agent or action slots in the bar; the
+       needs-you badge is the shell fixture below. Done is NOT a
+       tab here (owner directive 2026-11-04: five items maximum) —
+       it lives in the Canvas header as the exit affordance. -->
+  <!-- Canvas dock: the bench stays — Gallery is a destination,
+       Layers / Stamps / Stencil open panels over the bench. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'canvas'" aria-label="Canvas">
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'canvas' }" :aria-current="$store.app.canvasTab === 'canvas' ? 'page' : null" @click="$store.app.canvasGo('canvas')">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--machine"></span></span><span>Canvas</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasTab === 'gallery' }" :aria-current="$store.app.canvasTab === 'gallery' ? 'page' : null" @click="$store.app.canvasGo('gallery')">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span><span>Gallery</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'layers' }" :aria-pressed="$store.app.canvasPanel === 'layers'" @click="$store.app.canvasPanelToggle('layers')">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span><span>Layers</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'stamps' }" :aria-pressed="$store.app.canvasPanel === 'stamps'" @click="$store.app.canvasPanelToggle('stamps')">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--toolbox"></span></span><span>Stamps</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ 'active': $store.app.canvasPanel === 'stencil' }" :aria-pressed="$store.app.canvasPanel === 'stencil'" @click="$store.app.canvasPanelToggle('stencil')">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span><span>Stencil</span>
+    </button>
+  </nav>
+
+  <!-- R7: Forms module dock — inside Forms, the dock belongs to the module -->
+  <nav class="stax-dock" x-cloak x-show="page === 'forms'" aria-label="Forms module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.r4Open }" @click="$store.app.formsAgent()" aria-label="Forms agent">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
+      <span>Agent</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'forms' || $store.app.formsTab === 'build' }" @click="$store.app.formsTab = 'forms'" aria-label="My Forms">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--clipboard"></span></span>
+      <span>My Forms</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'subs' }" @click="$store.app.formsTab = 'subs'" aria-label="Submissions">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>Submissions</span>
+      <span class="stax-dock-badge" x-show="$store.app.formsNewCount > 0" x-text="$store.app.formsNewCount"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.formsTab === 'preview' }" @click="$store.app.formsTab = 'preview'" aria-label="Preview">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span>
+      <span>Preview</span>
+    </button>
+  </nav>
+
+  <!-- Websites module dock: the sites list and its in-app preview.
+       Done is the header exit, not a tab. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'websites'" aria-label="Websites module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.websitesTab === 'sites' }" @click="$store.app.websitesTab = 'sites'" aria-label="My Sites">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--frame-rose"></span></span>
+      <span>My Sites</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.websitesTab === 'preview' }" @click="$store.app.websitesTab = 'preview'" aria-label="Preview">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>Preview</span>
+    </button>
+  </nav>
+
+  <!-- Channels module dock: one dock for Texts, Team and Email — the
+       shop's conversations live together and the dock switches between
+       them. Agent opens the surface's helper (Texts has its own; Team
+       and Email talk to Stax). Done is the header exit, not a tab. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'sms' || page === 'team' || page === 'email'" aria-label="Channels module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.r4Open }" @click="$store.app.channelsAgent(page)" aria-label="Agent">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
+      <span>Agent</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: page === 'sms' }" :aria-current="page === 'sms' ? 'page' : null" @click="$store.app.smsTab = 'inbox'; navigate('sms')" aria-label="Inbox">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>Inbox</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: page === 'team' }" :aria-current="page === 'team' ? 'page' : null" @click="navigate('team')" aria-label="Team">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
+      <span>Team</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: page === 'email' }" :aria-current="page === 'email' ? 'page' : null" @click="navigate('email')" aria-label="Email">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--envelope"></span></span>
+      <span>Email</span>
+    </button>
+  </nav>
+
+  <!-- Work module dock: the page's three sections as dock items. Needs
+       you carries the shell's pending count, the same number the
+       floating badge and the page header show. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'approvals'" aria-label="Work module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.workSection === 'needsyou' }" :aria-current="$store.app.workSection === 'needsyou' ? 'page' : null" @click="$store.app.workGo('needsyou')" aria-label="Needs you">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--bubble"></span></span>
+      <span>Needs you</span>
+      <span class="stax-dock-badge" x-show="$store.app.pendingApprovalCount > 0" x-text="$store.app.pendingApprovalCount"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.workSection === 'current' }" :aria-current="$store.app.workSection === 'current' ? 'page' : null" @click="$store.app.workGo('current')" aria-label="Current work">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--toolbox"></span></span>
+      <span>Current work</span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.workSection === 'finished' }" :aria-current="$store.app.workSection === 'finished' ? 'page' : null" @click="$store.app.workGo('finished')" aria-label="Finished">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>Finished</span>
+    </button>
+  </nav>
+
+  <!-- Leads module dock: the artist scope, in the dock position (one
+       place for a surface's sub-navigation). The pipeline stages stay
+       as the in-surface board; the counts are the page's own, mirrored
+       to the store when the pipeline loads. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'leads'" aria-label="Leads module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.leadsArtist === 'all' }" :aria-current="$store.app.leadsArtist === 'all' ? 'page' : null" @click="$store.app.leadsGo('all')" aria-label="All leads">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
+      <span>All</span>
+      <span class="stax-dock-badge" x-show="$store.app.leadsArtistCounts.all > 0" x-text="$store.app.leadsArtistCounts.all"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.leadsArtist === 'shawn' }" :aria-current="$store.app.leadsArtist === 'shawn' ? 'page' : null" @click="$store.app.leadsGo('shawn')" aria-label="Shawn's leads">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
+      <span>Shawn</span>
+      <span class="stax-dock-badge" x-show="$store.app.leadsArtistCounts.shawn > 0" x-text="$store.app.leadsArtistCounts.shawn"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.leadsArtist === 'leni' }" :aria-current="$store.app.leadsArtist === 'leni' ? 'page' : null" @click="$store.app.leadsGo('leni')" aria-label="Leni's leads">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--magnet"></span></span>
+      <span>Leni</span>
+      <span class="stax-dock-badge" x-show="$store.app.leadsArtistCounts.leni > 0" x-text="$store.app.leadsArtistCounts.leni"></span>
+    </button>
+  </nav>
+
+  <!-- Contacts module dock: the book's own views, in the dock position.
+       The counts are the page's own, mirrored to the store when the
+       book loads. -->
+  <nav class="stax-dock" x-cloak x-show="page === 'contacts'" aria-label="Contacts module">
+    <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'all' }" :aria-current="$store.app.contactsView === 'all' ? 'page' : null" @click="$store.app.contactsGo('all')" aria-label="All clients">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--book"></span></span>
+      <span>All clients</span>
+      <span class="stax-dock-badge" x-show="$store.app.contactsCounts.all > 0" x-text="$store.app.contactsCounts.all"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'today' }" :aria-current="$store.app.contactsView === 'today' ? 'page' : null" @click="$store.app.contactsGo('today')" aria-label="Today">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--stamp"></span></span>
+      <span>Today</span>
+      <span class="stax-dock-badge" x-show="$store.app.contactsCounts.today > 0" x-text="$store.app.contactsCounts.today"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'prep' }" :aria-current="$store.app.contactsView === 'prep' ? 'page' : null" @click="$store.app.contactsGo('prep')" aria-label="Prep queue">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--machine"></span></span>
+      <span>Prep queue</span>
+      <span class="stax-dock-badge" x-show="$store.app.contactsCounts.prep > 0" x-text="$store.app.contactsCounts.prep"></span>
+    </button>
+    <button class="stax-dock-btn" :class="{ active: $store.app.contactsView === 'archived' }" :aria-current="$store.app.contactsView === 'archived' ? 'page' : null" @click="$store.app.contactsGo('archived')" aria-label="Archived">
+      <span class="stax-ic" aria-hidden="true"><span class="stax-tile stax-tile--toolbox"></span></span>
+      <span>Archived</span>
+      <span class="stax-dock-badge" x-show="$store.app.contactsCounts.archived > 0" x-text="$store.app.contactsCounts.archived"></span>
+    </button>
+  </nav>
+</div>
+
+<!-- Toast notification container -->
+  <!-- The needs-you badge: one shell fixture, bound once to the
+       pending-approval count and anchored at the dock's trailing
+       edge on every dock variant. Tapping it goes to Work. -->
+  <button class="stax-shell-badge" x-cloak x-show="$store.app.sessionUser && $store.app.pendingApprovalCount > 0" @click="goSurface('work')" :aria-label="$store.app.pendingApprovalCount + ' waiting for your decision in Work'">
+    <span x-text="$store.app.pendingApprovalCount"></span>
+  </button>
+
+<!-- Side card — the menu button toggles it; it also follows a drag from the
+     left screen edge, and a leftward drag on the card or the dimmed page
+     closes it (gestures in staxDrawer().initGestures, app.js). One composition:
+     wordmark, the team as people, the app's places, Stax conversations,
+     owner block — one scroll. Every row is a projection of real state and opens an
+     existing page key; navigating anywhere closes the drawer (navigate()). -->
+<div class="stax-side-backdrop sd-scrim" x-cloak :class="{ 'is-open': $store.app.sideOpen }" @click="$store.app.sideOpen = false"></div>
+<!-- The menu button, held above the open card at the spot it was tapped,
+     so the same three lines close what they opened. -->
+<button class="stax-menu-btn sd-toggle" x-cloak :class="{ 'is-open': $store.app.sideOpen }" @click="$store.app.sideOpen = !$store.app.sideOpen" aria-expanded="true" aria-controls="stax-side" aria-label="Menu" title="Menu">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
+<aside class="stax-side" id="stax-side" :class="{ open: $store.app.sideOpen, 'sd-continues': more }" :inert="!$store.app.sideOpen" x-data="staxDrawer()" x-init="initDrawer()" @keydown.escape.window="$store.app.sideOpen = false" aria-label="Menu">
+  <!-- 1. Wordmark + shop -->
+  <header class="sd-head" :class="{ 'is-scrolled': scrolled }">
+    <span class="sd-mark" aria-hidden="true"><svg class="sd-ico"><use href="#stax-reaper"/></svg></span>
+    <div class="sd-brand">
+      <div class="sd-wordmark">StaxCloud</div>
+      <div class="sd-shop">Fargo Tattoo</div>
+    </div>
+  </header>
+
+  <div class="sd-body" @scroll.passive="scrolled = $el.scrollTop > 2; cue()">
+    <!-- 2. Team: the shop's people. Stax's line reads the same state and
+         expression as the Home status pill (staxStatus() in home.js). -->
+    <section class="sd-group" aria-labelledby="sd-team">
+      <h2 class="sd-label" id="sd-team">Team</h2>
+      <button class="sd-person sd-person--stax" @click="openStaxCard()" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
+        <span class="sd-avatar sd-avatar--stax" aria-hidden="true"><svg class="sd-ico"><use href="#stax-reaper"/></svg></span>
+        <span class="sd-person-text">
+          <span class="sd-person-name">Stax</span>
+          <span class="sd-person-status" :data-tone="staxStatus().tone"><span class="sd-dot" aria-hidden="true"></span><span x-text="staxStatus().words"></span></span>
+        </span>
+      </button>
+      <div class="sd-person">
+        <span class="sd-avatar sd-avatar--a" aria-hidden="true">SL</span>
+        <span class="sd-person-text"><span class="sd-person-name">Shawn Lowe</span></span>
+      </div>
+      <div class="sd-person">
+        <span class="sd-avatar sd-avatar--b" aria-hidden="true">LB</span>
+        <span class="sd-person-text"><span class="sd-person-name">Leni Bee</span></span>
+      </div>
+    </section>
+
+    <!-- 3. Places: Channels / Studio / System -->
+    <nav class="sd-places" aria-label="Places">
+      <div class="sd-sec" style="--sec: var(--sec-channels)">
+        <button class="sd-sec-head" @click="toggle('channels')" :aria-expanded="open.channels" aria-controls="sd-sec-channels">
+          <span class="sd-sec-ico stax-tile stax-tile--bubble" aria-hidden="true"></span>
+          <span class="sd-sec-name">Channels</span>
+          <svg class="sd-ico sd-chev" :class="{ 'is-open': open.channels }" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M27 20 L39 32 L27 44"/></g></svg>
+        </button>
+        <div class="sd-sec-rows" id="sd-sec-channels" x-show="open.channels">
+          <button class="sd-row" :class="{ 'is-here': page === 'sms' }" :aria-current="page === 'sms' ? 'page' : false" @click="$store.app.smsTab = 'inbox'; navigate('sms')"><span class="sd-ico stax-tile stax-tile--book" aria-hidden="true"></span><span>Inbox</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'team' }" :aria-current="page === 'team' ? 'page' : false" @click="navigate('team')"><span class="sd-ico stax-tile stax-tile--magnet" aria-hidden="true"></span><span>Team</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'email' }" :aria-current="page === 'email' ? 'page' : false" @click="navigate('email')"><span class="sd-ico stax-tile stax-tile--envelope" aria-hidden="true"></span><span>Email</span></button>
+        </div>
+      </div>
+      <div class="sd-sec" style="--sec: var(--sec-studio)">
+        <button class="sd-sec-head" @click="toggle('studio')" :aria-expanded="open.studio" aria-controls="sd-sec-studio">
+          <span class="sd-sec-ico stax-tile stax-tile--frame-rose" aria-hidden="true"></span>
+          <span class="sd-sec-name">Studio</span>
+          <svg class="sd-ico sd-chev" :class="{ 'is-open': open.studio }" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M27 20 L39 32 L27 44"/></g></svg>
+        </button>
+        <div class="sd-sec-rows" id="sd-sec-studio" x-show="open.studio">
+          <button class="sd-row" :class="{ 'is-here': page === 'forms' }" :aria-current="page === 'forms' ? 'page' : false" @click="navigate('forms')"><span class="sd-ico stax-tile stax-tile--clipboard" aria-hidden="true"></span><span>Forms</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'library' }" :aria-current="page === 'library' ? 'page' : false" @click="navigate('library')"><span class="sd-ico stax-tile stax-tile--book" aria-hidden="true"></span><span>Library</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'websites' }" :aria-current="page === 'websites' ? 'page' : false" @click="navigate('websites')"><span class="sd-ico stax-tile stax-tile--frame-rose" aria-hidden="true"></span><span>Websites</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'contacts' }" :aria-current="page === 'contacts' ? 'page' : false" @click="navigate('contacts')"><span class="sd-ico stax-tile stax-tile--bubble" aria-hidden="true"></span><span>Contacts</span></button>
+          <!-- Canvas lives under Advanced: designs are made by asking Stax in chat. -->
+        </div>
+      </div>
+      <div class="sd-sec" style="--sec: var(--sec-system)">
+        <button class="sd-sec-head" @click="toggle('system')" :aria-expanded="open.system" aria-controls="sd-sec-system">
+          <span class="sd-sec-ico stax-tile stax-tile--toolbox" aria-hidden="true"></span>
+          <span class="sd-sec-name">System</span>
+          <svg class="sd-ico sd-chev" :class="{ 'is-open': open.system }" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M27 20 L39 32 L27 44"/></g></svg>
+        </button>
+        <div class="sd-sec-rows" id="sd-sec-system" x-show="open.system">
+          <button class="sd-row" :class="{ 'is-here': page === 'settings' }" :aria-current="page === 'settings' ? 'page' : false" @click="navigate('settings')"><span class="sd-ico stax-tile stax-tile--toolbox" aria-hidden="true"></span><span>Settings</span></button>
+          <button class="sd-row" :class="{ 'is-here': page === 'channels' }" :aria-current="page === 'channels' ? 'page' : false" @click="navigate('channels')"><span class="sd-ico stax-tile stax-tile--envelope" aria-hidden="true"></span><span>Connections</span></button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 4. Chats: the lead's own sessions, titles only. Tap opens it on
+         Home; New chat starts a fresh session with Stax. -->
+    <section class="sd-group sd-chats" aria-labelledby="sd-chats">
+      <div class="sd-chats-head">
+        <h2 class="sd-label" id="sd-chats">Chats</h2>
+        <button class="sd-new" @click="newChat(() => goSurface('home'))" :disabled="busy || !staxId()"><svg class="sd-ico" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 18 V46 M18 32 H46"/></g></svg><span>New chat</span></button>
+      </div>
+      <template x-for="s in visibleChats" :key="s.session_id">
+        <button class="sd-chat" :class="{ 'is-current': s.active }" :aria-current="s.active ? 'true' : false" @click="openConversation(s, () => goSurface('home'))" :disabled="busy">
+          <span class="sd-chat-dot" aria-hidden="true"></span>
+          <span class="sd-chat-title" x-text="chatTitle(s)"></span>
+          <span class="sd-chat-when" x-text="$store.app.shortDate(s.created_at)"></span>
+        </button>
+      </template>
+      <button class="sd-more" x-show="chats.length > chatLimit" @click="showAll = !showAll" x-text="showAll ? 'Show fewer' : 'Show all ' + chats.length"></button>
+      <p class="sd-empty" x-show="loaded && chats.length === 0">Your conversations with Stax will collect here.</p>
+    </section>
+
+    <!-- 5. Owner: the two Slice A behaviors, unchanged — the last block of
+         the drawer's one scroll, not a pinned strip. -->
+    <section class="sd-group sd-owner" aria-labelledby="sd-owner">
+      <h2 class="sd-label" id="sd-owner">Owner</h2>
+      <button class="sd-row sd-row--foot" @click="$store.app.staxAgent(); navigate('chat')"><svg class="sd-ico" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="24" width="20" height="25" rx="10"/><path d="M26 24 A6 6 0 0 1 38 24"/><path d="M32 31 V48"/><path d="M22 33 H15 M42 33 H49 M22.5 41 H16 M41.5 41 H48 M28 19 L25 14.5 M36 19 L39 14.5"/></g></svg><span>Report a bug</span></button>
+      <button class="sd-row sd-row--foot" x-show="$store.app.sessionUser" @click="$store.app.sessionLogout()"><svg class="sd-ico" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 14 V30"/><path d="M22.5 20.5 A15 15 0 1 0 41.5 20.5"/></g></svg><span>Sign out</span></button>
+    </section>
+  </div>
+</aside>
+
+<!-- System > Advanced: the R4 side panel (side chats with any helper over
+     their own WebSocket, the cross-helper conversation list, the Cards
+     inspector). Demoted out of the drawer intact; opened from the Advanced
+     pill row, and by a module's Agent button. -->
+<div class="stax-side-backdrop" x-show="$store.app.r4Open" x-cloak @click="$store.app.r4Open = false"></div>
+<aside class="stax-r4" :class="{ open: $store.app.r4Open }" :inert="!$store.app.r4Open" x-data="sidePanel()" x-init="initPanel()" aria-label="Side chats">
+  <div class="stax-side-head">
+    <div class="stax-wordmark">Side chats</div>
+    <button class="stax-chip" style="margin-left:auto" @click="$store.app.r4Open = false" aria-label="Close side chats">Close</button>
+  </div>
+  <div class="stax-drawer-tabs">
+    <button class="stax-chip" :class="{ active: tab === 'chats' }" @click="tab = 'chats'">Chats</button>
+    <button class="stax-chip" :class="{ active: tab === 'cards' }" @click="tab = 'cards'">Cards</button>
+    <span class="text-xs text-dim" style="margin-left:auto">Side chats live here</span>
+  </div>
+
+  <!-- Chats: session list -->
+  <div x-show="tab === 'chats' && view === 'list'" style="flex:1;overflow-y:auto;padding:14px">
+    <!-- The any-helper picker is an Advanced tool: it shows only when the
+         side card is opened from an Advanced view. -->
+    <div x-show="surf() === 'advanced'">
+    <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Start a side chat</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px">
+      <template x-for="a in $store.app.agents" :key="a.id">
+        <button class="stax-chip" @click="openChat(a.id)" x-text="a.name"></button>
+      </template>
+    </div>
+    </div>
+    <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Recent conversations</div>
+    <div x-show="loadingList" class="text-sm text-dim">Loading...</div>
+    <div x-show="!loadingList && sessions.filter(x => surf() === 'advanced' || x.agent_name === 'stax').length === 0" class="text-sm text-dim">No side chats yet. Conversations you start here will live here.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <!-- Owner surfaces list only conversations with Stax; the full
+           per-helper list is an Advanced view. -->
+      <template x-for="s in sessions.filter(x => surf() === 'advanced' || x.agent_name === 'stax')" :key="s.session_id">
+        <button class="side-session" @click="openChat(s.agent_id, s.session_id)">
+          <span style="font-weight:600;font-size:14px" x-text="s.agent_name === 'stax' ? 'Stax' : s.agent_name"></span>
+          <span class="text-xs text-dim" x-text="(s.label || 'Conversation') + ' - ' + (s.message_count || 0) + ' messages - ' + fmtWhen(s.created_at)"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- Chats: live side conversation -->
+  <div x-show="tab === 'chats' && view === 'chat'" style="flex:1;display:flex;flex-direction:column;min-height:0">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <button class="stax-chip" @click="view = 'list'; disconnectWs()">&larr; All chats</button>
+      <span style="font-weight:700;font-size:14px" x-text="chatAgent ? $store.app.displayName(chatAgent) : ''"></span>
+      <span class="badge" :class="wsState === 'live' ? 'badge-success' : 'badge-muted'" x-text="wsState === 'live' ? 'Live' : (wsState === 'connecting' ? 'Joining' : 'Relay')"></span>
+      <button class="stax-chip" style="margin-left:auto" @click="openInChannels()">Open full chat</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border)">
+      <template x-for="s in chatSessions" :key="s.session_id">
+        <button class="stax-chip" :class="{ active: s.active }" @click="openChat(chatAgent.id, s.session_id)" x-text="s.label || ('Chat ' + s.session_id.substring(0, 6))"></button>
+      </template>
+      <button class="stax-chip" @click="newSession()">+ New</button>
+    </div>
+    <div x-ref="sideScroll" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px">
+      <template x-for="m in messages" :key="m.id">
+        <div :class="m.role === 'user' ? 'side-msg side-msg-user' : (m.role === 'system' ? 'side-msg side-msg-system' : 'side-msg side-msg-agent')">
+          <span x-text="m.text"></span>
+          <span x-show="m.meta" class="text-xs" style="opacity:0.7;display:block;margin-top:2px" x-text="m.meta"></span>
+        </div>
+      </template>
+      <div x-show="messages.length === 0" class="text-sm text-dim" style="text-align:center;margin-top:20px">Say hello — this conversation runs alongside your main chat.</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border)">
+      <input type="text" x-model="input" @keydown.enter.prevent="sendSide()" placeholder="Message..." style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)">
+      <button class="btn btn-primary" style="min-height:44px" @click="sendSide()" :disabled="sending">Send</button>
+    </div>
+  </div>
+
+  <!-- Cards: inspector -->
+  <div x-show="tab === 'cards'" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+    <div class="card approval-card pending" x-show="$store.app.pendingApprovals.length > 0">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px">Needs you</div>
+      <template x-for="a in $store.app.pendingApprovals.slice(0, 5)" :key="a.id">
+        <div style="border-top:1px solid var(--border);padding:10px 0">
+          <div style="font-size:14px;font-weight:600;line-height:1.4" x-html="$store.app.plainLinked($store.app.fmtPhones(a.description))"></div>
+          <div class="text-xs text-dim"><span x-text="$store.app.crewLabel(a)"></span> is asking first</div>
+          <div class="approval-actions" style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-success" @click="$store.app.approveApproval(a.id)">Approve</button>
+            <button class="btn btn-ghost" style="color:var(--danger,#e5534b)" @click="$store.app.rejectApproval(a.id)">Reject</button>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div class="card" x-show="$store.app.pendingApprovals.length === 0">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">Needs you</div>
+      <div class="text-sm text-dim">Nothing needs you right now.</div>
+    </div>
+    <div class="card" x-show="view === 'chat' && chatAgent">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">This chat</div>
+      <div class="text-sm"><span style="font-weight:600" x-text="chatAgent ? chatAgent.name : ''"></span></div>
+      <div class="text-sm text-dim" x-text="chatSessions.length + ' conversation(s) - ' + messages.length + ' messages showing'"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="openInChannels()">Open full chat</button>
+    </div>
+    <div class="card">
+      <div class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:6px">Coming up</div>
+      <template x-if="jobs.length > 0">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <template x-for="j in jobs" :key="j.id">
+            <div style="display:flex;justify-content:space-between;gap:10px">
+              <span class="text-sm" style="font-weight:600" x-text="j.name"></span>
+              <span class="text-sm text-dim" x-text="fmtWhen(j.next_run)"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+      <div x-show="jobs.length === 0" class="text-sm text-dim">Nothing scheduled.</div>
+    </div>
+  </div>
+</aside>
+
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+<script nonce="__NONCE__">if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){});}</script>

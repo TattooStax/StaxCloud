@@ -1,0 +1,785 @@
+
+    <!-- Page: Settings console (System > Advanced). The stock settings
+         console — providers, models, config, tools, security and the rest —
+         moved intact out of the Settings landing. -->
+    <template x-if="page === 'configuration'">
+      <div x-data="settingsPage">
+        <div class="page-header"><h2>Settings console</h2><button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button></div>
+        <div class="page-body" x-init="loadSettings()">
+          <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading settings...</span></div>
+          <div x-show="!loading && loadError" class="error-state">
+            <span class="error-icon">!</span>
+            <p x-text="loadError"></p>
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Retry</button>
+          </div>
+          <div x-show="!loading && !loadError">
+          <div class="tabs" role="tablist">
+            <div class="tab" role="tab" :class="{ active: tab === 'providers' }" @click="tab = 'providers'">Providers</div>
+            <div class="tab" role="tab" :class="{ active: tab === 'models' }" @click="tab = 'models'">Models</div>
+            <div class="tab" role="tab" :class="{ active: tab === 'config' }" @click="tab = 'config'; if (!configSchema) loadConfigSchema()">Config</div>
+            <div class="tabs-separator"></div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'tools' }" @click="tab = 'tools'">Tools</div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; if (!securityData && !secLoading) loadSecurity()">Security</div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'network' }" @click="tab = 'network'; if (!peers.length && !peersLoading) { loadPeers(); startPeerPolling(); }">Network</div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'budget' }" @click="tab = 'budget'">Budget</div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'info' }" @click="tab = 'info'">System</div>
+            <div class="tab tab-secondary" role="tab" :class="{ active: tab === 'migration' }" @click="tab = 'migration'">Migration</div>
+          </div>
+
+          <!-- Providers tab -->
+          <div x-show="tab === 'providers'">
+            <div class="info-card">
+              <h4>LLM Providers</h4>
+              <p>OpenFang ships with <span x-text="providers.length"></span> built-in providers and you can add unlimited custom ones. <span x-text="configuredProviderCount"></span> currently configured. Filter, search, or jump to a category below &mdash; only providers with a saved key (or that need none) light up models for your agents.</p>
+            </div>
+            <!-- Filter toolbar -->
+            <div class="flex gap-2 mb-4" style="flex-wrap:wrap;align-items:center">
+              <div class="search-input" style="flex:1;min-width:200px">
+                <span style="color:var(--text-muted)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+                <input placeholder="Search providers..." x-model="providerSearch">
+              </div>
+              <select class="form-select" style="width:170px" x-model="providerStatusFilter">
+                <option value="">All Statuses</option>
+                <option value="configured">Configured</option>
+                <option value="unconfigured">Needs Key</option>
+              </select>
+              <select class="form-select" style="width:200px" x-model="providerCategoryFilter">
+                <option value="">All Categories</option>
+                <option value="frontier">Frontier</option>
+                <option value="oss">Open-Weight Hosts</option>
+                <option value="aggregator">Aggregators</option>
+                <option value="regional">Regional / China</option>
+                <option value="local">Local / Self-Hosted</option>
+                <option value="other">Other</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" @click="clearProviderFilters()" x-show="providerSearch || providerStatusFilter || providerCategoryFilter">Clear</button>
+            </div>
+            <div class="text-xs text-dim mb-2" x-text="filteredProviders.length + ' of ' + providers.length + ' providers'"></div>
+            <!-- Empty state for filters -->
+            <div x-show="!filteredProviders.length && providers.length" style="text-align:center;padding:32px 16px">
+              <h3 style="margin:0 0 4px;font-size:14px">No providers match your filters</h3>
+              <p class="text-xs text-dim">Try a different search term or category.</p>
+              <button class="btn btn-ghost btn-sm mt-2" @click="clearProviderFilters()">Clear Filters</button>
+            </div>
+            <!-- Grouped provider sections -->
+            <template x-for="group in providersGrouped" :key="group.category">
+              <div style="margin-bottom:1.25rem">
+                <div class="card-header" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">
+                  <span x-text="group.label"></span>
+                  <span class="text-xs text-dim" style="font-weight:normal;text-transform:none;letter-spacing:0" x-text="'(' + group.items.length + ')'"></span>
+                </div>
+                <div class="card-grid">
+                  <template x-for="p in group.items" :key="p.id">
+                    <div class="card provider-card" :class="providerCardClass(p)">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="card-header" style="margin:0" x-text="p.display_name"></div>
+                    <span class="badge" :class="providerAuthClass(p)" x-text="providerAuthText(p)"></span>
+                  </div>
+                  <div class="card-meta" x-text="(p.model_count || 0) + ' model(s) available'"></div>
+                  <div class="text-xs text-dim mt-2" x-show="p.api_key_env" x-text="'Env: ' + p.api_key_env"></div>
+                  <!-- Key input for unconfigured providers -->
+                  <template x-if="p.auth_status !== 'configured' && p.api_key_env">
+                    <div class="key-input-group">
+                      <input type="password" :placeholder="'Enter ' + p.api_key_env" x-model="providerKeyInputs[p.id]">
+                      <button class="btn btn-primary btn-sm" @click="saveProviderKey(p)">Save</button>
+                    </div>
+                  </template>
+                  <template x-if="p.auth_status !== 'configured' && p.api_key_env">
+                    <div class="text-xs text-dim mt-2">Or set <code style="color:var(--accent-light);background:var(--bg);padding:1px 4px;border-radius:2px" x-text="p.api_key_env"></code> in your environment and restart</div>
+                  </template>
+                  <!-- Copilot OAuth button -->
+                  <template x-if="p.id === 'github-copilot' && p.auth_status !== 'configured'">
+                    <div class="mt-2">
+                      <button class="btn btn-primary btn-sm" @click="startCopilotOAuth()" :disabled="copilotOAuth.polling" x-show="!copilotOAuth.userCode">Login with GitHub</button>
+                      <div x-show="copilotOAuth.userCode" class="mt-2">
+                        <div class="text-sm">Visit <a :href="copilotOAuth.verificationUri" target="_blank" x-text="copilotOAuth.verificationUri" style="color:var(--accent-light)"></a> and enter:</div>
+                        <div style="font-size:24px;font-weight:bold;letter-spacing:4px;margin:8px 0;color:var(--accent-light)" x-text="copilotOAuth.userCode"></div>
+                        <div class="text-xs text-dim"><span class="spinner" style="width:10px;height:10px;border-width:2px;display:inline-block;vertical-align:middle"></span> Waiting for authorization...</div>
+                      </div>
+                    </div>
+                  </template>
+                  <!-- Claude Code install hint -->
+                  <template x-if="p.id === 'claude-code' && p.auth_status !== 'configured'">
+                    <div class="mt-2 text-xs text-dim">Install: <code style="color:var(--accent-light);background:var(--bg);padding:1px 4px;border-radius:2px">npm install -g @anthropic-ai/claude-code</code></div>
+                  </template>
+                  <!-- Actions for configured providers -->
+                  <template x-if="p.auth_status === 'configured'">
+                    <div class="flex gap-2 mt-2">
+                      <button class="btn btn-ghost btn-sm" @click="testProvider(p)" :disabled="providerTesting[p.id]">
+                        <span x-show="!providerTesting[p.id]">Test</span>
+                        <span x-show="providerTesting[p.id]" class="spinner" style="width:10px;height:10px;border-width:2px"></span>
+                      </button>
+                      <button class="btn btn-ghost btn-sm" style="color:var(--error)" @click="removeProviderKey(p)">Remove Key</button>
+                    </div>
+                  </template>
+                  <!-- No key needed -->
+                  <template x-if="!p.api_key_env || p.key_required === false">
+                    <div class="text-xs mt-2" style="color:var(--success)" x-show="p.auth_status !== 'configured' && p.auth_status !== 'not_set' && p.auth_status !== 'missing'">No API key needed &mdash; runs locally or is free</div>
+                  </template>
+                  <!-- Base URL editor for local providers -->
+                  <template x-if="p.is_local">
+                    <div class="mt-3" style="border-top:1px solid var(--border);padding-top:8px">
+                      <div class="text-xs text-dim mb-1">Base URL</div>
+                      <div class="key-input-group">
+                        <input type="text" :placeholder="'http://localhost:...'" x-model="providerUrlInputs[p.id]" style="font-size:12px">
+                        <button class="btn btn-primary btn-sm" @click="saveProviderUrl(p)" :disabled="providerUrlSaving[p.id]">
+                          <span x-show="!providerUrlSaving[p.id]">Save</span>
+                          <span x-show="providerUrlSaving[p.id]" class="spinner" style="width:10px;height:10px;border-width:2px"></span>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <!-- Add Custom Provider -->
+            <div class="info-card mt-4" style="border:1px solid var(--border)">
+              <h4 style="margin-top:0">Add Custom Provider</h4>
+              <p class="text-xs text-dim mb-2">Connect any OpenAI-compatible API (vLLM, LiteLLM, LocalAI, etc.)</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <div>
+                  <label class="text-xs text-dim">Provider Name</label>
+                  <input class="form-input" x-model="customProviderName" placeholder="e.g. my-local-llm">
+                </div>
+                <div>
+                  <label class="text-xs text-dim">Base URL (required)</label>
+                  <input class="form-input" x-model="customProviderUrl" placeholder="http://localhost:8080/v1">
+                </div>
+              </div>
+              <div class="mt-2">
+                <label class="text-xs text-dim">API Key (optional)</label>
+                <input class="form-input" type="password" x-model="customProviderKey" placeholder="sk-... (leave blank if not needed)">
+              </div>
+              <button class="btn btn-primary btn-sm mt-2" @click="addCustomProvider()" :disabled="!customProviderName.trim() || !customProviderUrl.trim() || addingCustomProvider">
+                <span x-show="!addingCustomProvider">Add Provider</span>
+                <span x-show="addingCustomProvider" class="spinner" style="width:10px;height:10px;border-width:2px"></span>
+              </button>
+              <span class="text-xs text-dim ml-2" x-text="customProviderStatus"></span>
+            </div>
+            <div class="empty-state" x-show="!providers.length">
+              <h4>No providers found</h4>
+              <p class="hint">Provider information could not be loaded. Check that the API is running.</p>
+            </div>
+          </div>
+
+          <!-- Models tab -->
+          <div x-show="tab === 'models'">
+            <div class="info-card">
+              <h4>Model Catalog</h4>
+              <p>Browse all available models across providers. Models marked "Available" have their provider configured and ready to use.</p>
+            </div>
+            <div class="flex gap-2 mb-4" style="flex-wrap:wrap">
+              <div class="search-input" style="flex:1;min-width:200px">
+                <span style="color:var(--text-muted)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+                <input placeholder="Search models..." x-model="modelSearch">
+              </div>
+              <select class="form-select" style="width:160px" x-model="modelProviderFilter">
+                <option value="">All Providers</option>
+                <template x-for="pn in uniqueProviderNames" :key="pn">
+                  <option :value="pn" x-text="pn"></option>
+                </template>
+              </select>
+              <select class="form-select" style="width:140px" x-model="modelTierFilter">
+                <option value="">All Tiers</option>
+                <template x-for="t in uniqueTiers" :key="t">
+                  <option :value="t" x-text="t"></option>
+                </template>
+              </select>
+              <button class="btn btn-primary btn-sm" @click="showCustomModelForm = !showCustomModelForm" x-text="showCustomModelForm ? 'Cancel' : '+ Custom Model'"></button>
+            </div>
+            <!-- Custom model form -->
+            <div x-show="showCustomModelForm" class="info-card mb-4" style="border:1px solid var(--accent,#146e68)">
+              <h4 style="margin-top:0">Add Custom Model</h4>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <div>
+                  <label class="text-xs text-dim">Model ID (required)</label>
+                  <input class="form-input" x-model="customModelId" placeholder="e.g. my-org/my-model">
+                </div>
+                <div>
+                  <label class="text-xs text-dim">Provider</label>
+                  <input class="form-input" x-model="customModelProvider" placeholder="openrouter">
+                </div>
+                <div>
+                  <label class="text-xs text-dim">Context Window</label>
+                  <input class="form-input" type="number" x-model.number="customModelContext" placeholder="128000">
+                </div>
+                <div>
+                  <label class="text-xs text-dim">Max Output Tokens</label>
+                  <input class="form-input" type="number" x-model.number="customModelMaxOutput" placeholder="8192">
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm mt-2" @click="addCustomModel()" :disabled="!customModelId.trim()">Add Model</button>
+              <span class="text-xs text-dim ml-2" x-text="customModelStatus"></span>
+            </div>
+            <div class="text-xs text-dim mb-2" x-text="filteredModels.length + ' of ' + models.length + ' models'"></div>
+            <div x-show="!filteredModels.length && !loading" style="text-align:center;padding:32px 16px">
+              <div style="font-size:32px;margin-bottom:8px;opacity:0.5">&#x1F916;</div>
+              <h3 style="margin:0 0 4px;font-size:14px" x-text="models.length ? 'No models match your search' : 'No models available'"></h3>
+              <p class="text-xs text-dim" x-text="models.length ? 'Try a different search term or clear filters.' : 'Configure an LLM provider to see available models.'"></p>
+              <button class="btn btn-ghost btn-sm mt-2" x-show="models.length && (modelSearch || modelProviderFilter)" @click="modelSearch=''; modelProviderFilter=''">Clear Filters</button>
+            </div>
+            <div class="table-wrap" x-show="filteredModels.length">
+              <table>
+                <thead><tr><th>Model</th><th>Provider</th><th>Tier</th><th>Context</th><th>Input Cost</th><th>Output Cost</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="m in filteredModels" :key="m.id">
+                    <tr>
+                      <td style="font-size:11px"><div class="font-bold" x-text="m.display_name || m.id"></div><div class="text-xs text-dim" style="font-family:var(--font-mono);opacity:0.7;user-select:all" x-show="m.display_name && m.display_name !== m.id" x-text="m.id"></div></td>
+                      <td class="text-dim" x-text="m.provider"></td>
+                      <td><span class="tier-badge" :class="tierBadgeClass(m.tier)" x-text="m.tier || '-'"></span></td>
+                      <td class="text-xs" x-text="formatContext(m.context_window)"></td>
+                      <td class="text-xs" x-text="formatCost(m.input_cost_per_m)"></td>
+                      <td class="text-xs" x-text="formatCost(m.output_cost_per_m)"></td>
+                      <td><span class="badge" :class="m.available ? 'badge-success' : 'badge-muted'" x-text="m.available ? 'Available' : 'Needs Key'"></span></td>
+                      <td><button x-show="m.tier === 'custom'" class="btn btn-ghost btn-sm" @click="deleteCustomModel(m.id)" title="Delete custom model" style="padding:2px 6px;font-size:11px;color:var(--text-muted)">&#x2715;</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tools tab -->
+          <div x-show="tab === 'tools'">
+            <div class="search-input mb-4">
+              <span style="color:var(--text-muted)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+              <input placeholder="Search tools..." x-model="toolSearch">
+            </div>
+            <div class="text-xs text-dim mb-2" x-text="filteredTools.length + ' of ' + tools.length + ' tools'"></div>
+            <div x-show="!filteredTools.length && !loading" style="text-align:center;padding:32px 16px">
+              <div style="font-size:32px;margin-bottom:8px;opacity:0.5">&#x1F527;</div>
+              <h3 style="margin:0 0 4px;font-size:14px" x-text="tools.length ? 'No tools match your search' : 'No tools available'"></h3>
+              <p class="text-xs text-dim" x-text="tools.length ? 'Try a different search term.' : 'Tools will appear once agents are configured.'"></p>
+              <button class="btn btn-ghost btn-sm mt-2" x-show="tools.length && toolSearch" @click="toolSearch=''">Clear Search</button>
+            </div>
+            <div class="table-wrap" x-show="filteredTools.length">
+              <table>
+                <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+                <tbody>
+                  <template x-for="t in filteredTools" :key="t.name">
+                    <tr>
+                      <td class="font-bold" style="white-space:nowrap" x-text="t.name"></td>
+                      <td class="text-dim" x-text="t.description"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- System Info tab -->
+          <div x-show="tab === 'info'">
+            <div class="stats-row">
+              <div class="stat-card"><div class="stat-value" x-text="sysInfo.version || '-'"></div><div class="stat-label">Version</div></div>
+              <div class="stat-card"><div class="stat-value" x-text="sysInfo.platform || '-'"></div><div class="stat-label">Platform</div></div>
+              <div class="stat-card"><div class="stat-value" x-text="formatUptime(sysInfo.uptime_seconds)"></div><div class="stat-label">Uptime</div></div>
+              <div class="stat-card"><div class="stat-value" x-text="sysInfo.agent_count || 0"></div><div class="stat-label">Agents</div></div>
+            </div>
+            <div class="card mt-4" x-show="sysInfo.default_provider">
+              <div class="card-header">Default Model</div>
+              <div class="card-meta" x-text="sysInfo.default_provider + ' : ' + sysInfo.default_model"></div>
+            </div>
+          </div>
+
+          <!-- Config tab -->
+          <div x-show="tab === 'config'">
+            <div class="info-card">
+              <h4>Runtime Configuration</h4>
+              <p>View and edit the active configuration. Changes are applied immediately. For advanced edits, modify <code style="color:var(--accent-light);background:var(--bg);padding:1px 4px;border-radius:2px">config.toml</code> in your OpenFang data directory.</p>
+            </div>
+
+            <!-- Dynamic config form (when schema is available) -->
+            <template x-if="configSchema">
+              <div>
+                <template x-for="(fields, section) in configSchema" :key="section">
+                  <div class="card mb-4">
+                    <div class="card-header" style="text-transform:capitalize" x-text="section.replace(/_/g, ' ')"></div>
+                    <div class="detail-grid" style="margin-top:12px">
+                      <template x-for="field in (fields.fields || [])" :key="section + '.' + field.name">
+                        <div class="detail-row" style="align-items:center">
+                          <span class="detail-label" x-text="field.label || field.name"></span>
+                          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                            <template x-if="field.type === 'boolean'">
+                              <label class="form-checkbox" style="margin:0">
+                                <input type="checkbox"
+                                  :checked="configValues[section] && configValues[section][field.name]"
+                                  @change="configValues[section] = configValues[section] || {}; configValues[section][field.name] = $event.target.checked; markConfigDirty(section, field.name)">
+                              </label>
+                            </template>
+                            <template x-if="field.type === 'number'">
+                              <input class="form-input" type="number" style="width:120px"
+                                :value="configValues[section] && configValues[section][field.name]"
+                                @input="configValues[section] = configValues[section] || {}; configValues[section][field.name] = Number($event.target.value); markConfigDirty(section, field.name)">
+                            </template>
+                            <template x-if="field.type === 'select' && field.options">
+                              <select class="form-select" style="width:180px"
+                                :value="configValues[section] && configValues[section][field.name]"
+                                @change="configValues[section] = configValues[section] || {}; configValues[section][field.name] = $event.target.value; markConfigDirty(section, field.name)">
+                                <template x-for="opt in field.options" :key="typeof opt === 'object' ? opt.id : opt">
+                                  <option :value="typeof opt === 'object' ? opt.id : opt" x-text="typeof opt === 'object' ? (opt.name || opt.display_name || opt.id) : opt" :selected="configValues[section] && configValues[section][field.name] === (typeof opt === 'object' ? opt.id : opt)"></option>
+                                </template>
+                              </select>
+                            </template>
+                            <template x-if="!field.type || field.type === 'string'">
+                              <input class="form-input" type="text" style="flex:1"
+                                :value="configValues[section] && configValues[section][field.name]"
+                                @input="configValues[section] = configValues[section] || {}; configValues[section][field.name] = $event.target.value; markConfigDirty(section, field.name)">
+                            </template>
+                            <button class="btn btn-primary btn-sm" x-show="isConfigDirty(section, field.name)"
+                              @click="saveConfigField(section, field.name, configValues[section] && configValues[section][field.name])"
+                              :disabled="configSaving[section + '.' + field.name]">
+                              <span x-show="!configSaving[section + '.' + field.name]">Save</span>
+                              <span x-show="configSaving[section + '.' + field.name]" class="spinner" style="width:12px;height:12px;border-width:2px"></span>
+                            </button>
+                          </div>
+                          <div class="text-xs text-dim" x-show="field.description" x-text="field.description" style="grid-column:1/-1;padding-left:2px"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <!-- Raw JSON fallback -->
+            <div class="card mt-4" style="border-left:3px solid var(--border)">
+              <div class="card-header" style="font-size:12px;cursor:pointer" @click="$el.nextElementSibling.style.display = $el.nextElementSibling.style.display === 'none' ? 'block' : 'none'">Raw Config JSON (click to toggle)</div>
+              <pre style="font-size:11px;white-space:pre-wrap;overflow:auto;max-height:400px;color:var(--text-dim);line-height:1.5;display:none" x-text="JSON.stringify(config, null, 2)"></pre>
+            </div>
+          </div>
+
+          <!-- Security tab -->
+          <div x-show="tab === 'security'">
+            <div x-show="secLoading" class="loading-state"><div class="spinner"></div><span>Loading security data...</span></div>
+            <div x-show="!secLoading">
+            <div class="security-hero">
+              <div class="security-hero-shield"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+              <div>
+                <div class="security-hero-title">Defense in Depth</div>
+                <div class="security-hero-desc">OpenFang implements 15 layered security features across the entire stack &mdash; from network ingress to agent sandboxing to cryptographic audit trails. Core protections cannot be disabled.</div>
+              </div>
+            </div>
+
+            <div class="security-section">
+              <div class="security-section-header">
+                <span class="security-shield shield-core"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                <div>
+                  <div class="font-bold">Core Protections</div>
+                  <div class="text-xs text-dim">Always active. Cannot be disabled.</div>
+                </div>
+              </div>
+              <div class="security-grid">
+                <template x-for="f in coreFeatures" :key="f.key">
+                  <div class="security-card">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="security-card-name" x-text="f.name"></div>
+                      <span class="sec-badge sec-badge-core">ALWAYS ON</span>
+                    </div>
+                    <div class="security-card-desc" x-text="f.description"></div>
+                    <div class="security-card-threat">
+                      <span class="text-xs font-bold" style="color:var(--error)">Protects against:</span>
+                      <span class="text-xs" x-text="f.threat"></span>
+                    </div>
+                    <div class="text-xs text-dim" style="margin-top:6px;opacity:0.5" x-text="f.impl"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="security-section">
+              <div class="security-section-header">
+                <span class="security-shield shield-config"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></span>
+                <div>
+                  <div class="font-bold">Configurable Controls</div>
+                  <div class="text-xs text-dim">Active with tunable parameters.</div>
+                </div>
+              </div>
+              <div class="security-grid">
+                <template x-for="f in configurableFeatures" :key="f.key">
+                  <div class="security-card">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="security-card-name" x-text="f.name"></div>
+                      <span class="sec-badge sec-badge-config">CONFIGURABLE</span>
+                    </div>
+                    <div class="security-card-desc" x-text="f.description"></div>
+                    <div class="security-card-value" x-text="formatConfigValue(f)"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="security-section">
+              <div class="security-section-header">
+                <span class="security-shield shield-monitor"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg></span>
+                <div>
+                  <div class="font-bold">Monitoring &amp; Analysis</div>
+                  <div class="text-xs text-dim">Active monitoring systems.</div>
+                </div>
+              </div>
+              <div class="security-grid">
+                <template x-for="f in monitoringFeatures" :key="f.key">
+                  <div class="security-card">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="security-card-name" x-text="f.name"></div>
+                      <span class="sec-badge sec-badge-monitor">MONITORING</span>
+                    </div>
+                    <div class="security-card-desc" x-text="f.description"></div>
+                    <div class="security-card-value" x-text="formatMonitoringValue(f)"></div>
+                  </div>
+                </template>
+                <div class="security-card" style="border-color:var(--accent)">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="security-card-name">Audit Chain Integrity</div>
+                    <button class="btn btn-ghost btn-sm" @click="verifyAuditChain()" :disabled="verifyingChain">
+                      <span x-show="!verifyingChain">Verify Now</span>
+                      <span x-show="verifyingChain" class="spinner" style="width:12px;height:12px;border-width:2px"></span>
+                    </button>
+                  </div>
+                  <div class="security-card-desc">Run cryptographic verification of the entire SHA-256 Merkle hash chain.</div>
+                  <div x-show="chainResult" class="mt-2">
+                    <span class="sec-badge" :class="chainResult && chainResult.valid ? 'sec-badge-core' : 'sec-badge-warn'" x-text="chainResult && chainResult.valid ? 'CHAIN VALID — ' + (chainResult.entries || 0) + ' entries verified' : 'CHAIN BROKEN — ' + (chainResult ? chainResult.error : '')"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mt-4" style="border-left:3px solid var(--accent)">
+              <div class="font-bold" style="font-size:13px;margin-bottom:6px">Security Dependencies</div>
+              <div class="text-xs text-dim" style="line-height:1.8">
+                <code style="color:var(--accent-light)">sha2</code> SHA-256&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">hmac</code> HMAC-SHA256&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">subtle</code> constant-time&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">ed25519-dalek</code> signing&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">zeroize</code> secret wiping&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">rand</code> randomness&nbsp;<svg width="3" height="3" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.4"><circle cx="12" cy="12" r="10"/></svg>
+                <code style="color:var(--accent-light)">governor</code> rate limiting
+              </div>
+            </div>
+            </div>
+          </div>
+
+          <!-- Network tab -->
+          <div x-show="tab === 'network'" x-data="{
+            netStatus: null, a2aAgents: [], a2aDiscoverUrl: '', a2aDiscovering: false,
+            async loadNetStatus() { try { this.netStatus = await OpenFangAPI.get('/api/network/status'); } catch(e) {} },
+            async loadA2aAgents() { try { let r = await OpenFangAPI.get('/api/a2a/agents'); this.a2aAgents = r.agents || []; } catch(e) {} },
+            async discoverA2a() {
+              if (!this.a2aDiscoverUrl) return; this.a2aDiscovering = true;
+              try { await OpenFangAPI.post('/api/a2a/discover', {url:this.a2aDiscoverUrl}); this.a2aDiscoverUrl=''; await this.loadA2aAgents(); } catch(e) {}
+              this.a2aDiscovering = false;
+            }
+          }" x-init="loadNetStatus(); loadA2aAgents()">
+            <!-- OFP Status -->
+            <div class="info-card" style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <h4>Peer Networking (OFP)</h4>
+                <p>Link multiple OpenFang instances into a mesh via the OFP wire protocol.</p>
+              </div>
+              <span class="badge" :class="netStatus && netStatus.enabled ? 'badge-success' : 'badge-muted'" x-text="netStatus && netStatus.enabled ? 'Enabled' : 'Disabled'" style="font-size:12px;padding:4px 10px"></span>
+            </div>
+            <div x-show="netStatus && netStatus.enabled" class="text-xs text-dim mb-2" style="margin-top:-8px">
+              Node: <span x-text="netStatus?.node_id?.substring(0,8) + '...'" class="font-bold"></span>&nbsp;<svg width="4" height="4" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:middle;opacity:0.5"><circle cx="12" cy="12" r="10"/></svg>
+              Listening on <span x-text="netStatus?.listen_address" class="font-bold"></span>
+            </div>
+            <div x-show="peersLoading" class="loading-state"><div class="spinner"></div><span>Loading peers...</span></div>
+            <div x-show="!peersLoading && peersLoadError" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="peersLoadError"></p>
+              <button class="btn btn-ghost btn-sm" @click="loadPeers()">Retry</button>
+            </div>
+            <div x-show="!peersLoading && !peersLoadError">
+            <div class="stats-row">
+              <div class="stat-card"><div class="stat-value" x-text="peers.filter(function(p){return p.state === 'Connected'}).length"></div><div class="stat-label">Connected</div></div>
+              <div class="stat-card"><div class="stat-value" x-text="peers.length"></div><div class="stat-label">Total Peers</div></div>
+            </div>
+            <div class="table-wrap" x-show="peers.length">
+              <table>
+                <thead><tr><th>Node</th><th>Address</th><th>State</th><th>Agents</th><th>Protocol</th></tr></thead>
+                <tbody>
+                  <template x-for="p in peers" :key="p.node_id">
+                    <tr>
+                      <td><span class="font-bold" x-text="p.node_name"></span><br><span class="text-xs text-dim" x-text="p.node_id"></span></td>
+                      <td x-text="p.address"></td>
+                      <td><span class="badge" :class="p.state === 'Connected' ? 'badge-connected' : 'badge-disconnected'" x-text="p.state"></span></td>
+                      <td x-text="(p.agents || []).length"></td>
+                      <td x-text="'v' + p.protocol_version"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="empty-state" x-show="!peers.length">
+              <h4>No peers connected</h4>
+              <p class="hint">Add a <code style="color:var(--accent-light);background:var(--bg);padding:1px 4px;border-radius:2px">[network]</code> section to config.toml with <code style="color:var(--accent-light);background:var(--bg);padding:1px 4px;border-radius:2px">shared_secret</code> and peer addresses.</p>
+            </div>
+            </div>
+
+            <!-- A2A External Agents -->
+            <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+              <h4 style="margin-bottom:8px">A2A External Agents</h4>
+              <p class="text-xs text-dim mb-2">Discovered agents on other OpenFang/A2A-compatible instances that this node can communicate with.</p>
+              <div class="flex gap-2 mb-3">
+                <input class="form-input" style="flex:1" placeholder="https://remote-agent.example.com" x-model="a2aDiscoverUrl">
+                <button class="btn btn-primary btn-sm" @click="discoverA2a()" :disabled="a2aDiscovering">
+                  <span x-show="!a2aDiscovering">Discover</span>
+                  <span x-show="a2aDiscovering">...</span>
+                </button>
+              </div>
+              <div class="table-wrap" x-show="a2aAgents.length">
+                <table>
+                  <thead><tr><th>Name</th><th>URL</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <template x-for="a in a2aAgents" :key="a.url">
+                      <tr>
+                        <td class="font-bold" x-text="a.name"></td>
+                        <td class="text-xs text-dim" x-text="a.url"></td>
+                        <td class="text-xs" x-text="(a.description || '').substring(0,80)"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-xs text-dim" x-show="!a2aAgents.length">No external agents discovered yet. Enter a URL above to discover one.</div>
+            </div>
+          </div>
+
+          <!-- Budget tab -->
+          <div x-show="tab === 'budget'" x-data="{
+            budgetData: null, agentRanking: [], budgetLoading: true,
+            editMode: false,
+            editHourly: '', editDaily: '', editMonthly: '', editAlert: '', editTokenLimit: '',
+            saving: false,
+            async loadBudget() {
+              this.budgetLoading = true;
+              try {
+                let [b, a] = await Promise.all([
+                  OpenFangAPI.get('/api/budget'),
+                  OpenFangAPI.get('/api/budget/agents')
+                ]);
+                this.budgetData = b;
+                this.agentRanking = a.agents || [];
+              } catch(e) {}
+              this.budgetLoading = false;
+            },
+            startEdit() {
+              this.editHourly = this.budgetData.hourly_limit || 0;
+              this.editDaily = this.budgetData.daily_limit || 0;
+              this.editMonthly = this.budgetData.monthly_limit || 0;
+              this.editAlert = ((this.budgetData.alert_threshold || 0.8) * 100).toFixed(0);
+              this.editTokenLimit = this.budgetData.default_max_llm_tokens_per_hour || 0;
+              this.editMode = true;
+            },
+            async saveBudget() {
+              this.saving = true;
+              try {
+                let body = {};
+                if (+this.editHourly !== this.budgetData.hourly_limit) body.max_hourly_usd = +this.editHourly;
+                if (+this.editDaily !== this.budgetData.daily_limit) body.max_daily_usd = +this.editDaily;
+                if (+this.editMonthly !== this.budgetData.monthly_limit) body.max_monthly_usd = +this.editMonthly;
+                let alertVal = (+this.editAlert) / 100;
+                if (Math.abs(alertVal - this.budgetData.alert_threshold) > 0.001) body.alert_threshold = alertVal;
+                if (+this.editTokenLimit !== (this.budgetData.default_max_llm_tokens_per_hour || 0)) body.default_max_llm_tokens_per_hour = +this.editTokenLimit;
+                await OpenFangAPI.put('/api/budget', body);
+                this.editMode = false;
+                await this.loadBudget();
+              } catch(e) { OpenFangToast.error('Failed to save: ' + (e.message || e)); }
+              this.saving = false;
+            },
+            fmtTokens(v) { return v > 0 ? (v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v) : 'per-agent'; },
+            pctColor(pct) { return pct >= 0.8 ? '#ef4444' : pct >= 0.5 ? '#eab308' : '#22c55e'; },
+            fmtUsd(v) { return v > 0 ? '$' + v.toFixed(4) : 'unlimited'; }
+          }" x-init="loadBudget()">
+            <div class="info-card" style="display:flex;justify-content:space-between;align-items:start">
+              <div>
+                <h4>Budget & Spending Limits</h4>
+                <p>Monitor and control spending across all agents.</p>
+              </div>
+              <button class="btn btn-sm" @click="editMode ? saveBudget() : startEdit()" :disabled="saving" x-text="editMode ? (saving ? 'Saving...' : 'Save') : 'Edit Limits'" style="white-space:nowrap"></button>
+            </div>
+            <div x-show="budgetLoading" class="loading-state"><div class="spinner"></div><span>Loading budget...</span></div>
+            <template x-if="!budgetLoading && budgetData">
+              <div>
+                <!-- Global budget meters -->
+                <div class="stats-row" style="margin-bottom:16px">
+                  <div class="stat-card" style="flex:1">
+                    <div class="stat-label">Hourly</div>
+                    <div class="stat-value" style="font-size:18px" x-text="'$' + (budgetData.hourly_spend || 0).toFixed(4)"></div>
+                    <div class="text-xs text-dim" x-text="'of ' + fmtUsd(budgetData.hourly_limit)"></div>
+                    <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden" x-show="budgetData.hourly_limit > 0">
+                      <div style="height:100%;border-radius:2px;transition:width 0.3s" :style="{width: Math.min(budgetData.hourly_pct*100,100)+'%', background: pctColor(budgetData.hourly_pct)}"></div>
+                    </div>
+                  </div>
+                  <div class="stat-card" style="flex:1">
+                    <div class="stat-label">Daily</div>
+                    <div class="stat-value" style="font-size:18px" x-text="'$' + (budgetData.daily_spend || 0).toFixed(4)"></div>
+                    <div class="text-xs text-dim" x-text="'of ' + fmtUsd(budgetData.daily_limit)"></div>
+                    <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden" x-show="budgetData.daily_limit > 0">
+                      <div style="height:100%;border-radius:2px;transition:width 0.3s" :style="{width: Math.min(budgetData.daily_pct*100,100)+'%', background: pctColor(budgetData.daily_pct)}"></div>
+                    </div>
+                  </div>
+                  <div class="stat-card" style="flex:1">
+                    <div class="stat-label">Monthly</div>
+                    <div class="stat-value" style="font-size:18px" x-text="'$' + (budgetData.monthly_spend || 0).toFixed(4)"></div>
+                    <div class="text-xs text-dim" x-text="'of ' + fmtUsd(budgetData.monthly_limit)"></div>
+                    <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden" x-show="budgetData.monthly_limit > 0">
+                      <div style="height:100%;border-radius:2px;transition:width 0.3s" :style="{width: Math.min(budgetData.monthly_pct*100,100)+'%', background: pctColor(budgetData.monthly_pct)}"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-xs text-dim mb-1" x-show="budgetData.alert_threshold > 0 && !editMode">
+                  Alert threshold: <span x-text="(budgetData.alert_threshold * 100).toFixed(0) + '%'"></span> of any limit
+                </div>
+                <div class="text-xs text-dim mb-3" x-show="!editMode">
+                  Hourly token limit (per agent): <span x-text="fmtTokens(budgetData.default_max_llm_tokens_per_hour || 0)"></span>
+                </div>
+
+                <!-- Edit limits form -->
+                <div x-show="editMode" class="card" style="margin:12px 0;padding:12px;border:1px solid var(--accent);border-radius:6px">
+                  <div class="stats-row" style="margin-bottom:8px;gap:8px">
+                    <div style="flex:1">
+                      <label class="text-xs text-dim">Hourly Limit ($)</label>
+                      <input type="number" step="0.1" min="0" x-model="editHourly" class="input" style="width:100%;margin-top:2px" placeholder="0 = unlimited">
+                    </div>
+                    <div style="flex:1">
+                      <label class="text-xs text-dim">Daily Limit ($)</label>
+                      <input type="number" step="1" min="0" x-model="editDaily" class="input" style="width:100%;margin-top:2px" placeholder="0 = unlimited">
+                    </div>
+                    <div style="flex:1">
+                      <label class="text-xs text-dim">Monthly Limit ($)</label>
+                      <input type="number" step="1" min="0" x-model="editMonthly" class="input" style="width:100%;margin-top:2px" placeholder="0 = unlimited">
+                    </div>
+                    <div style="flex:0.6">
+                      <label class="text-xs text-dim">Alert (%)</label>
+                      <input type="number" step="5" min="0" max="100" x-model="editAlert" class="input" style="width:100%;margin-top:2px" placeholder="80">
+                    </div>
+                  </div>
+                  <div style="margin-bottom:8px">
+                    <label class="text-xs text-dim">Hourly Token Limit (per agent, 0 = use per-agent values)</label>
+                    <input type="number" step="100000" min="0" x-model="editTokenLimit" class="input" style="width:260px;margin-top:2px" placeholder="0 = per-agent default">
+                  </div>
+                  <div class="text-xs text-dim">Set to 0 for unlimited/per-agent default. Changes apply immediately (in-memory, not persisted to config.toml).</div>
+                  <button class="btn btn-sm mt-2" @click="editMode = false" style="margin-right:8px">Cancel</button>
+                </div>
+
+                <!-- Per-agent cost ranking -->
+                <h4 style="margin-top:16px;margin-bottom:8px">Top Spenders (Today)</h4>
+                <div class="table-wrap" x-show="agentRanking.length">
+                  <table>
+                    <thead><tr><th>Agent</th><th>Today</th><th>Hourly Limit</th><th>Daily Limit</th><th>Monthly Limit</th><th>Token Limit/hr</th></tr></thead>
+                    <tbody>
+                      <template x-for="a in agentRanking" :key="a.agent_id">
+                        <tr>
+                          <td class="font-bold" x-text="a.name"></td>
+                          <td x-text="'$' + (a.daily_cost_usd || 0).toFixed(4)"></td>
+                          <td class="text-dim" x-text="fmtUsd(a.hourly_limit)"></td>
+                          <td class="text-dim" x-text="fmtUsd(a.daily_limit)"></td>
+                          <td class="text-dim" x-text="fmtUsd(a.monthly_limit)"></td>
+                          <td class="text-dim" x-text="fmtTokens(a.max_llm_tokens_per_hour || 0)"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="text-xs text-dim" x-show="!agentRanking.length">No spending recorded today.</div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Migration tab -->
+          <div x-show="tab === 'migration'">
+            <div class="card mb-4" style="border-left:3px solid var(--accent)" x-show="migStep === 'intro'">
+              <div class="font-bold" style="font-size:14px;margin-bottom:6px">Migrate from OpenClaw</div>
+              <div class="text-sm text-dim" style="line-height:1.7">
+                Seamlessly transfer your agents, memory, workspace files, and channel configurations from OpenClaw to OpenFang.
+              </div>
+              <ul class="text-sm text-dim" style="margin:8px 0 0 16px;line-height:1.8">
+                <li>Converts agent.yaml to agent.toml with proper capabilities</li>
+                <li>Maps tools (read_file &rarr; file_read, execute_command &rarr; shell_exec, etc.)</li>
+                <li>Merges channel configs into config.toml</li>
+                <li>Copies workspace files and memory data</li>
+              </ul>
+              <div class="flex gap-2 mt-4">
+                <button class="btn btn-primary" @click="autoDetect()" :disabled="detecting">
+                  <span x-show="!detecting">Auto-Detect OpenClaw</span>
+                  <span x-show="detecting">Scanning...</span>
+                </button>
+                <button class="btn btn-ghost" @click="migStep = 'manual'">Enter Path Manually</button>
+              </div>
+            </div>
+
+            <div class="card mb-4" x-show="migStep === 'manual'" style="border-left:3px solid var(--accent)">
+              <div class="font-bold" style="font-size:14px;margin-bottom:8px">Specify OpenClaw Path</div>
+              <div class="form-group">
+                <label>OpenClaw Home Directory</label>
+                <input class="form-input" type="text" x-model="sourcePath" placeholder="~/.openclaw" style="font-family:monospace;font-size:12px">
+              </div>
+              <div class="form-group mt-2">
+                <label>OpenFang Target Directory</label>
+                <input class="form-input" type="text" x-model="targetPath" placeholder="~/.openfang (default)" style="font-family:monospace;font-size:12px">
+              </div>
+              <div class="flex gap-2 mt-4">
+                <button class="btn btn-primary" @click="scanPath()" :disabled="!sourcePath || scanning">
+                  <span x-show="!scanning">Scan Directory</span>
+                  <span x-show="scanning">Scanning...</span>
+                </button>
+                <button class="btn btn-ghost" @click="migStep = 'intro'">Back</button>
+              </div>
+            </div>
+
+            <template x-if="migStep === 'preview' && scanResult">
+              <div>
+                <div class="card mb-4" style="border-left:3px solid var(--success, #22c55e)">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="font-bold" style="font-size:14px">OpenClaw Workspace Found</div>
+                    <span class="badge badge-connected">Ready to Migrate</span>
+                  </div>
+                  <div class="text-sm text-dim" style="font-family:monospace" x-text="scanResult.path"></div>
+                </div>
+                <div class="stats-row mb-4">
+                  <div class="stat-card"><div class="stat-value" x-text="scanResult.agents ? scanResult.agents.length : 0"></div><div class="stat-label">Agents</div></div>
+                  <div class="stat-card"><div class="stat-value" x-text="scanResult.channels ? scanResult.channels.length : 0"></div><div class="stat-label">Channels</div></div>
+                  <div class="stat-card"><div class="stat-value" x-text="scanResult.skills ? scanResult.skills.length : 0"></div><div class="stat-label">Skills</div></div>
+                </div>
+                <div class="flex gap-2 mb-4">
+                  <button class="btn btn-primary" @click="runMigration(false)" :disabled="migrating">
+                    <span x-show="!migrating">Migrate Now</span>
+                    <span x-show="migrating">Migrating...</span>
+                  </button>
+                  <button class="btn btn-ghost" @click="runMigration(true)" :disabled="migrating">Dry Run</button>
+                  <button class="btn btn-ghost" @click="migStep = 'intro'; scanResult = null">Start Over</button>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="migStep === 'result' && migResult">
+              <div>
+                <div class="card mb-4" :style="'border-left:3px solid ' + (migResult.status === 'completed' ? 'var(--success, #22c55e)' : 'var(--error)')">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="font-bold" style="font-size:14px" x-text="migResult.dry_run ? 'Dry Run Complete' : 'Migration Complete!'"></div>
+                    <span class="badge" :class="migResult.status === 'completed' ? 'badge-connected' : 'badge-crashed'" x-text="migResult.status === 'completed' ? 'SUCCESS' : 'FAILED'"></span>
+                  </div>
+                  <div class="text-sm text-dim" x-show="migResult.error" style="color:var(--error)" x-text="migResult.error"></div>
+                </div>
+                <div class="flex gap-2">
+                  <button class="btn btn-primary" x-show="migResult.dry_run" @click="runMigration(false)" :disabled="migrating">Run Migration for Real</button>
+                  <button class="btn btn-ghost" @click="migStep = 'intro'; migResult = null; scanResult = null">Start New Migration</button>
+                </div>
+              </div>
+            </template>
+
+            <div class="card" x-show="migStep === 'not_found'" style="border-left:3px solid var(--warning, #f59e0b)">
+              <div class="font-bold mb-2" style="font-size:14px">OpenClaw Not Found</div>
+              <div class="text-sm text-dim">Could not auto-detect an OpenClaw installation.</div>
+              <div class="flex gap-2 mt-4">
+                <button class="btn btn-primary" @click="migStep = 'manual'">Enter Path Manually</button>
+                <button class="btn btn-ghost" @click="migStep = 'intro'">Back</button>
+              </div>
+            </div>
+          </div>
+
+          </div>
+        </div>
+      </div>
+    </template>

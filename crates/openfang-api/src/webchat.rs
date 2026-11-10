@@ -139,7 +139,40 @@ const WEBCHAT_HTML: &str = concat!(
     // The traditional tiles (outer-level marks), 128px data URIs.
     include_str!("../static/brand/tiles-128.css"),
     "</style>\n",
-    include_str!("../static/index_body.html"),
+    // The page body, one file per surface (static/pages/<page>.html) between
+    // the shell above the pages and the docks and overlays below them.
+    include_str!("../static/shell_top.html"),
+    include_str!("../static/pages/overview.html"),
+    include_str!("../static/pages/chat.html"),
+    include_str!("../static/pages/agents.html"),
+    include_str!("../static/pages/approvals.html"),
+    include_str!("../static/pages/workflows.html"),
+    include_str!("../static/pages/scheduler.html"),
+    include_str!("../static/pages/settings.html"),
+    include_str!("../static/pages/channels.html"),
+    include_str!("../static/pages/advanced.html"),
+    include_str!("../static/pages/integrations.html"),
+    include_str!("../static/pages/skills.html"),
+    include_str!("../static/pages/hands.html"),
+    include_str!("../static/pages/configuration.html"),
+    include_str!("../static/pages/analytics.html"),
+    include_str!("../static/pages/leads.html"),
+    include_str!("../static/pages/contacts.html"),
+    include_str!("../static/pages/setup.html"),
+    include_str!("../static/pages/sessions.html"),
+    include_str!("../static/pages/logs.html"),
+    include_str!("../static/pages/library.html"),
+    include_str!("../static/pages/boards.html"),
+    include_str!("../static/pages/canvas.html"),
+    include_str!("../static/pages/websites.html"),
+    include_str!("../static/pages/forms.html"),
+    include_str!("../static/pages/sms.html"),
+    include_str!("../static/pages/team.html"),
+    include_str!("../static/pages/email.html"),
+    include_str!("../static/pages/comms.html"),
+    include_str!("../static/pages/wizard.html"),
+    include_str!("../static/pages/runtime.html"),
+    include_str!("../static/shell_bottom.html"),
     // Vendor libs: marked + highlight first (used by app.js), then Chart.js
     "<script nonce=\"__NONCE__\">\n",
     include_str!("../static/vendor/marked.min.js"),
@@ -220,3 +253,39 @@ const WEBCHAT_HTML: &str = concat!(
     "\n</script>\n",
     "</body></html>"
 );
+
+#[cfg(test)]
+mod page_assembly_tests {
+    use super::WEBCHAT_HTML;
+
+    /// Every file in static/pages is one surface, and each must be wired
+    /// into the dashboard exactly once (a page file that is not listed in
+    /// WEBCHAT_HTML silently disappears from the app).
+    #[test]
+    fn every_page_file_is_assembled_once() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("static/pages");
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir).expect("static/pages exists") {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("html") {
+                continue;
+            }
+            let name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            let marker = format!("<template x-if=\"page === '{name}'\">");
+            assert_eq!(
+                WEBCHAT_HTML.matches(&marker).count(),
+                1,
+                "static/pages/{name}.html must be included once in webchat.rs"
+            );
+            let body = std::fs::read_to_string(&path).unwrap();
+            assert_eq!(
+                body.matches("<template x-if=\"page === '").count(),
+                1,
+                "{name}.html holds exactly one page"
+            );
+            assert!(body.contains(&marker), "{name}.html is the '{name}' page");
+            count += 1;
+        }
+        assert!(count >= 30, "expected the full set of pages, found {count}");
+    }
+}

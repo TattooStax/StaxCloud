@@ -1,0 +1,218 @@
+
+    <!-- Page: Home — the conversation with Stax is the landing.
+         One top element, the mascot (identity); beneath it one raised
+         sheet: status, then the first-open greeting + next action or the
+         morning brief (+ Needs you) and the thread; the Ask Stax composer. The thread runs on
+         chatPage (same WS + HTTP fallback, same sessions); the brief card
+         is the brief/<date> kv record; Needs you is the approvals queue. -->
+    <template x-if="page === 'chat'">
+      <div class="home" x-data="homePage" :class="{ 'home--first': homeFirstOpen && !homeEngaged }">
+        <div class="home-inner" x-data="chatPage" x-init="homePinStax($data)">
+          <!-- The drawer toggle floats in the corner; it is not a header row. -->
+          <div class="home-head">
+            <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+          </div>
+
+          <div class="home-scroll" id="messages" :class="{ 'home-scroll--first': homeFirstOpen && !homeEngaged }">
+            <button class="home-mascot" @click="homeCard = true" aria-haspopup="dialog" aria-label="Stax. Open Stax's card">
+              <span class="home-mascot-art" aria-hidden="true"></span>
+            </button>
+
+            <div class="home-sheet">
+            <span class="home-status" :data-tone="homeStatus.tone"><span class="home-status-dot" aria-hidden="true"></span><span x-text="homeStatus.words"></span></span>
+            <!-- First open (no setup/profile yet): one next action -->
+            <section class="home-hero" x-show="homeFirstOpen && !homeEngaged" aria-label="Welcome">
+              <h1 class="home-greet">What&rsquo;s next, <span x-text="$store.app.ownerName"></span>?</h1>
+              <button class="home-cta" @click="homeStartSetup(messages.length)">Set up my studio</button>
+              <button class="home-quiet-link" x-show="messages.length > 0" @click="homeEngaged = true; $nextTick(() => scrollToBottom())">Show our earlier conversation</button>
+            </section>
+
+            <div class="home-column" x-show="!(homeFirstOpen && !homeEngaged)">
+              <!-- Morning brief: the real brief/<date> record, first card -->
+              <article class="home-brief" x-show="!homeFirstOpen || $store.app.morningBrief" aria-labelledby="home-brief-title">
+                <header class="home-brief-head">
+                  <h2 id="home-brief-title">Morning brief</h2>
+                  <span x-text="homeToday"></span>
+                </header>
+                <p class="home-brief-text" x-show="$store.app.morningBrief" x-text="$store.app.morningBrief && $store.app.morningBrief.text"></p>
+                <p class="home-brief-empty" x-show="!$store.app.morningBrief">Today&rsquo;s brief isn&rsquo;t in yet. It lands here each morning.</p>
+                <button class="home-needs" x-show="$store.app.pendingApprovalCount > 0" @click="navigate('approvals')">
+                  <span class="home-needs-count" x-text="$store.app.pendingApprovalCount"></span>
+                  <span class="home-needs-words" x-text="homeNeedsWords"></span>
+                  <span class="home-needs-go">Review</span>
+                </button>
+                <p class="home-needs home-needs--clear" x-show="$store.app.pendingApprovalCount === 0">Nothing needs you right now</p>
+              </article>
+
+              <!-- The conversation with Stax -->
+              <div class="home-thread" aria-live="polite">
+                <template x-for="(msg, $index) in messages" :key="msg.id">
+                  <div class="home-msg" :class="'home-msg--' + msg.role" :style="{ order: $index * 2 }" x-show="homeShowMsg(msg)">
+                    <template x-if="msg.role === 'agent'">
+                      <div class="home-msg-row">
+                        <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+                        <div class="home-msg-card">
+                          <div class="typing-dots" x-show="msg.thinking" aria-label="Stax is thinking"><span></span><span></span><span></span></div>
+                          <div class="markdown-body home-msg-text" x-show="!msg.thinking && msg.text && msg.text.trim()" x-html="renderMarkdown(msg.text)"></div>
+                          <div class="home-msg-working" x-show="msg.streaming && !msg.thinking && !(msg.text && msg.text.trim())">Working on it</div>
+                          <template x-for="tool in (msg.tools || [])" :key="tool.id">
+                            <div class="home-msg-images" x-show="tool._imageUrls && tool._imageUrls.length">
+                              <template x-for="iurl in (tool._imageUrls || [])" :key="iurl">
+                                <a :href="iurl" target="_blank" rel="noopener"><img :src="iurl" alt="Image from Stax" loading="lazy"></a>
+                              </template>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="msg.role === 'user'">
+                      <div class="home-msg-bubble" :class="{ 'is-pending': msg.pending }">
+                        <span x-text="msg.text"></span>
+                        <template x-if="msg.images && msg.images.length">
+                          <div class="home-msg-images">
+                            <template x-for="img in msg.images" :key="img.file_id">
+                              <img :src="'/api/uploads/' + img.file_id" :alt="img.filename || 'Your image'" loading="lazy">
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    <p class="home-msg-note home-msg-aside" x-show="msg.role === 'user' && homeAside(msg)" x-text="homeAside(msg)"></p>
+                    <template x-if="msg.role === 'system'">
+                      <div class="home-msg-note" :class="{ 'is-failure': msg.interrupted || homeIsFailure(msg.text) }" x-html="homeIsFailure(msg.text) ? escapeHtml(homeSystemText(msg.text)) : renderMarkdown(msg.text)"></div>
+                    </template>
+                  </div>
+                </template>
+
+                <!-- Set up my studio: the first-run setup as turns with Stax.
+                     Same setupPage flow and records (setup/profile, the
+                     matching playbooks, the "Your crew" board). -->
+                <template x-if="homeSetup">
+                  <div class="home-setup" x-data="setupPage" x-init="loadData()" :style="{ order: homeSetupAt * 2 - 1 }">
+                    <div class="home-msg home-msg--user"><div class="home-msg-bubble">Set up my studio</div></div>
+                    <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                      <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+                      <div class="home-msg-card"><p>Hey, I&rsquo;m Stax. Before anything else: what kind of business are we running?</p></div>
+                    </div></div>
+                    <div class="home-replies" x-show="!business && !done" role="group" aria-label="Your business">
+                      <template x-for="b in bizOptions" :key="b.id">
+                        <button class="home-reply" @click="business = b.id; step = Math.max(step, 1); $nextTick(() => scrollToBottom())" x-text="b.label"></button>
+                      </template>
+                    </div>
+                    <div class="home-msg home-msg--user" x-show="business"><div class="home-msg-bubble" x-text="bizLabel(business)"></div></div>
+
+                    <template x-if="step >= 1">
+                      <div>
+                        <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                          <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+                          <div class="home-msg-card"><p>What eats your time? Pick everything that sounds familiar. I&rsquo;ll only bring in help for what you pick.</p></div>
+                        </div></div>
+                        <div class="home-replies" x-show="step < 2" role="group" aria-label="What eats your time">
+                          <template x-for="n in needOptions" :key="n.id">
+                            <button class="home-reply" :class="{ 'is-on': needs.indexOf(n.id) >= 0 }" :aria-pressed="needs.indexOf(n.id) >= 0" @click="toggleNeed(n.id)" x-text="n.label"></button>
+                          </template>
+                          <button class="home-reply home-reply--go" @click="step = 2; $nextTick(() => scrollToBottom())" x-text="needs.length ? 'That\u2019s everything' : 'None of these'"></button>
+                        </div>
+                        <div class="home-msg home-msg--user" x-show="step >= 2"><div class="home-msg-bubble" x-text="needs.length ? needOptions.filter(n => needs.indexOf(n.id) >= 0).map(n => n.label).join(', ') : 'None of these for now'"></div></div>
+                      </div>
+                    </template>
+
+                    <template x-if="step >= 2">
+                      <div>
+                        <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                          <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+                          <div class="home-msg-card"><p>Last one. How do you want to hear from me?</p></div>
+                        </div></div>
+                        <div class="home-replies" x-show="!done" role="group" aria-label="How to hear from Stax">
+                          <button class="home-reply" :class="{ 'is-on': brief === 'morning' }" :aria-pressed="brief === 'morning'" @click="brief = 'morning'">A morning brief</button>
+                          <button class="home-reply" :class="{ 'is-on': brief === 'live' }" :aria-pressed="brief === 'live'" @click="brief = 'live'">As things happen</button>
+                          <button class="home-reply" :class="{ 'is-on': brief === 'both' }" :aria-pressed="brief === 'both'" @click="brief = 'both'">Both</button>
+                          <button class="home-reply home-reply--go" @click="finish().then(() => $store.app.loadSetup()).then(() => setTimeout(() => scrollToBottom(), 60))" :disabled="saving || !business" x-text="saving ? 'Setting up\u2026' : 'Set up my crew'"></button>
+                        </div>
+                        <template x-if="done">
+                          <div class="home-msg home-msg--agent"><div class="home-msg-row">
+                            <span class="home-avatar home-avatar--sm"><svg aria-hidden="true"><use href="#stax-reaper"/></svg></span>
+                            <div class="home-msg-card"><p>Your crew is set. The &ldquo;Your crew&rdquo; board in Boards has the full picture. Want anything different? Just tell me here.</p></div>
+                          </div></div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+            </div>
+          </div>
+
+          <!-- Ask Stax. Attachments ride the turn-scoped uploads route: they
+               go with one message and are not kept with the chat, and the
+               note under the chips says so. addFiles (chatPage) validates
+               type and size; photos preview as thumbnails, files by name. -->
+          <div class="home-compose" @dragover.prevent @drop.prevent="addFiles($event.dataTransfer.files)">
+            <div class="home-attach" x-show="attachments.length" x-cloak>
+              <div class="home-attach-row">
+                <template x-for="(att, aidx) in attachments" :key="aidx">
+                  <span class="home-attach-chip" :class="{ 'is-uploading': att.uploading, 'home-attach-chip--file': !att.preview }">
+                    <img x-show="att.preview" :src="att.preview" :alt="att.file.name">
+                    <span class="home-attach-name" x-show="!att.preview" x-text="att.file.name"></span>
+                    <button @click="removeAttachment(aidx)" :aria-label="'Remove ' + att.file.name">&times;</button>
+                  </span>
+                </template>
+              </div>
+              <p class="home-attach-note">Photos and files go with this message only. They aren&rsquo;t kept in the chat.</p>
+            </div>
+            <div class="home-compose-box" x-data="{ attOpen: false }">
+              <button class="home-attach-btn" @click="attOpen = !attOpen" :aria-expanded="attOpen" aria-label="Attach a photo, video or file" title="Attach">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <div class="attach-menu" x-show="attOpen" x-cloak @click.outside="attOpen = false">
+                <button @click="attOpen = false; $refs.homeCam.click()"><span>Camera</span><span class="attach-menu-sub">Take a photo</span></button>
+                <button @click="attOpen = false; $refs.homePhotos.click()"><span>Photos</span><span class="attach-menu-sub">From your photo library</span></button>
+                <button @click="attOpen = false; $refs.homeVideos.click()"><span>Videos</span><span class="attach-menu-sub">From your video library</span></button>
+                <button @click="attOpen = false; $refs.homeFile.click()"><span>Files</span><span class="attach-menu-sub">Browse files</span></button>
+              </div>
+              <input type="file" x-ref="homeCam" accept="image/*" capture="environment" hidden @change="addFiles($event.target.files); $event.target.value = ''">
+              <input type="file" x-ref="homePhotos" accept="image/*" multiple hidden @change="addFiles($event.target.files); $event.target.value = ''">
+              <input type="file" x-ref="homeVideos" accept="video/*" multiple hidden @change="addFiles($event.target.files); $event.target.value = ''">
+              <input type="file" x-ref="homeFile" accept="image/*,video/*,.txt,.pdf,.md,.json,.csv" multiple hidden @change="addFiles($event.target.files); $event.target.value = ''">
+              <textarea id="msg-input" rows="1" placeholder="Ask Stax" aria-label="Ask Stax" x-model="inputText"
+                        @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229 && !$event.shiftKey){$event.preventDefault(); if (inputText.trim() || attachments.length) { homeEngaged = true; sendMessage(); }}"
+                        @input="$el.style.height='auto';$el.style.height=Math.min($el.scrollHeight,150)+'px'"></textarea>
+              <button class="home-send" x-show="!sending" @click="homeEngaged = true; sendMessage()" :disabled="!(inputText.trim() || attachments.length) || !currentAgent" aria-label="Send to Stax">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+              </button>
+              <button class="home-send home-send--stop" :class="{ 'is-finishing': finishing }" x-show="sending" @click="stopAgent()" :disabled="finishing" :aria-label="finishing ? 'Finishing' : 'Stop Stax'">
+                <svg x-show="!finishing" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+                <span x-show="finishing">Finishing&hellip;</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- The Stax card (opened from the mascot or the drawer's Stax row) -->
+          <div class="home-card-scrim" x-show="homeCard" x-cloak x-transition.opacity @click="homeCard = false"></div>
+          <section class="home-card" x-show="homeCard" x-cloak role="dialog" aria-modal="true" aria-labelledby="home-card-title" @keydown.escape.window="homeCard = false"
+                   x-transition:enter="home-card-enter" x-transition:enter-start="home-card-from" x-transition:enter-end="home-card-to"
+                   x-transition:leave="home-card-leave" x-transition:leave-start="home-card-to" x-transition:leave-end="home-card-from">
+            <div class="home-card-top">
+              <span class="page-mark page-mark--lg stax-tile stax-tile--reaper" aria-hidden="true"></span>
+              <div>
+                <h2 id="home-card-title">Stax</h2>
+                <p>Your lead</p>
+              </div>
+            </div>
+            <p class="home-card-about">Takes every ask, answers from the studio&rsquo;s own records, and hands the rest to the right helper behind the scenes.</p>
+            <dl class="home-card-facts">
+              <div><dt>Right now</dt><dd x-text="homeStatus.words"></dd></div>
+              <div><dt>Needs you</dt><dd x-text="homeNeedsWords"></dd></div>
+              <div><dt>Morning brief</dt><dd x-text="$store.app.morningBrief ? 'In for today' : 'Not in yet today'"></dd></div>
+            </dl>
+            <div class="home-card-actions">
+              <button class="home-card-btn" @click="homeFreshConversation($data); homeCard = false" :disabled="!currentAgent">Start a fresh conversation</button>
+              <button class="home-card-btn home-card-btn--quiet" @click="homeCard = false">Done</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </template>

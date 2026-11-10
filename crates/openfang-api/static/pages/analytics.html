@@ -1,0 +1,190 @@
+
+    <!-- Page: Analytics -->
+    <template x-if="page === 'analytics'">
+      <div x-data="analyticsPage">
+        <div class="page-header"><h2>Reports</h2><button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button></div>
+        <div class="page-body" x-init="loadUsage()">
+          <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading usage data...</span></div>
+          <div x-show="!loading && loadError" class="error-state">
+            <span class="error-icon">!</span>
+            <p x-text="loadError"></p>
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Retry</button>
+          </div>
+          <div x-show="!loading && !loadError">
+          <div class="stats-row">
+            <div class="stat-card"><div class="stat-value" x-text="formatTokens((summary.total_input_tokens || 0) + (summary.total_output_tokens || 0))"></div><div class="stat-label">Total Tokens</div></div>
+            <div class="stat-card"><div class="stat-value" x-text="formatCost(summary.total_cost_usd)"></div><div class="stat-label">Estimated Cost</div></div>
+            <div class="stat-card"><div class="stat-value" x-text="summary.call_count || 0"></div><div class="stat-label">API Calls</div></div>
+            <div class="stat-card"><div class="stat-value" x-text="summary.total_tool_calls || 0"></div><div class="stat-label">Tool Calls</div></div>
+          </div>
+          <div class="tabs mt-4">
+            <div class="tab" :class="{ active: tab === 'summary' }" @click="tab = 'summary'">Summary</div>
+            <div class="tab" :class="{ active: tab === 'by-model' }" @click="tab = 'by-model'">By Model</div>
+            <div class="tab" :class="{ active: tab === 'by-agent' }" @click="tab = 'by-agent'">By Agent</div>
+            <div class="tab" :class="{ active: tab === 'costs' }" @click="tab = 'costs'">Costs</div>
+          </div>
+          <div x-show="tab === 'summary'">
+            <div class="card mt-4">
+              <div class="card-header">Token Breakdown</div>
+              <div class="detail-grid" style="margin-top:8px">
+                <div class="detail-row"><span class="detail-label">Input Tokens</span><span class="detail-value" x-text="formatTokens(summary.total_input_tokens)"></span></div>
+                <div class="detail-row"><span class="detail-label">Output Tokens</span><span class="detail-value" x-text="formatTokens(summary.total_output_tokens)"></span></div>
+                <div class="detail-row"><span class="detail-label">Total Cost</span><span class="detail-value" x-text="formatCost(summary.total_cost_usd)"></span></div>
+                <div class="detail-row"><span class="detail-label">API Calls</span><span class="detail-value" x-text="summary.call_count || 0"></span></div>
+                <div class="detail-row"><span class="detail-label">Tool Calls</span><span class="detail-value" x-text="summary.total_tool_calls || 0"></span></div>
+              </div>
+            </div>
+          </div>
+          <div x-show="tab === 'by-model'">
+            <div class="table-wrap mt-4" x-show="byModel.length">
+              <table>
+                <thead><tr><th>Model</th><th>Calls</th><th>Input Tokens</th><th>Output Tokens</th><th>Cost</th><th style="width:30%">Usage</th></tr></thead>
+                <tbody>
+                  <template x-for="m in byModel" :key="m.model">
+                    <tr>
+                      <td class="font-bold" style="font-size:11px" x-text="m.model"></td>
+                      <td x-text="m.call_count"></td>
+                      <td x-text="formatTokens(m.total_input_tokens)"></td>
+                      <td x-text="formatTokens(m.total_output_tokens)"></td>
+                      <td x-text="formatCost(m.total_cost_usd)"></td>
+                      <td><div style="background:var(--surface2);border-radius:4px;height:16px;overflow:hidden"><div style="height:100%;border-radius:4px;background:var(--accent);transition:width 0.3s" :style="{ width: barWidth(m) }"></div></div></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="empty-state" x-show="!byModel.length"><p>No model usage data yet.</p></div>
+          </div>
+          <div x-show="tab === 'by-agent'">
+            <div class="table-wrap mt-4" x-show="byAgent.length">
+              <table>
+                <thead><tr><th>Agent</th><th>Total Tokens</th><th>Tool Calls</th></tr></thead>
+                <tbody>
+                  <template x-for="a in byAgent" :key="a.agent_id">
+                    <tr>
+                      <td class="font-bold" x-text="a.name"></td>
+                      <td x-text="a.total_tokens ? a.total_tokens.toLocaleString() : '0'"></td>
+                      <td x-text="a.tool_calls || 0"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="empty-state" x-show="!byAgent.length"><p>No agent usage data yet.</p></div>
+          </div>
+
+          <!-- Costs Tab -->
+          <div x-show="tab === 'costs'">
+
+            <!-- Cost Summary Cards -->
+            <div class="stats-row mt-4">
+              <div class="stat-card">
+                <div class="stat-value" x-text="formatCost(summary.total_cost_usd)"></div>
+                <div class="stat-label">Total Spend</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" x-text="formatCost(todayCost)"></div>
+                <div class="stat-label">Today's Spend</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" x-text="formatCost(projectedMonthlyCost())"></div>
+                <div class="stat-label">Projected Monthly</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" x-text="formatCost(avgCostPerMessage())"></div>
+                <div class="stat-label">Avg Cost / Message</div>
+              </div>
+            </div>
+
+            <!-- Charts Row: Donut + Bar side by side -->
+            <div class="cost-charts-row mt-4">
+
+              <!-- Donut Chart: Cost by Provider -->
+              <div class="card cost-chart-panel">
+                <div class="card-header">Cost by Provider</div>
+                <div x-show="costByProvider().length === 0" class="text-sm text-dim" style="padding:20px;text-align:center">No cost data yet.</div>
+                <div x-show="costByProvider().length > 0" class="donut-chart-wrap">
+                  <div class="donut-chart">
+                    <svg viewBox="0 0 160 160" width="160" height="160">
+                      <g x-html="donutSegmentsSvg()"></g>
+                      <!-- Center text -->
+                      <text x="80" y="76" text-anchor="middle" fill="var(--text)" style="font-size:14px;font-weight:700;font-family:var(--font-mono)" x-text="formatCost(summary.total_cost_usd)"></text>
+                      <text x="80" y="92" text-anchor="middle" fill="var(--text-muted)" style="font-size:9px;font-family:var(--font-mono)">TOTAL</text>
+                    </svg>
+                  </div>
+                  <div class="donut-legend">
+                    <template x-for="(seg, idx) in donutSegments()" :key="'legend-' + seg.provider">
+                      <div class="donut-legend-item">
+                        <span class="donut-legend-swatch" :style="'background:' + seg.color"></span>
+                        <span class="donut-legend-label" x-text="seg.provider"></span>
+                        <span class="donut-legend-pct" x-text="seg.percent + '%'"></span>
+                        <span class="donut-legend-cost text-dim" x-text="formatCost(seg.cost)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bar Chart: Daily Cost (last 7 days) -->
+              <div class="card cost-chart-panel">
+                <div class="card-header">Daily Cost (Last 7 Days)</div>
+                <div x-show="barChartData().length === 0" class="text-sm text-dim" style="padding:20px;text-align:center">No daily data yet.</div>
+                <div x-show="barChartData().length > 0" class="bar-chart">
+                  <svg :viewBox="'0 0 ' + (barChartData().length * 50 + 20) + ' 180'" :width="barChartData().length * 50 + 20" height="180">
+                    <!-- Baseline -->
+                    <line x1="10" :x2="barChartData().length * 50 + 10" y1="150" y2="150" stroke="var(--border)" stroke-width="1"/>
+                    <g x-html="barChartSvg()"></g>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cost by Model Table -->
+            <div class="card mt-4">
+              <div class="card-header">Cost by Model</div>
+              <div class="table-wrap" x-show="costByModelSorted().length" style="border:none;margin-top:8px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Model</th>
+                      <th>Provider</th>
+                      <th>Tier</th>
+                      <th>Input Tokens</th>
+                      <th>Output Tokens</th>
+                      <th>Calls</th>
+                      <th>Cost</th>
+                      <th style="width:20%">Cost Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="m in costByModelSorted()" :key="'cost-' + m.model">
+                      <tr>
+                        <td class="font-bold" style="font-size:11px" x-text="m.model"></td>
+                        <td><span class="badge badge-muted" style="font-size:9px" x-text="_extractProvider(m.model)"></span></td>
+                        <td>
+                          <span class="tier-badge"
+                            :class="'tier-' + modelTier(m.model)"
+                            x-text="modelTier(m.model)"></span>
+                        </td>
+                        <td x-text="formatTokens(m.total_input_tokens)"></td>
+                        <td x-text="formatTokens(m.total_output_tokens)"></td>
+                        <td x-text="m.call_count"></td>
+                        <td class="font-bold" x-text="formatCost(m.total_cost_usd)"></td>
+                        <td>
+                          <div style="background:var(--surface2);border-radius:4px;height:16px;overflow:hidden">
+                            <div style="height:100%;border-radius:4px;background:var(--accent);transition:width 0.3s" :style="{ width: costBarWidth(m) }"></div>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div x-show="!costByModelSorted().length" class="text-sm text-dim" style="padding:20px;text-align:center">No model cost data yet.</div>
+            </div>
+
+          </div>
+          </div>
+        </div>
+      </div>
+    </template>

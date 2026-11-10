@@ -1,0 +1,143 @@
+
+    <!-- Page: Sessions -->
+    <template x-if="page === 'sessions'">
+      <div x-data="sessionsPage">
+        <div class="page-header">
+          <h2>History</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" style="width:200px" placeholder="Filter by agent..." x-model="searchFilter" x-show="tab === 'sessions'">
+            <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tab" :class="{ active: tab === 'sessions' }" @click="tab = 'sessions'">Sessions</div>
+          <div class="tab" :class="{ active: tab === 'memory' }" @click="tab = 'memory'">Memory</div>
+        </div>
+        <div class="page-body" x-init="loadSessions()">
+          <!-- Sessions tab -->
+          <div x-show="tab === 'sessions'">
+            <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading sessions...</span></div>
+            <div x-show="!loading && loadError" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="loadError"></p>
+              <button class="btn btn-ghost btn-sm" @click="loadData()">Retry</button>
+            </div>
+            <div x-show="!loading && !loadError">
+            <div class="card mb-4" style="border-left:3px solid var(--accent)">
+              <div class="font-bold" style="font-size:13px;margin-bottom:4px">Conversation Sessions</div>
+              <div class="text-sm text-dim" style="line-height:1.6">
+                Each conversation with an agent creates a session. Sessions store the full message history so you can resume conversations later, or review past interactions.
+              </div>
+            </div>
+            <div class="table-wrap" x-show="filteredSessions.length">
+              <table>
+                <thead><tr><th>Chat</th><th>Agent</th><th>Messages</th><th>Started</th><th>Actions</th></tr></thead>
+                <tbody>
+                  <template x-for="s in filteredSessions" :key="s.session_id">
+                    <tr>
+                      <td class="truncate" style="max-width:220px" x-text="(s.label && s.label.trim()) || 'Earlier conversation'" :title="s.session_id"></td>
+                      <td class="font-bold" x-text="s.agent_name || s.agent_id"></td>
+                      <td x-text="s.message_count"></td>
+                      <td class="text-xs" x-text="$store.app.shortDate(s.created_at)"></td>
+                      <td>
+                        <button class="btn btn-primary btn-sm" @click="openInChat(s)">Chat</button>
+                        <button class="btn btn-danger btn-sm" @click="deleteSession(s.session_id)">Delete</button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="empty-state" x-show="!filteredSessions.length && !searchFilter">
+              <div class="empty-state-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2-10 5 10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+              </div>
+              <h3>No sessions yet</h3>
+              <p>Sessions are created when you chat with agents. Start a conversation to see session history here.</p>
+              <button class="btn btn-primary" @click="location.hash='agents'">Start Chatting</button>
+            </div>
+            <div class="empty-state" x-show="!filteredSessions.length && searchFilter"><p>No sessions match your filter.</p></div>
+            </div>
+          </div>
+
+          <!-- Memory tab -->
+          <div x-show="tab === 'memory'">
+            <div class="flex justify-between items-center mb-4">
+              <div class="info-card" style="flex:1;margin-bottom:0">
+                <h4>Agent Memory</h4>
+                <p>Each agent has its own key-value memory store. Agents use memory to persist preferences, notes, and context between conversations.</p>
+              </div>
+              <select class="form-select" style="width:200px;margin-left:16px" x-model="memAgentId" @change="loadKv()">
+                <option value="">Select agent...</option>
+                <template x-for="a in $store.app.agents" :key="a.id">
+                  <option :value="a.id" x-text="a.name"></option>
+                </template>
+              </select>
+            </div>
+            <div x-show="memLoading" class="loading-state"><div class="spinner"></div><span>Loading memory...</span></div>
+            <div x-show="!memLoading && memLoadError" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="memLoadError"></p>
+              <button class="btn btn-ghost btn-sm" @click="loadKv()">Retry</button>
+            </div>
+            <div x-show="memAgentId && !memLoading && !memLoadError">
+              <div class="flex justify-between items-center mb-4">
+                <span class="text-sm text-dim" x-text="kvPairs.length + ' key(s)'"></span>
+                <button class="btn btn-primary btn-sm" @click="showAdd = true">+ Add Key</button>
+              </div>
+              <div class="table-wrap" x-show="kvPairs.length">
+                <table>
+                  <thead><tr><th>Key</th><th>Value</th><th style="width:140px">Actions</th></tr></thead>
+                  <tbody>
+                    <template x-for="kv in kvPairs" :key="kv.key">
+                      <tr>
+                        <td class="font-bold" style="white-space:nowrap" x-text="kv.key"></td>
+                        <td>
+                          <template x-if="editingKey !== kv.key">
+                            <pre style="font-size:11px;max-width:400px;overflow:auto;white-space:pre-wrap;margin:0;color:var(--text-dim)" x-text="typeof kv.value === 'object' ? JSON.stringify(kv.value, null, 2) : String(kv.value)"></pre>
+                          </template>
+                          <template x-if="editingKey === kv.key">
+                            <div>
+                              <textarea class="form-textarea" x-model="editingValue" style="font-size:11px;min-height:60px;font-family:var(--font-mono)"></textarea>
+                              <div class="flex gap-2 mt-2">
+                                <button class="btn btn-primary btn-sm" @click="saveEdit()">Save</button>
+                                <button class="btn btn-ghost btn-sm" @click="cancelEdit()">Cancel</button>
+                              </div>
+                            </div>
+                          </template>
+                        </td>
+                        <td>
+                          <div class="flex gap-2">
+                            <button class="btn btn-ghost btn-sm" @click="startEdit(kv)" x-show="editingKey !== kv.key">Edit</button>
+                            <button class="btn btn-danger btn-sm" @click="deleteKey(kv.key)" x-show="editingKey !== kv.key">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="empty-state" x-show="!kvPairs.length">
+                <h4>No keys stored</h4>
+                <p class="hint">This agent has no memory entries yet. Agents create memory entries automatically during conversations, or you can add them manually.</p>
+                <button class="btn btn-primary mt-4" @click="showAdd = true">+ Add First Key</button>
+              </div>
+              <template x-if="showAdd">
+                <div class="modal-overlay" @click.self="showAdd = false" @keydown.escape.window="showAdd = false">
+                  <div class="modal">
+                    <div class="modal-header"><h3>Add Key</h3><button class="modal-close" @click="showAdd = false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
+                    <div class="form-group"><label>Key</label><input class="form-input" x-model="newKey" placeholder="my_key"></div>
+                    <div class="form-group"><label>Value (JSON)</label><textarea class="form-textarea" x-model="newValue" placeholder='"hello"'></textarea></div>
+                    <button class="btn btn-primary btn-block" @click="addKey()">Save</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="empty-state" x-show="!memAgentId && !memLoading">
+              <h4>Select an Agent</h4>
+              <p class="hint">Choose an agent from the dropdown above to browse and edit its memory store.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>

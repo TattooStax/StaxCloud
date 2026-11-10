@@ -265,8 +265,11 @@ document.addEventListener('alpine:init', function() {
         var aid = first ? first.id : 'shared';
         var now = new Date();
         var key = 'brief/' + now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv/' + encodeURIComponent(key));
-        var v = d && d.value;
+        // Read by prefix: a day with no brief yet is an empty answer, not
+        // a "not found" error on every screen.
+        var d = await OpenFangAPI.get('/api/memory/agents/' + aid + '/kv?prefix=' + encodeURIComponent(key));
+        var hit = ((d && d.kv_pairs) || []).find(function(pr) { return pr.key === key; });
+        var v = hit ? hit.value : null;
         if (typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = null; } }
         this.morningBrief = (v && v.text) ? v : null;
       } catch(e) { this.morningBrief = null; }

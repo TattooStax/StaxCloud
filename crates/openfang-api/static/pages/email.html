@@ -1,0 +1,104 @@
+
+    <!-- Page: Email (Channels module) -->
+    <template x-if="page === 'email'">
+      <div x-data="emailPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Email</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh mail">Refresh</button>
+            <button class="btn btn-primary btn-sm" style="min-height:44px" @click="startCompose()" aria-label="Write a new email">New email</button>
+          <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body" :class="{ 'email-body': composing }">
+          <p class="text-xs text-dim" style="margin-bottom:12px" x-show="status && !composing">
+            <span x-text="status ? status.address : ''"></span>
+            <span x-show="status && status.last_run"> · checked <span x-text="status ? fmtTs(status.last_run) : ''"></span></span>
+            <span x-show="unreadCount"> · <span x-text="unreadCount"></span> unread</span>
+          </p>
+
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading mail...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load mail</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError && !composing && !selected">
+            <div x-show="mails.length === 0" class="empty-state">
+              <h4>No mail yet</h4>
+              <p class="hint">Mail to support@staxcloud.ai lands here.</p>
+            </div>
+            <div class="stax-brief-list">
+              <template x-for="m in mails" :key="m.key">
+                <button class="stax-brief-row" @click="selectedKey = m.key" :aria-label="'Open email from ' + (m.from_name || m.from) + ': ' + m.subject">
+                  <span class="stax-side-avatar" x-text="(m.from_name || m.from || '?').split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()"></span>
+                  <span style="flex:1;min-width:0;text-align:left">
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" :style="m.unread ? 'font-weight:700;font-size:14px' : 'font-weight:600;font-size:14px'" x-text="m.from_name || m.from"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" :style="m.unread ? 'font-weight:600' : ''" class="text-xs" x-text="m.subject"></span>
+                    <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="text-xs text-dim" x-text="m.snippet"></span>
+                  </span>
+                  <span x-show="m.unread" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent)" role="img" aria-label="Unread"></span>
+                  <span class="text-xs text-dim" x-text="fmtTs(m.ts)"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <div x-show="!loading && !loadError && selected && !composing">
+            <button class="btn btn-ghost btn-sm" @click="selectedKey = ''" style="margin-bottom:10px;min-height:44px">&larr; All mail</button>
+            <div class="card" x-show="selected">
+              <div style="font-weight:700;font-size:16px" x-text="selected ? selected.subject : ''"></div>
+              <div class="conv-meta" style="margin-top:6px">
+                <span class="conv-author" x-text="selected ? (selected.from_name ? selected.from_name + ' <' + selected.from + '>' : selected.from) : ''"></span>
+                <span class="conv-outside">Outside the shop</span>
+                <span class="conv-time" x-text="selected ? fmtTs(selected.ts) : ''"></span>
+                <span class="conv-status"></span>
+              </div>
+              <div class="conv-bubble conv-doc" style="margin-top:8px">
+                <div class="conv-body" style="line-height:1.55" x-text="selected ? selected.text : ''"></div>
+              </div>
+              <button class="btn btn-primary" style="margin-top:14px;min-height:44px" @click="startReply()">Reply</button>
+            </div>
+          </div>
+
+          <div class="email-compose" x-show="!loading && !loadError && composing">
+            <div class="email-compose-head">
+              <button class="btn btn-ghost btn-sm" @click="cancelCompose()" style="min-height:44px">&larr; Back</button>
+            </div>
+            <div class="email-compose-scroll">
+              <div class="card">
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <div>
+                    <label class="text-xs text-dim" for="email-to">To</label>
+                    <input id="email-to" class="input" style="width:100%;margin-top:4px;min-height:44px" type="email" autocomplete="off" placeholder="name@example.com" x-model="to">
+                  </div>
+                  <div>
+                    <label class="text-xs text-dim" for="email-subject">Subject</label>
+                    <input id="email-subject" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" x-model="subject">
+                  </div>
+                  <div>
+                    <label class="text-xs text-dim" for="email-body">Message</label>
+                    <textarea id="email-body" class="form-textarea" style="width:100%;margin-top:4px" rows="8" x-model="body"></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="email-compose-bar">
+              <button class="btn btn-primary" style="min-height:44px" @click="holdSend()" :disabled="holding || !to.trim() || !body.trim()" aria-label="Hold this email for approval">Hold for approval</button>
+              <span class="text-xs text-dim">It waits in Needs you; nothing sends until you approve it there.</span>
+            </div>
+          </div>
+
+          <div x-show="!loading && !loadError && !composing && outbox.length" style="margin-top:16px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px">Outbox</div>
+            <template x-for="o in outbox" :key="o.key">
+              <div class="text-sm" style="display:flex;gap:8px;align-items:baseline">
+                <span class="badge" :class="o.status === 'sent' ? 'badge-success' : (o.status === 'failed' || o.status === 'refused' ? 'badge-dim' : 'badge-warn')" style="font-size:10px" x-text="o.status"></span>
+                <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" x-text="o.subject + ' — ' + o.to"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>

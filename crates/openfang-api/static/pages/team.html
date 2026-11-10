@@ -1,0 +1,99 @@
+
+    <!-- Page: Team (Channels module) -->
+    <template x-if="page === 'team'">
+      <div x-data="teamPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Team</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" style="min-height:44px" @click="loadData()" aria-label="Refresh team channel">Refresh</button>
+            <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body team-body">
+          <div class="team-listwrap" x-show="view === 'list'">
+            <div class="team-people" style="display:flex;gap:14px;flex-wrap:wrap" role="list" aria-label="Team members">
+              <template x-for="p in people" :key="p.name">
+                <span style="display:inline-flex;align-items:center;gap:8px" role="listitem">
+                  <span class="stax-side-avatar" aria-hidden="true">
+                    <svg x-show="p.name === 'Stax'" style="width:20px;height:20px"><use href="#stax-reaper"/></svg>
+                    <span x-show="p.name !== 'Stax'" x-text="initials(p.name)"></span>
+                  </span>
+                  <span><span style="display:block;font-weight:600;font-size:14px" x-text="p.name"></span><span style="display:block" class="text-xs text-dim" x-text="p.role"></span></span>
+                </span>
+              </template>
+            </div>
+            <p class="text-xs text-dim" style="padding:0 24px;margin:0 0 8px">Everyone on the shared login sees every conversation.</p>
+            <div class="team-list">
+              <div x-show="loading" class="text-dim" style="padding:12px">Loading conversations...</div>
+              <div x-show="!loading && loadError" class="error-state">
+                <h3 style="color:var(--error)">Could not load the team channel</h3>
+                <p class="text-xs text-dim" x-text="loadError"></p>
+                <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px;min-height:44px">Retry</button>
+              </div>
+              <div x-show="!loading && !loadError">
+                <template x-for="c in convList()" :key="c.id">
+                  <button class="thread-row" @click="openConv(c.id)" :aria-label="'Open conversation: ' + c.title">
+                    <span class="thread-avatar" x-text="initials(c.title)"></span>
+                    <span class="thread-copy">
+                      <span class="thread-name" x-text="c.title"></span>
+                      <span class="thread-snippet text-dim" x-text="c.snippet"></span>
+                    </span>
+                    <span class="thread-meta">
+                      <span class="thread-small" x-text="c.lastTs ? fmtTs(c.lastTs) : ''"></span>
+                      <span x-show="c.hasNew" class="conv-new">New</span>
+                    </span>
+                  </button>
+                </template>
+                <button class="btn btn-ghost" style="margin-top:12px;min-height:44px" @click="showCreate = !showCreate">New conversation</button>
+                <div x-show="showCreate" class="card" style="margin-top:10px">
+                  <label class="text-xs text-dim" for="team-group-name">Conversation name</label>
+                  <input id="team-group-name" class="input" style="width:100%;margin-top:4px;min-height:44px" type="text" autocomplete="off" placeholder="Name the conversation" x-model="newName">
+                  <div style="margin-top:10px">
+                    <span class="text-xs text-dim">Who is in it</span>
+                    <template x-for="p in people" :key="p.name">
+                      <label x-show="p.name !== viewer" style="display:flex;gap:8px;align-items:center;margin-top:6px;min-height:32px">
+                        <input type="checkbox" :value="p.name" x-model="newMembers">
+                        <span class="text-sm" x-text="p.name"></span>
+                      </label>
+                    </template>
+                  </div>
+                  <p class="text-xs text-dim" style="margin-top:8px">Members are set when you start the conversation.</p>
+                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="createGroup()" :disabled="creating || !newName.trim()">Start conversation</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-wrap" x-show="view === 'conv'">
+            <div class="conv-head">
+              <button class="btn btn-ghost btn-sm" @click="backToList()" style="min-height:44px">&larr; All conversations</button>
+              <div style="font-weight:700;font-size:15px;margin-top:6px" x-text="currentTitle()"></div>
+              <div class="text-xs text-dim" x-text="currentMembersLine()"></div>
+            </div>
+            <div class="conv-scroll" x-ref="convScroll" aria-live="polite">
+              <div x-show="currentMessages().length === 0" class="empty-state">
+                <h4>No messages here yet</h4>
+                <p class="hint">The first note posted here starts the conversation.</p>
+              </div>
+              <template x-for="m in currentMessages()" :key="m.key">
+                <div class="conv-row" :class="isOwn(m) ? 'conv-row-own' : ''">
+                  <div class="conv-meta">
+                    <span class="conv-author" x-text="m.author"></span>
+                    <span class="conv-time" x-text="fmtTs(m.ts)"></span>
+                    <span class="conv-status"></span>
+                  </div>
+                  <div class="conv-bubble" :class="isOwn(m) ? 'conv-bubble-own' : ''">
+                    <div class="conv-body" x-text="m.body"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="conv-compose" x-show="!loading && !loadError">
+              <label class="text-xs text-dim" for="team-compose" x-text="'Message ' + currentTitle()"></label>
+              <textarea id="team-compose" class="form-textarea" style="width:100%;margin-top:4px" rows="3" placeholder="Write a message" x-model="convDraft" @keydown.ctrl.enter="convSubmit()" @keydown.meta.enter="convSubmit()"></textarea>
+              <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="convSubmit()" :disabled="convSending || !convDraft.trim()" aria-label="Post message">Post</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>

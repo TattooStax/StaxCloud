@@ -1,0 +1,270 @@
+
+    <!-- Page: Contacts (R8) -->
+    <template x-if="page === 'contacts'">
+      <div x-data="contactsPage" x-init="loadData()">
+        <div class="page-header">
+          <h2>Contacts</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            <button class="btn btn-ghost btn-sm" @click="exportCsv()">Export CSV</button>
+            <button class="btn btn-primary btn-sm" @click="showNew = !showNew">+ Add contact</button>
+          <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="people-state" role="status">Loading contacts…</div>
+          <div x-show="!loading && loadError" class="people-error">
+            <p class="people-error-msg">Could not load contacts</p>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <div x-show="!loading && !loadError">
+            <div class="rec-split" :class="{ 'is-wide': wide }">
+            <div class="rec-list">
+            <div class="card" x-show="showNew" style="margin-bottom:14px">
+              <div style="font-weight:600;margin-bottom:10px">New contact</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div>
+                  <label class="stax-field-label" for="nc-name">Name</label>
+                  <input id="nc-name" class="form-input" style="width:100%" placeholder="Name" x-model="newName">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-email">Email</label>
+                  <input id="nc-email" class="form-input" style="width:100%" placeholder="Email" type="email" x-model="newEmail">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-phone">Phone</label>
+                  <input id="nc-phone" class="form-input" style="width:100%" placeholder="Phone" type="tel" x-model="newPhone">
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-kind">Kind</label>
+                  <select id="nc-kind" class="form-input" style="width:100%" x-model="newKind">
+                    <option value="Lead">Lead</option>
+                    <option value="Client">Client</option>
+                    <option value="Contact-only">Contact only</option>
+                  </select>
+                </div>
+                <div x-show="newKind === 'Lead'">
+                  <label class="stax-field-label" for="nc-stage">Stage</label>
+                  <select id="nc-stage" class="form-input" style="width:100%" x-model="newStage">
+                    <option value="New">New</option>
+                    <option value="Talking">Talking</option>
+                    <option value="Waiting on an artist">Waiting on an artist</option>
+                    <option value="Booked">Booked</option>
+                    <option value="Gone quiet">Gone quiet</option>
+                    <option value="Not a fit">Not a fit</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="stax-field-label" for="nc-artist">Artist</label>
+                  <select id="nc-artist" class="form-input" style="width:100%" x-model="newArtist">
+                    <option value="">Unassigned</option>
+                    <option value="shawn">Shawn</option>
+                    <option value="leni">Leni</option>
+                  </select>
+                </div>
+              </div>
+              <button class="btn btn-primary" style="margin-top:12px;min-height:44px" @click="saveNewContact()" :disabled="savingNew">Save contact</button>
+            </div>
+
+            <div class="artist-seg" role="group" aria-label="Filter contacts by artist" x-show="!selected || wide">
+              <button :class="{ 'is-on': artistFilter === 'all' }" :aria-pressed="artistFilter === 'all'" @click="artistFilter = 'all'; visibleCount = 60">All · <span x-text="artistCount('all')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'shawn' }" :aria-pressed="artistFilter === 'shawn'" @click="artistFilter = 'shawn'; visibleCount = 60">Shawn · <span x-text="artistCount('shawn')"></span></button>
+              <button :class="{ 'is-on': artistFilter === 'leni' }" :aria-pressed="artistFilter === 'leni'" @click="artistFilter = 'leni'; visibleCount = 60">Leni · <span x-text="artistCount('leni')"></span></button>
+            </div>
+
+            <div class="people-alert" x-show="(!selected || wide) && view !== 'archived' && flagged.length > 0">
+              <p class="people-alert-title"><span x-text="flagged.length"></span> <span x-text="flagged.length === 1 ? 'contact needs' : 'contacts need'"></span> fixing</p>
+              <template x-for="c in flagged.slice(0, 5)" :key="c.key">
+                <button class="people-alert-row" @click="fixPerson(c)"><span x-text="c.name || '(no name)'"></span> — <span x-text="issuesText(c)"></span></button>
+              </template>
+              <p class="text-xs" style="margin:4px 0 0" x-show="flagged.length > 5" x-text="'+' + (flagged.length - 5) + ' more'"></p>
+            </div>
+
+            <div class="list-toolbar" x-show="!selected || wide">
+              <input class="list-search" type="search" placeholder="Search name, email, or phone" aria-label="Search contacts" x-model="query" @input="visibleCount = 60">
+            </div>
+            <div x-show="filtered.length === 0 && (!selected || wide)" class="empty-state people-empty">
+              <h4 x-show="contacts.length === 0">No contacts yet</h4>
+              <h4 x-show="contacts.length > 0 && view === 'prep' && !query">Nobody needs prep right now</h4>
+              <h4 x-show="contacts.length > 0 && view === 'archived' && !query">Nobody is archived</h4>
+              <h4 x-show="contacts.length > 0 && view === 'today' && !query">Nobody new today</h4>
+              <h4 x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived' && view !== 'today'))">No matching contacts</h4>
+              <p class="hint" x-show="contacts.length === 0">People who send a form land here automatically. You can also add someone yourself.</p>
+              <p class="hint" x-show="contacts.length > 0 && view === 'prep' && !query">When a design request is waiting on an artist, the person lands here.</p>
+              <p class="hint" x-show="contacts.length > 0 && view === 'today' && !query">People who send a form or are added today show up here.</p>
+              <p class="hint" x-show="contacts.length > 0 && view === 'archived' && !query">People you archive rest here, one tap from the book.</p>
+              <p class="hint" x-show="contacts.length > 0 && (query || (view !== 'prep' && view !== 'archived' && view !== 'today'))">Try a different search or filter.</p>
+            </div>
+
+            <div class="people-list" x-show="!selected || wide">
+              <template x-for="c in visible" :key="c.key">
+                <button class="people-row" :class="{ 'is-current': selectedKey === c.key }" :aria-current="selectedKey === c.key ? 'true' : null" :data-ckey="c.key" @click="selectPerson(c)">
+                  <span class="people-copy">
+                    <span class="people-name"><span class="people-prep-dot" x-show="c._prep" title="Design work waiting"></span><span x-text="c.name || '(no name)'"></span></span>
+                    <span class="people-sub" x-text="c.email || c.phone || 'No contact info'"></span>
+                    <span class="people-sub" x-show="projectLine(c)" x-text="projectLine(c)"></span>
+                  </span>
+                  <span class="people-metas">
+                    <span class="people-meta people-kind" x-show="kindLabel(c)" x-text="kindLabel(c)"></span>
+                    <span class="people-meta" x-show="subsOf(c).length" :aria-label="subsOf(c).length + (subsOf(c).length === 1 ? ' form' : ' forms')" x-text="subsOf(c).length + (subsOf(c).length === 1 ? ' form' : ' forms')"></span>
+                  </span>
+                </button>
+              </template>
+            </div>
+            <button class="btn btn-ghost" style="width:100%;margin-top:10px" x-show="(!selected || wide) && filtered.length > visibleCount" @click="visibleCount += 60">Show more · <span x-text="filtered.length - visibleCount"></span> more</button>
+
+            </div>
+            <div class="rec-detail">
+            <div class="rec-placeholder" x-show="wide && !selected">
+              <span class="stax-tile stax-tile--book" aria-hidden="true"></span>
+              <p>Pick someone to see their record.</p>
+            </div>
+            <div x-show="selected" style="max-width:640px">
+              <button class="btn btn-ghost btn-sm" x-show="!wide" @click="closeDetail()" style="margin-bottom:10px">&larr; All contacts</button>
+              <div class="card" x-show="selected">
+                <div style="display:flex;gap:14px;align-items:center">
+                  <span class="people-avatar" x-text="selected ? initials(selected.name) : ''"></span>
+                  <div style="min-width:0">
+                    <div style="font-weight:700;font-size:18px" x-text="selected ? (selected.name || '(no name)') : ''"></div>
+                    <div class="text-xs text-dim" x-show="selected && (selected.email || selected.phone)" x-text="selected ? [selected.email, selected.phone ? fmtPhone(selected.phone) : ''].filter(Boolean).join(' · ') : ''"></div>
+                    <div class="text-xs text-dim" x-text="selected ? ('First seen ' + fmtDate(selected.first_seen)) : ''"></div>
+                  </div>
+                </div>
+                <div class="text-xs text-dim" style="margin-top:8px" x-show="selected && selected.mergedCount > 1" x-text="selected ? (selected.mergedCount + ' records for this person, shown as one') : ''"></div>
+                <div class="text-sm" style="margin-top:8px" x-show="selected && selected.archived">Archived — out of the everyday book.</div>
+
+                <div class="people-alert people-alert-sm" x-show="selected && selected._issues && selected._issues.length">
+                  <p class="people-alert-title">Needs fixing</p>
+                  <p class="text-sm" style="margin:0 0 6px" x-text="selected ? issuesText(selected) : ''"></p>
+                  <button class="btn btn-ghost btn-sm" @click="startEdit()">Fix it</button>
+                </div>
+
+                <div class="detail-actions">
+                  <button class="btn btn-primary" x-show="selected && selected._thread" @click="openThread(selected)">Message</button>
+                  <button class="btn btn-primary" x-show="selected && !selected._thread && (selected.phone || '').trim()" @click="sayHello(selected)" :disabled="helloHeld" x-text="helloHeld ? 'Held in Needs you' : 'Say hello'"></button>
+                  <a class="btn btn-ghost" x-show="selected && (selected.phone || '').trim()" :href="selected ? callHref(selected) : ''">Call</a>
+                  <button class="btn btn-ghost" @click="startEdit()">Edit</button>
+                  <button class="btn btn-ghost" @click="toggleArchive(selected)" x-text="selected && selected.archived ? 'Unarchive' : 'Archive'"></button>
+                </div>
+
+                <div x-show="editing" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px">
+                  <div style="font-weight:600;margin-bottom:10px">Edit contact</div>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <div>
+                      <label class="stax-field-label" for="ce-name">Name</label>
+                      <input id="ce-name" class="form-input" style="width:100%" x-model="editForm.name">
+                    </div>
+                    <div>
+                      <label class="stax-field-label" for="ce-email">Email</label>
+                      <input id="ce-email" class="form-input" style="width:100%" type="email" x-model="editForm.email">
+                    </div>
+                    <div>
+                      <label class="stax-field-label" for="ce-phone">Phone</label>
+                      <input id="ce-phone" class="form-input" style="width:100%" type="tel" x-model="editForm.phone">
+                    </div>
+                    <div>
+                      <label class="stax-field-label" for="ce-kind">Kind</label>
+                      <select id="ce-kind" class="form-input" style="width:100%" x-model="editForm.kind">
+                        <option value="">Not set</option>
+                        <option value="Lead">Lead</option>
+                        <option value="Client">Client</option>
+                        <option value="Contact-only">Contact only</option>
+                      </select>
+                    </div>
+                    <div x-show="editForm.kind === 'Lead'">
+                      <label class="stax-field-label" for="ce-stage">Stage</label>
+                      <select id="ce-stage" class="form-input" style="width:100%" x-model="editForm.stage">
+                        <option value="">Not set</option>
+                        <option value="New">New</option>
+                        <option value="Talking">Talking</option>
+                        <option value="Waiting on an artist">Waiting on an artist</option>
+                        <option value="Booked">Booked</option>
+                        <option value="Gone quiet">Gone quiet</option>
+                        <option value="Not a fit">Not a fit</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="stax-field-label" for="ce-artist">Artist</label>
+                      <select id="ce-artist" class="form-input" style="width:100%" x-model="editForm.artist">
+                        <option value="">Unassigned</option>
+                        <option value="shawn">Shawn</option>
+                        <option value="leni">Leni</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:12px">
+                    <button class="btn btn-primary" style="min-height:44px" @click="saveEdit()" :disabled="savingEdit">Save</button>
+                    <button class="btn btn-ghost" style="min-height:44px" @click="editing = false">Cancel</button>
+                  </div>
+                </div>
+
+                <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">
+                  <div class="text-sm" x-show="selected && selected.email">Email: <span x-text="selected ? selected.email : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.phone">Phone: <span x-text="selected ? fmtPhone(selected.phone) : ''"></span></div>
+                  <div class="text-sm" x-show="selected && kindLabel(selected)">Kind: <span x-text="selected ? kindLabel(selected) : ''"></span></div>
+                  <div class="text-sm" x-show="selected">Artist: <span x-text="selected ? artistName(selected) : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.source_form">Came in via: <span x-text="selected ? viaLabel(selected.source_form) : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.last_seen">Last seen: <span x-text="selected ? fmtDate(selected.last_seen) : ''"></span></div>
+                  <div class="text-sm" x-show="selected && selected.visits">Visits: <span x-text="selected ? selected.visits : ''"></span></div>
+                </div>
+
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Appointments</div>
+                  <p class="text-sm" style="margin:0 0 4px" x-text="selected ? apptText(selected) : ''"></p>
+                  <a href="https://squareup.com/appointments/book/L7VAHB1TPFGN2/start" target="_blank" rel="noopener" class="text-sm">Booking page</a>
+                </div>
+
+                <div style="margin-top:16px" x-show="selected && selected._projects && selected._projects.length">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Projects · <span x-text="selected ? selected._projects.length : 0"></span></div>
+                  <div style="display:flex;flex-direction:column;gap:5px">
+                    <template x-for="p in (selected ? selected._projects : [])" :key="p.key">
+                      <div class="text-sm"><span x-text="p.title"></span> <span class="text-dim" x-text="p.status ? ('· ' + p.status.replace(/_/g, ' ')) : ''"></span></div>
+                    </template>
+                  </div>
+                </div>
+
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Messages · <span x-text="selected && selected._thread ? selected._thread.count : 0"></span></div>
+                  <div x-show="selected && selected._thread" class="text-sm">On the shop line. <button class="btn btn-ghost btn-sm" @click="openThread(selected)">Open in Texts</button></div>
+                  <div x-show="selected && !selected._thread" class="text-sm text-dim">No texts yet — when they text the shop line, the conversation lands in Texts.</div>
+                </div>
+
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">What they've sent · <span x-text="selected ? subsOf(selected).length : 0"></span></div>
+                  <div x-show="selected && subsOf(selected).length === 0" class="text-sm text-dim">Nothing yet.</div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="s in (selected ? subsOf(selected) : [])" :key="s.key">
+                      <div style="border:1px solid var(--border);border-radius:10px;padding:9px 11px">
+                        <div class="text-xs text-dim" x-text="fmtDate(s.ts) + ' - ' + formTitle(s.form)"></div>
+                        <template x-for="(row, ri) in answerRows(s)" :key="ri">
+                          <div class="text-sm" style="margin-top:3px"><span class="text-dim" x-text="row.label + ': '"></span><span x-text="row.text"></span></div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div style="margin-top:16px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:6px">Notes · <span x-text="selected ? selected.notes.length : 0"></span></div>
+                  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+                    <template x-for="(n, i) in (selected ? selected.notes : [])" :key="i">
+                      <div style="border-left:3px solid var(--accent);padding:2px 0 2px 10px">
+                        <div class="text-sm" style="white-space:pre-wrap" x-text="n.text"></div>
+                        <div class="text-xs text-dim" x-text="fmtDate(n.ts)"></div>
+                      </div>
+                    </template>
+                    <div x-show="selected && selected.notes.length === 0" class="text-sm text-dim">No notes yet.</div>
+                  </div>
+                  <label class="stax-field-label" for="cn-note">Add a note</label>
+                  <textarea id="cn-note" class="form-textarea" style="width:100%" rows="3" placeholder="Healed well, prefers Leni, allergic to latex..." x-model="noteText"></textarea>
+                  <button class="btn btn-primary" style="margin-top:8px;min-height:44px" @click="addNote()" :disabled="savingNote">Save note</button>
+                </div>
+              </div>
+            </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>

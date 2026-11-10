@@ -1,0 +1,65 @@
+
+    <!-- ─── Runtime page ─── -->
+    <template x-if="page === 'runtime'">
+      <div x-data="runtimePage">
+        <div class="page-header"><h2>System status</h2><button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button></div>
+        <div class="page-body" x-init="loadData()">
+          <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading runtime info...</span></div>
+          <div x-show="!loading">
+            <div class="grid grid-cols-4 gap-4 mb-6">
+              <div class="card stat-card">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value" x-text="uptime"></div>
+              </div>
+              <div class="card stat-card">
+                <div class="stat-label">Agents</div>
+                <div class="stat-value" x-text="agentCount"></div>
+              </div>
+              <div class="card stat-card">
+                <div class="stat-label">Version</div>
+                <div class="stat-value" x-text="version"></div>
+              </div>
+              <div class="card stat-card">
+                <div class="stat-label">Default Model</div>
+                <div class="stat-value" style="font-size:13px" x-text="defaultModel"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header">System</div>
+              <table class="table" style="margin-top:8px">
+                <tbody>
+                  <tr><td style="width:180px;font-weight:500">Platform</td><td x-text="platform"></td></tr>
+                  <tr><td style="font-weight:500">Architecture</td><td x-text="arch"></td></tr>
+                  <tr><td style="font-weight:500">API Listen</td><td x-text="apiListen"></td></tr>
+                  <tr><td style="font-weight:500">Home Directory</td><td x-text="homeDir"></td></tr>
+                  <tr><td style="font-weight:500">Log Level</td><td x-text="logLevel"></td></tr>
+                  <tr><td style="font-weight:500">Network</td><td x-text="networkEnabled ? 'Enabled' : 'Disabled'"></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header">Providers</div>
+              <table class="table" style="margin-top:8px">
+                <thead><tr><th>Provider</th><th>Status</th><th>Models</th><th>Latency</th></tr></thead>
+                <tbody>
+                  <template x-for="p in providers" :key="p.id">
+                    <tr>
+                      <td x-text="p.display_name || p.id"></td>
+                      <td><span class="badge" :class="p.reachable ? 'badge-success' : (p.auth_status === 'Configured' ? 'badge-success' : 'badge-dim')" x-text="p.reachable ? 'Online' : (p.auth_status === 'Configured' ? 'Ready' : 'Not configured')"></span></td>
+                      <td x-text="p.model_count"></td>
+                      <td x-text="p.latency_ms ? p.latency_ms + 'ms' : '-'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="flex gap-2">
+              <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>

@@ -111,7 +111,7 @@ taskkill //PID <pid> //F
 - `KernelHandle` trait avoids circular deps between runtime and kernel
 - `AppState` in `server.rs` bridges kernel to API routes
 - New routes must be registered in `server.rs` router AND implemented in `routes.rs`
-- Dashboard is Alpine.js SPA in `static/index_body.html` — new tabs need both HTML and JS data/methods
+- Dashboard is an Alpine.js SPA. Each page's markup is its own file, `static/pages/<page>.html`, assembled in `src/webchat.rs` between `static/shell_top.html` and `static/shell_bottom.html` (docks, overlays). New tabs need the page file, a line in `webchat.rs`, and JS data/methods
 - Config fields need: struct field + `#[serde(default)]` + Default impl entry + Serialize/Deserialize derives
 
 ## Common Gotchas

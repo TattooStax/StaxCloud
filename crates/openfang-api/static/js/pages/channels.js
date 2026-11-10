@@ -383,9 +383,12 @@ function connectionsPage() {
           return { key: pr.key, value: parseVal(pr.value) };
         }).filter(function(pr) { return pr.value; });
       }
+      // One record, read by prefix: a record that was never written is
+      // an answer ("not set up"), not a failed read.
       async function one(key) {
-        var d = await OpenFangAPI.get(base + '/' + encodeURIComponent(key));
-        return parseVal(d && d.value);
+        var d = await OpenFangAPI.get(base + '?prefix=' + encodeURIComponent(key));
+        var hit = ((d && d.kv_pairs) || []).find(function(pr) { return pr.key === key; });
+        return hit ? parseVal(hit.value) : null;
       }
       // Each leg reads independently: one leg's failed read marks only
       // that leg "Couldn't check", never the whole page.
@@ -430,8 +433,10 @@ function connectionsPage() {
       // all-legs-failed error line.
 
       // ── Email: the mailbox's own status stamp ──
-      if (!mbR.ok || !mbR.v) {
+      if (!mbR.ok) {
         this.email = { tone: 'warn', status: "Couldn't check", sub: 'The mailbox check did not load — try again in a moment' };
+      } else if (!mbR.v) {
+        this.email = { tone: 'quiet', status: 'Not set up', sub: 'No shop mailbox is connected yet — ask Stax to connect one' };
       } else {
         var mb = mbR.v;
         var addr = mb.address || 'Shop email';

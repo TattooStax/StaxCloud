@@ -1,0 +1,92 @@
+
+    <template x-if="page === 'boards'">
+      <div x-data="boardsPage" x-init="loadData()" class="board-page">
+        <div class="page-header">
+          <h2>Boards</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Refresh</button>
+            <button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button>
+          </div>
+        </div>
+        <div class="page-body">
+          <div x-show="loading" class="text-dim" style="padding:12px">Loading boards...</div>
+          <div x-show="!loading && loadError" class="error-state">
+            <h3 style="color:var(--error)">Could not load boards</h3>
+            <p class="text-xs text-dim" x-text="loadError"></p>
+            <button class="btn btn-primary btn-sm" @click="loadData()" style="margin-top:8px">Retry</button>
+          </div>
+
+          <!-- Board list -->
+          <div x-show="!loading && !loadError && !current">
+            <p class="text-sm text-dim" style="margin:2px 0 16px">Live dashboards your team keeps for you. Want a new one? Ask Stax in your conversation.</p>
+            <div x-show="surfaces.length === 0" class="empty-state">
+              <h4>No boards yet</h4>
+              <p class="hint">Your shop's dashboards land here — try asking Stax for an SEO board.</p>
+            </div>
+            <div class="card-grid">
+              <template x-for="s in surfaces" :key="s.slug">
+                <div class="card" style="cursor:pointer" @click="current = s.slug">
+                  <div class="card-header" style="margin:0;font-size:15px;font-weight:600" x-text="s.title"></div>
+                  <div class="text-sm text-dim" style="margin-top:4px" x-show="s.line" x-text="s.line"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Board detail -->
+          <div x-show="!loading && !loadError && current && currentSurface">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <button class="stax-chip" @click="current = null">&larr; All boards</button>
+              <span style="font-size:17px;font-weight:700" x-text="currentSurface ? currentSurface.title : ''"></span>
+              <span class="text-xs text-dim" style="margin-left:auto" x-text="currentSurface ? currentSurface.fresh : ''"></span>
+            </div>
+            <template x-for="(b, bi) in (currentSurface ? currentSurface.blocks : [])" :key="bi">
+              <div style="margin-bottom:14px">
+                <h3 x-show="b.type === 'heading'" style="font-size:18px;font-weight:700;margin:6px 0" x-text="b.text"></h3>
+                <p x-show="b.type === 'text'" class="text-sm" style="line-height:1.6;margin:4px 0" x-text="b.text"></p>
+                <div x-show="b.type === 'stats'" class="board-stats">
+                  <template x-for="(it, ii) in stats(b, true)" :key="ii">
+                    <div class="card">
+                      <div style="font-size:20px;font-weight:700" x-text="it.value"></div>
+                      <div class="text-xs text-dim" style="margin-top:2px" x-text="it.label"></div>
+                    </div>
+                  </template>
+                </div>
+                <template x-for="(it, ii) in (b.type === 'stats' ? stats(b, false) : [])" :key="'t' + ii">
+                  <p class="text-sm" style="margin:8px 0 0" x-text="it.label + ': ' + it.value"></p>
+                </template>
+                <div x-show="b.type === 'list'" class="card">
+                  <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="(it, ii) in (b.items || [])" :key="ii">
+                      <div style="display:flex;gap:8px;align-items:baseline">
+                        <div style="flex:1;min-width:0">
+                          <div class="text-sm" style="font-weight:600" x-text="it.title"></div>
+                          <div x-show="it.sub" class="text-xs text-dim" x-text="it.sub"></div>
+                        </div>
+                        <span x-show="badge(it.badge)" class="badge badge-dim" style="font-size:10px" x-text="badge(it.badge)"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div x-show="!(b.items || []).length" class="text-sm text-dim">Nothing on this list yet — your team adds to it as work comes in.</div>
+                </div>
+                <div x-show="b.type === 'kvlist'" class="card">
+                  <div x-show="b.title" class="text-sm font-bold" style="color:var(--text-dim);letter-spacing:0.5px;font-size:11px;text-transform:uppercase;margin-bottom:8px" x-text="b.title"></div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <template x-for="row in (b.type === 'kvlist' ? kvView(b).rows : [])" :key="row.key">
+                      <div>
+                        <div class="text-sm" style="font-weight:600" x-text="row.title"></div>
+                        <div x-show="row.sub" class="text-xs text-dim" x-text="row.sub"></div>
+                      </div>
+                    </template>
+                    <div x-show="b.type === 'kvlist' && kvView(b).count" class="text-sm text-dim" x-text="b.type === 'kvlist' ? kvView(b).count : ''"></div>
+                  </div>
+                  <div x-show="b.type === 'kvlist' && !kvView(b).rows.length && !kvView(b).count" class="text-sm text-dim" x-text="b.type === 'kvlist' ? kvView(b).empty : ''"></div>
+                </div>
+              </div>
+            </template>
+            <p class="text-xs text-dim" style="margin-top:6px">Want a change? Ask Stax.</p>
+          </div>
+        </div>
+      </div>
+    </template>

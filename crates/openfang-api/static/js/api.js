@@ -191,7 +191,9 @@ var OpenFangAPI = (function() {
           } catch(e) {
             msg = r.statusText;
           }
-          throw new Error(friendlyError(r.status, msg));
+          var err = new Error(friendlyError(r.status, msg));
+          err.status = r.status;
+          throw err;
         });
       }
       var ct = r.headers.get('content-type') || '';

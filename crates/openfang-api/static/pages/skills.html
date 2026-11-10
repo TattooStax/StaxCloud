@@ -1,0 +1,409 @@
+
+    <!-- Page: Skills -->
+    <template x-if="page === 'skills'">
+      <div x-data="skillsPage">
+        <div class="page-header"><h2>Capabilities</h2><button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button></div>
+        <div class="page-body" x-init="loadSkills()">
+          <div class="info-card">
+            <h4>Skills &amp; Ecosystem</h4>
+            <p>Skills extend your agents with new capabilities. OpenFang supports the <strong>OpenClaw/ClawHub</strong> ecosystem (3,000+ community skills) plus local skills.</p>
+            <ul>
+              <li><strong>Prompt-only</strong> &mdash; inject context and instructions into the agent's system prompt (most ClawHub skills)</li>
+              <li><strong>Python / Node.js</strong> &mdash; executable tools that agents can call during conversations</li>
+              <li><strong>MCP Servers</strong> &mdash; external tools via Model Context Protocol (GitHub, filesystem, databases, etc.)</li>
+            </ul>
+          </div>
+          <div x-show="loading" class="loading-state"><div class="spinner"></div><span>Loading skills...</span></div>
+          <div x-show="!loading && loadError" class="error-state">
+            <span class="error-icon">!</span>
+            <p x-text="loadError"></p>
+            <button class="btn btn-ghost btn-sm" @click="loadData()">Retry</button>
+          </div>
+          <div x-show="!loading && !loadError">
+
+          <!-- Main tabs -->
+          <div class="tabs" role="tablist">
+            <div class="tab" role="tab" :class="{ active: tab === 'installed' }" @click="tab = 'installed'">
+              Installed <span class="badge badge-dim" x-show="skills.length" x-text="skills.length" style="margin-left:4px"></span>
+            </div>
+            <div class="tab" :class="{ active: tab === 'clawhub' }" @click="tab = 'clawhub'; if (!clawhubBrowseResults.length && !clawhubSearch) browseClawHub('trending')">ClawHub</div>
+            <div class="tab" :class="{ active: tab === 'mcp' }" @click="tab = 'mcp'; loadMcpServers()">MCP Servers</div>
+            <div class="tab" :class="{ active: tab === 'create' }" @click="tab = 'create'">Quick Start</div>
+          </div>
+
+          <!-- TAB: Installed Skills -->
+          <div x-show="tab === 'installed'">
+            <div class="card-grid" x-show="skills.length">
+              <template x-for="skill in skills" :key="skill.name">
+                <div class="card">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center gap-2">
+                      <div class="card-header" style="margin:0" x-text="skill.name"></div>
+                      <span class="runtime-badge" :class="runtimeBadge(skill.runtime).cls" x-text="runtimeBadge(skill.runtime).text"></span>
+                      <span class="badge" :class="sourceBadge(skill.source).cls" x-text="sourceBadge(skill.source).text" style="font-size:0.65rem"></span>
+                    </div>
+                    <div class="toggle" :class="{ active: skill.enabled }" @click="skill.enabled = !skill.enabled"></div>
+                  </div>
+                  <div class="card-meta" x-text="skill.description"></div>
+                  <div class="flex justify-between items-center mt-2">
+                    <div class="flex gap-2 items-center">
+                      <span class="text-xs text-dim" x-text="skill.tools_count + ' tool(s)'"></span>
+                      <span class="text-xs text-dim" x-show="skill.version" x-text="'v' + skill.version"></span>
+                      <span class="text-xs text-dim" x-show="skill.has_prompt_context">(prompt context)</span>
+                      <span class="text-xs text-dim" x-show="skill.config_declared_count > 0" x-text="skill.config_declared_count + ' config var(s)'"></span>
+                    </div>
+                    <div class="flex gap-2">
+                      <button class="btn btn-ghost btn-sm" x-show="skill.config_declared_count > 0" @click="openSkillConfig(skill)" title="Configure skill variables">&#9881; Configure</button>
+                      <button class="btn btn-danger btn-sm" @click="uninstallSkill(skill.name)">Uninstall</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="empty-state" x-show="!skills.length">
+              <div class="empty-state-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+              </div>
+              <h3>No skills installed</h3>
+              <p>Skills add new capabilities to your agents. Browse ClawHub for 3,000+ community skills or create your own.</p>
+              <div class="flex gap-2">
+                <button class="btn btn-primary" @click="tab = 'clawhub'; if (!clawhubBrowseResults.length) browseClawHub('trending')">Browse ClawHub</button>
+                <button class="btn btn-ghost" @click="tab = 'create'">Quick Start</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: ClawHub (OpenClaw Ecosystem) -->
+          <div x-show="tab === 'clawhub'">
+            <!-- Search bar with live search and clear button -->
+            <div class="search-input mb-4" style="position:relative">
+              <span style="color:var(--text-muted)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+              <input placeholder="Search ClawHub skills... (type to search)" x-model="clawhubSearch" @input="onSearchInput()" @keydown.enter="if(!$event.isComposing && $event.keyCode !== 229) searchClawHub()" @keydown.escape="clearSearch()" x-ref="clawhubSearchInput">
+            <button x-show="clawhubSearch" @click="clearSearch()" class="search-clear-btn" title="Clear search (Esc)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            </div>
+
+            <!-- Sort pills (always visible when not searching) -->
+            <div class="filter-pills mb-4" x-show="!clawhubSearch">
+              <span class="filter-pill" :class="{ active: clawhubSort === 'trending' }" @click="browseClawHub('trending')">Trending</span>
+              <span class="filter-pill" :class="{ active: clawhubSort === 'downloads' }" @click="browseClawHub('downloads')">Most Downloaded</span>
+              <span class="filter-pill" :class="{ active: clawhubSort === 'stars' }" @click="browseClawHub('stars')">Most Starred</span>
+              <span class="filter-pill" :class="{ active: clawhubSort === 'updated' }" @click="browseClawHub('updated')">Recently Updated</span>
+            </div>
+
+            <!-- Category quick-search chips (always visible when not searching) -->
+            <div class="mb-4" x-show="!clawhubSearch">
+              <div class="text-xs text-dim mb-2" style="letter-spacing:0.5px">CATEGORIES</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="cat in categories" :key="cat.id">
+                  <span class="filter-pill" style="font-size:0.7rem;padding:2px 8px" @click="searchCategory(cat)" x-text="cat.name"></span>
+                </template>
+              </div>
+            </div>
+
+            <!-- Loading spinner -->
+            <div x-show="clawhubLoading" class="loading-state"><div class="spinner"></div><span x-text="clawhubSearch ? 'Searching ClawHub...' : 'Loading skills...'"></span></div>
+
+            <!-- Error -->
+            <div x-show="clawhubError && !clawhubLoading" class="error-state">
+              <span class="error-icon">!</span>
+              <p x-text="clawhubError"></p>
+              <p class="hint mt-2">ClawHub may be temporarily unavailable. The OpenClaw ecosystem is hosted at clawhub.ai.</p>
+              <button class="btn btn-ghost btn-sm mt-2" @click="clawhubSearch ? searchClawHub() : browseClawHub(clawhubSort)">Retry</button>
+            </div>
+
+            <!-- Search results -->
+            <div x-show="clawhubSearch && clawhubResults.length && !clawhubLoading">
+              <div class="flex justify-between items-center mb-3">
+                <div class="text-sm text-dim" x-text="clawhubResults.length + ' result(s) for &quot;' + clawhubSearch + '&quot;'"></div>
+                <button class="btn btn-ghost btn-sm" @click="clearSearch()">Clear search</button>
+              </div>
+              <div class="card-grid">
+                <template x-for="skill in clawhubResults" :key="skill.slug">
+                  <div class="card card-glow" @click="showSkillDetail(skill.slug)" style="cursor:pointer">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="card-header" style="margin:0" x-text="skill.name || skill.slug"></div>
+                      <span class="badge badge-info" style="font-size:0.6rem">ClawHub</span>
+                    </div>
+                    <div class="card-meta" x-text="skill.description" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"></div>
+                    <div class="flex justify-between items-center mt-3">
+                      <div class="flex gap-3 items-center">
+                        <span class="text-xs text-dim" x-show="skill.version" x-text="'v' + skill.version"></span>
+                      </div>
+                      <button class="btn btn-primary btn-sm" @click.stop="installFromClawHub(skill.slug)" :disabled="installingSlug === skill.slug || skill.installed || isSkillInstalled(skill.slug)" x-text="skill.installed || isSkillInstalled(skill.slug) ? 'Installed' : installingSlug === skill.slug ? 'Installing...' : 'Install'"></button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Browse results (when no search query) -->
+            <div x-show="!clawhubSearch && clawhubBrowseResults.length && !clawhubLoading">
+              <div class="card-grid">
+                <template x-for="skill in clawhubBrowseResults" :key="skill.slug">
+                  <div class="card card-glow" @click="showSkillDetail(skill.slug)" style="cursor:pointer">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="card-header" style="margin:0" x-text="skill.name || skill.slug"></div>
+                      <span class="badge badge-info" style="font-size:0.6rem">ClawHub</span>
+                    </div>
+                    <div class="card-meta" x-text="skill.description" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"></div>
+                    <div class="flex justify-between items-center mt-3">
+                      <div class="flex gap-3 items-center">
+                        <span class="text-xs text-dim" x-show="skill.downloads" x-text="formatDownloads(skill.downloads) + ' downloads'"></span>
+                        <span class="text-xs text-dim" x-show="skill.stars" x-text="skill.stars + ' stars'"></span>
+                        <span class="text-xs text-dim" x-show="skill.version" x-text="'v' + skill.version"></span>
+                      </div>
+                      <button class="btn btn-primary btn-sm" @click.stop="installFromClawHub(skill.slug)" :disabled="installingSlug === skill.slug || skill.installed || isSkillInstalled(skill.slug)" x-text="skill.installed || isSkillInstalled(skill.slug) ? 'Installed' : installingSlug === skill.slug ? 'Installing...' : 'Install'"></button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+              <!-- Load more button -->
+              <div class="text-center mt-4" x-show="clawhubNextCursor">
+                <button class="btn btn-ghost" @click="loadMoreClawHub()" :disabled="clawhubLoading">Load More</button>
+              </div>
+            </div>
+
+            <!-- Empty search results -->
+            <div class="empty-state" x-show="clawhubSearch && !clawhubResults.length && !clawhubLoading && !clawhubError">
+              <p>No skills found for "<span x-text="clawhubSearch"></span>"</p>
+              <p class="hint mt-1">Try a different search term or browse by category.</p>
+              <button class="btn btn-ghost btn-sm mt-2" @click="clearSearch()">Back to browse</button>
+            </div>
+          </div>
+
+          <!-- TAB: MCP Servers -->
+          <div x-show="tab === 'mcp'">
+            <div class="info-card">
+              <h4>MCP Servers (Model Context Protocol)</h4>
+              <p>MCP servers provide external tools to your agents &mdash; GitHub, filesystem, databases, APIs, and more. OpenFang is compatible with all OpenClaw MCP servers.</p>
+              <p class="mt-2" style="font-size:0.8rem;color:var(--text-dim)">Configure MCP servers in your <code>config.toml</code> under <code>[mcp_servers]</code>.</p>
+            </div>
+            <div x-show="mcpLoading" class="loading-state"><div class="spinner"></div><span>Loading MCP servers...</span></div>
+            <div x-show="!mcpLoading">
+              <!-- Connected servers -->
+              <div x-show="mcpServers.total_connected > 0" class="mb-4">
+                <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px">CONNECTED SERVERS</div>
+                <div class="card-grid">
+                  <template x-for="srv in mcpServers.connected" :key="srv.name">
+                    <div class="card">
+                      <div class="flex justify-between items-center mb-2">
+                        <div class="card-header" style="margin:0" x-text="srv.name"></div>
+                        <span class="badge badge-success">Connected</span>
+                      </div>
+                      <div class="card-meta" x-text="srv.tools_count + ' tool(s) available'"></div>
+                      <div class="mt-2" x-show="srv.tools && srv.tools.length">
+                        <div class="text-xs text-dim mb-1">Tools:</div>
+                        <template x-for="tool in srv.tools.slice(0, 10)" :key="tool.name">
+                          <div class="text-xs" style="padding:2px 0">
+                            <code x-text="tool.name" style="font-size:0.7rem"></code>
+                            <span class="text-dim" x-show="tool.description" x-text="' — ' + tool.description" style="font-size:0.65rem"></span>
+                          </div>
+                        </template>
+                        <div class="text-xs text-dim" x-show="srv.tools.length > 10" x-text="'... and ' + (srv.tools.length - 10) + ' more'"></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <!-- Configured but not connected -->
+              <div x-show="mcpServers.total_configured > 0" class="mb-4">
+                <div class="text-sm font-bold mb-2" style="color:var(--text-dim);letter-spacing:0.5px">CONFIGURED SERVERS</div>
+                <div class="card-grid">
+                  <template x-for="srv in mcpServers.configured" :key="srv.name">
+                    <div class="card card-unconfigured">
+                      <div class="flex justify-between items-center mb-2">
+                        <div class="card-header" style="margin:0" x-text="srv.name"></div>
+                        <span class="badge badge-dim" x-text="srv.transport.type"></span>
+                      </div>
+                      <div class="text-xs" x-show="srv.transport.type === 'stdio'">
+                        <code x-text="srv.transport.command + ' ' + (srv.transport.args || []).join(' ')" style="font-size:0.7rem"></code>
+                      </div>
+                      <div class="text-xs" x-show="srv.transport.type === 'sse'">
+                        <code x-text="srv.transport.url" style="font-size:0.7rem"></code>
+                      </div>
+                      <div class="text-xs text-dim mt-1" x-show="srv.env && srv.env.length" x-text="'Env: ' + srv.env.join(', ')"></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <!-- Empty state -->
+              <div class="empty-state" x-show="mcpServers.total_configured === 0 && mcpServers.total_connected === 0">
+                <h4>No MCP servers configured</h4>
+                <p class="hint">MCP servers extend your agents with external tools. Add servers to your config.toml:</p>
+                <pre style="text-align:left;font-size:0.75rem;margin-top:8px;background:var(--bg-secondary);padding:12px;border-radius:6px;max-width:400px;margin-left:auto;margin-right:auto">[[mcp_servers]]
+name = "filesystem"
+timeout_secs = 30
+
+[mcp_servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
+                <p class="hint mt-2" style="font-size:0.75rem">OpenFang supports all OpenClaw-compatible MCP servers.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Quick Start (Create prompt-only skills) -->
+          <div x-show="tab === 'create'">
+            <div class="info-card">
+              <h4>Quick Start Skills</h4>
+              <p>Create prompt-only skills with one click. These inject context into your agent's system prompt &mdash; no code required. Perfect for adding domain expertise or workflow guidelines.</p>
+            </div>
+            <div class="card-grid">
+              <template x-for="qs in quickStartSkills" :key="qs.name">
+                <div class="card card-glow">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="card-header" style="margin:0" x-text="qs.name"></div>
+                    <span class="runtime-badge runtime-badge-prompt">PROMPT</span>
+                  </div>
+                  <div class="card-meta" x-text="qs.description"></div>
+                  <div class="flex justify-end mt-2">
+                    <button class="btn btn-ghost btn-sm" @click="createDemoSkill(qs)" :disabled="isSkillInstalledByName(qs.name)" x-text="isSkillInstalledByName(qs.name) ? 'Created' : 'Create Skill'"></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Skill Detail Modal -->
+          <template x-if="skillDetail || detailLoading">
+            <div class="modal-overlay" @click.self="closeDetail()" @keydown.escape.window="closeDetail()">
+              <div class="modal" style="max-width:600px">
+                <!-- Loading state -->
+                <div x-show="detailLoading" class="loading-state" style="padding:40px 0"><div class="spinner"></div><span>Loading skill details...</span></div>
+                <!-- Loaded content -->
+                <template x-if="skillDetail">
+                  <div>
+                    <div class="modal-header">
+                      <h3 x-text="skillDetail.name || skillDetail.slug"></h3>
+                      <button class="modal-close" @click="closeDetail()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </div>
+                    <div class="mb-3">
+                      <div class="flex gap-2 items-center flex-wrap">
+                        <span class="badge badge-info">ClawHub</span>
+                        <span class="text-xs text-dim" x-show="skillDetail.version" x-text="'v' + skillDetail.version"></span>
+                        <span class="text-xs" x-show="skillDetail.author_name || skillDetail.author" style="color:var(--text-dim)">
+                          <span x-show="skillDetail.author_image" style="display:inline-block;vertical-align:middle;margin-right:4px"><img :src="skillDetail.author_image" style="width:16px;height:16px;border-radius:50%"></span>
+                          <span x-text="'by ' + (skillDetail.author_name || skillDetail.author)"></span>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="flex gap-4 items-center mb-3" x-show="skillDetail.downloads || skillDetail.stars">
+                      <span class="text-sm" x-show="skillDetail.downloads" x-text="formatDownloads(skillDetail.downloads) + ' downloads'" style="color:var(--text-dim)"></span>
+                      <span class="text-sm" x-show="skillDetail.stars" x-text="skillDetail.stars + ' stars'" style="color:var(--text-dim)"></span>
+                    </div>
+                    <div class="mb-4" x-show="skillDetail.description">
+                      <p x-text="skillDetail.description"></p>
+                    </div>
+                    <div class="mb-4" x-show="skillDetail.tags && typeof skillDetail.tags === 'object'">
+                      <div class="flex flex-wrap gap-1">
+                        <template x-for="key in Object.keys(skillDetail.tags || {})" :key="key">
+                          <span class="category-badge" x-text="key + ': ' + skillDetail.tags[key]"></span>
+                        </template>
+                      </div>
+                    </div>
+                    <div class="mb-4" x-show="installResult && installResult.warnings && installResult.warnings.length">
+                      <div class="form-group"><label>Security Warnings</label></div>
+                      <template x-for="w in (installResult ? installResult.warnings : [])" :key="w.message">
+                        <div class="text-xs" :class="w.severity === 'Critical' ? 'text-danger' : 'text-dim'" x-text="'[' + w.severity + '] ' + w.message" style="padding:2px 0"></div>
+                      </template>
+                    </div>
+                    <div class="flex gap-2">
+                      <button class="btn btn-primary" style="flex:1" @click="installFromClawHub(skillDetail.slug)" :disabled="installingSlug === skillDetail.slug || skillDetail.installed || isSkillInstalled(skillDetail.slug)" x-text="skillDetail.installed || isSkillInstalled(skillDetail.slug) ? 'Already Installed' : installingSlug === skillDetail.slug ? 'Installing...' : 'Install from ClawHub'"></button>
+                      <button class="btn btn-ghost" @click="viewSkillCode(skillDetail.slug)" :disabled="skillCodeLoading" x-text="skillCodeLoading ? 'Loading...' : showSkillCode ? 'Hide Code' : 'View Code'"></button>
+                    </div>
+                    <div x-show="showSkillCode && skillCode" x-transition class="mt-3" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-inset)">
+                      <div class="flex justify-between items-center" style="padding:6px 12px;border-bottom:1px solid var(--border)">
+                        <span class="text-xs text-dim" x-text="skillCodeFilename"></span>
+                      </div>
+                      <pre style="margin:0;padding:12px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all" x-text="skillCode"></pre>
+                    </div>
+                    <div class="text-xs text-dim mt-2 text-center">Skills are security-scanned before installation. Prompt injection and malware patterns are blocked.</div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- Skill Config Modal (SKILL.md frontmatter `config:` variables) -->
+          <template x-if="configSkill">
+            <div class="modal-overlay" @click.self="closeSkillConfig()" @keydown.escape.window="closeSkillConfig()">
+              <div class="modal" style="max-width:640px">
+                <div class="modal-header">
+                  <div>
+                    <h3>Configure: <span x-text="configSkill.name"></span></h3>
+                    <div class="text-xs text-dim mt-1" x-text="configSkill.description"></div>
+                  </div>
+                  <button class="modal-close" @click="closeSkillConfig()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                </div>
+
+                <div x-show="configLoading" class="loading-state" style="padding:20px 0">
+                  <div class="spinner"></div><span>Loading configuration&hellip;</span>
+                </div>
+
+                <div x-show="!configLoading && configError" class="error-state">
+                  <span class="error-icon">!</span>
+                  <p x-text="configError"></p>
+                </div>
+
+                <div x-show="!configLoading && !configError">
+                  <div x-show="configDeclaredNames.length === 0" class="empty-state" style="padding:16px 0">
+                    <p class="text-dim">This skill does not declare any runtime config variables.</p>
+                  </div>
+
+                  <template x-for="name in configDeclaredNames" :key="name">
+                    <div class="form-group" style="margin-bottom:16px">
+                      <label style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                        <code x-text="name" style="font-size:0.8rem"></code>
+                        <span x-show="configDeclared[name] && configDeclared[name].required" class="badge badge-danger" style="font-size:0.6rem">required</span>
+                        <span class="badge" :class="sourceBadgeClass(configResolved[name] && configResolved[name].source)" style="font-size:0.6rem">
+                          <template x-if="configResolved[name] && configResolved[name].source === 'user'"><span>user override</span></template>
+                          <template x-if="configResolved[name] && configResolved[name].source === 'env'">
+                            <span>env<template x-if="configDeclared[name] && configDeclared[name].env"><span>:<span x-text="configDeclared[name].env"></span></span></template></span>
+                          </template>
+                          <template x-if="configResolved[name] && configResolved[name].source === 'default'"><span>default</span></template>
+                          <template x-if="!configResolved[name] || configResolved[name].source === 'unresolved'"><span>unresolved &#9888;</span></template>
+                        </span>
+                      </label>
+                      <div class="text-xs text-dim" x-show="configDeclared[name] && configDeclared[name].description" x-text="configDeclared[name] ? configDeclared[name].description : ''" style="margin:2px 0 6px 0"></div>
+                      <div class="flex gap-2 items-center" style="position:relative">
+                        <input
+                          style="flex:1"
+                          :type="(configResolved[name] && configResolved[name].is_secret && !configRevealed[name]) ? 'password' : 'text'"
+                          :placeholder="(configResolved[name] && configResolved[name].source !== 'user' && configResolved[name].value != null) ? ('Currently: ' + configResolved[name].value) : ((configDeclared[name] && configDeclared[name].default) ? ('default: ' + configDeclared[name].default) : 'Enter value')"
+                          x-model="configDraft[name]"
+                          :class="{ 'input-error': configRowInvalid(name) }">
+                        <button type="button" class="btn btn-ghost btn-sm" x-show="configResolved[name] && configResolved[name].is_secret" @click="toggleReveal(name)" :title="configRevealed[name] ? 'Hide' : 'Reveal'">
+                          <svg x-show="!configRevealed[name]" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                          <svg x-show="configRevealed[name]" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-10-8-10-8a19.77 19.77 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 10 8 10 8a19.77 19.77 0 0 1-2.16 3.19M1 1l22 22"/></svg>
+                        </button>
+                      </div>
+                      <div class="text-xs" style="margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                        <div class="text-dim" style="font-style:italic" x-show="configResolved[name] && configResolved[name].source === 'user'">Leaving blank and saving keeps existing override. Use Reset to remove it.</div>
+                        <a href="#" class="text-dim" style="font-size:0.7rem" x-show="configResolved[name] && configResolved[name].source === 'user'" @click.prevent="resetSkillConfigVar(name)">Reset to env/default</a>
+                      </div>
+                    </div>
+                  </template>
+
+                  <div class="text-xs text-dim" style="margin-top:12px">
+                    Values are stored in <code>~/.openfang/config.toml</code> under <code>[skills.<span x-text="configSkill.name"></span>]</code>. Secrets are redacted in this view.
+                  </div>
+                  <div class="flex justify-end gap-2" style="margin-top:16px">
+                    <button class="btn btn-ghost" @click="closeSkillConfig()" :disabled="configSaving">Cancel</button>
+                    <button class="btn btn-primary" @click="saveSkillConfig()" :disabled="configSaving || hasInvalidConfig()" x-text="configSaving ? 'Saving...' : 'Save'"></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          </div>
+        </div>
+      </div>
+    </template>

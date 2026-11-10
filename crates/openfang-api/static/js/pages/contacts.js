@@ -134,7 +134,7 @@ function contactsPage() {
     visibleCount: 60,
     selectedKey: '',
     // Records layout: on a wide screen the list stays beside the open record.
-    wide: window.matchMedia('(min-width: 900px)').matches,
+    wide: window.matchMedia('(min-width: 760px)').matches,
     noteText: '',
     savingNote: false,
     showNew: false,
@@ -160,7 +160,7 @@ function contactsPage() {
         self.editing = false;
       };
       window.addEventListener('stax-contacts-view', this._onDockView);
-      this._mq = window.matchMedia('(min-width: 900px)');
+      this._mq = window.matchMedia('(min-width: 760px)');
       this._onMq = function(e) { self.wide = e.matches; };
       this._mq.addEventListener('change', this._onMq);
     },

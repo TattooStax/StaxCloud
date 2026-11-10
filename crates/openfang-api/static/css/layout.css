@@ -698,3 +698,9 @@ button.sys-row:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .cv-msg--you { align-self: flex-end; border: 1px solid var(--border); }
 .cv-msg-who { display: block; font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 2px; }
 .cv-msg-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; line-height: 1.45; }
+
+/* Leads: the name's tap target reaches 44px without moving the row. */
+.lead-open { position: relative; }
+.lead-open::after { content: ''; position: absolute; inset: -12px 0; }
+.sys-seg button { position: relative; }
+.sys-seg button::after { content: ""; position: absolute; inset: -5px 0; }

@@ -1,0 +1,93 @@
+<body x-data="app" :data-theme="theme">
+
+<!-- The one icon sprite. Every app icon resolves here through <use>.
+     Family: the StaxBox Icon System (64-unit grid, 3.4-3.6 ink weight),
+     shown on a 48-unit window (viewBox 8 8 48 48) so marks fill the face.
+     The outer level (dock, drawer section heads, page marks) is the raster
+     tile set (.stax-tile, brand/tiles-128.css); glyphs here are the inner
+     level (drawer rows, module docks): one tone, currentColor. -->
+<svg class="stax-sprite" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- Stax, the grim reaper: stax-avatar.svg (TattooStax/StaxCloud staxos/web/icons @ 58937fab),
+         its markup copied verbatim; fill="none" mirrors the file's root. -->
+    <symbol id="stax-reaper" viewBox="0 0 32 32" fill="none">
+  <g stroke="#15120F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 12C7 6.5 10.2 3 16.3 3c5.7 0 9 3.8 8.7 9.2l3 2.2c.8.6.5 1.8-.5 1.9L21.7 16" fill="#8E2438"/>
+    <path d="M7 12C7 6.6 10.1 3.2 15.9 3c3.5 1.5 5.1 4.5 4.7 9.7" fill="#424447"/>
+    <path d="M11.4 10.2c.3-2.5 1.6-3.8 3.9-3.8 2.4 0 3.8 1.6 4 4.6" fill="#F1E5C6"/>
+    <path d="m10.9 10.1 8.8.8" stroke="#8E2438" stroke-width="3"/>
+    <path d="M16 10.5c-7.3 0-11 4-11 9.4 0 3.9 2.2 6.4 5.2 6.3l.7 3h10.2l.7-3c3 .1 5.2-2.4 5.2-6.3 0-5.4-3.7-9.4-11-9.4Z" fill="#F1E5C6"/>
+    <path d="M11.6 16.8c-2 0-3.1 1.4-2.9 3.6.2 1.9 1.2 2.8 2.9 2.6 1.7-.2 2.4-1.4 2.3-3.3-.1-1.8-.9-2.9-2.3-2.9Zm8.8 0c2 0 3.1 1.4 2.9 3.6-.2 1.9-1.2 2.8-2.9 2.6-1.7-.2-2.4-1.4-2.3-3.3.1-1.8.9-2.9 2.3-2.9Z" fill="#15120F" stroke="none"/>
+    <path d="m16 23.1-1.5 2h3L16 23.1Z" fill="#15120F" stroke="none"/>
+    <path d="M14 27.5v1.7m4-1.7v1.7"/>
+  </g>
+    </symbol>
+    <!-- The old circular-arrow identity mark: shown only in System > Advanced. -->
+    <symbol id="sd-mark" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15.5" fill="none" stroke="currentColor" stroke-width="4"/><path d="M20 27 V13 M12.5 19.5 L20 11 L27.5 19.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+
+    <!-- Inner tier: subtle, one tone -->
+    <symbol id="g-inbox" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="19" width="36" height="26" rx="4"/><path d="M15.5 22.5 L32 35 L48.5 22.5"/></g></symbol>
+    <symbol id="g-team" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="15" width="27" height="20" rx="5"/><path d="M22 35 V43 L31 35"/><path d="M40 22 H45.5 A4.5 4.5 0 0 1 50 26.5 V37 A4.5 4.5 0 0 1 45.5 41.5 H43"/></g></symbol>
+    <symbol id="g-mail" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="18" width="40" height="28" rx="4"/><path d="M14.5 21.5 L32 35.5 L49.5 21.5"/></g></symbol>
+    <symbol id="g-forms" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="18" y="16" width="28" height="34" rx="4"/><rect x="26" y="12" width="12" height="8" rx="2.5" fill="currentColor"/><path d="M24 28 H40 M24 34 H40 M24 40 H34"/></g></symbol>
+    <symbol id="g-library" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 22 C18 18 24 15 32 15 C40 15 46 18 46 22 V43 C46 47 40 50 32 50 C24 50 18 47 18 43 Z"/><path d="M18 22 C18 26 24 29 32 29 C40 29 46 26 46 22"/><path d="M18 33 C18 37 24 40 32 40 C40 40 46 37 46 33"/></g></symbol>
+    <symbol id="g-contacts" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="25" cy="25" r="6" fill="currentColor"/><path d="M14 47 C14 39.5 19 35 25 35 C31 35 36 39.5 36 47"/><circle cx="41.5" cy="27" r="5" fill="currentColor"/><path d="M38 36.5 C43 36.5 47.5 40 48.5 45.5"/></g></symbol>
+    <symbol id="g-canvas" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M24 14 H40 L46.5 30 L32 51 L17.5 30 Z"/><path d="M21.5 23 H42.5"/><path d="M32 51 V38"/><circle cx="32" cy="34" r="2.6" fill="currentColor"/></g></symbol>
+    <symbol id="g-layers" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 13 L51 23.5 L32 34 L13 23.5 Z"/><path d="M13 32 L32 42.5 L51 32"/><path d="M13 40.5 L32 51 L51 40.5"/></g></symbol>
+    <symbol id="g-display" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="15" y="16" width="34" height="25" rx="3"/><path d="M32 41 V49"/><path d="M23 52 H41"/></g></symbol>
+    <symbol id="g-export" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 35 V47 H44 V35"/><path d="M32 40 V17"/><path d="M23.5 25 L32 16.5 L40.5 25"/></g></symbol>
+    <symbol id="g-gallery" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="13.5" y="13.5" width="15" height="15" rx="3.5"/><rect x="35.5" y="13.5" width="15" height="15" rx="3.5"/><rect x="13.5" y="35.5" width="15" height="15" rx="3.5"/><rect x="35.5" y="35.5" width="15" height="15" rx="3.5"/></g></symbol>
+    <symbol id="g-stamp" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="17.5" r="6.5"/><path d="M32 24 V35"/><path d="M20.5 35 H43.5 L46 47 H18 Z"/></g></symbol>
+    <symbol id="g-stencil" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 10.5 L45.5 33.5 L32 53.5 L18.5 33.5 Z"/><circle cx="32" cy="32.5" r="3.6"/><path d="M32 36.5 V53.5"/></g></symbol>
+    <symbol id="g-settings" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="8"/><path d="M32 13 V19 M32 45 V51 M13 32 H19 M45 32 H51 M18.6 18.6 L22.8 22.8 M41.2 41.2 L45.4 45.4 M45.4 18.6 L41.2 22.8 M22.8 41.2 L18.6 45.4"/></g></symbol>
+    <symbol id="g-connections" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="29" width="22" height="13" rx="6.5"/><rect x="29" y="22" width="22" height="13" rx="6.5"/></g></symbol>
+    <symbol id="g-advanced" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="15" width="40" height="34" rx="5"/><path d="M20 25 L27 31 L20 37"/><path d="M31 39 H43"/></g></symbol>
+    <symbol id="g-done" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"><path d="M18 33 L27.5 42 L46 22.5"/></g></symbol>
+    <symbol id="g-bug" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="24" width="20" height="25" rx="10"/><path d="M26 24 A6 6 0 0 1 38 24"/><path d="M32 31 V48"/><path d="M22 33 H15 M42 33 H49 M22.5 41 H16 M41.5 41 H48 M28 19 L25 14.5 M36 19 L39 14.5"/></g></symbol>
+    <symbol id="g-signout" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 14 V30"/><path d="M22.5 20.5 A15 15 0 1 0 41.5 20.5"/></g></symbol>
+    <symbol id="g-chev" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"><path d="M27 20 L39 32 L27 44"/></g></symbol>
+    <symbol id="g-plus" viewBox="8 8 48 48"><g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4.2"><path d="M32 18 V46 M18 32 H46"/></g></symbol>
+  </defs>
+</svg>
+
+<!-- Auth Prompt (API Key or Username/Password) -->
+<div x-show="$store.app.showAuthPrompt" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)" x-data="{ apiKeyInput: '', loginPass: '' }">
+  <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--surface,#1e1e2e);border:1px solid var(--border,#333);border-radius:14px;padding:2.25rem 2rem;max-width:400px;width:92%;box-shadow:0 24px 60px rgba(0,0,0,0.45)">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <svg class="auth-reaper" width="72" height="72" aria-hidden="true"><use href="#stax-reaper"/></svg>
+      <div style="font-size:1.45rem;font-weight:700;letter-spacing:-0.01em;margin-top:0.6rem">StaxCloud</div>
+      <div style="color:var(--text-dim,#888);font-size:0.82rem;margin-top:0.25rem">Run your business. Grow your business.<br>One intelligent system.</div>
+    </div>
+    <!-- Session login mode -->
+    <template x-if="$store.app.authMode === 'session'">
+      <div>
+        <h3 style="margin:0 0 0.5rem;font-size:1rem">Sign in</h3>
+        <p style="color:var(--text-dim,#888);font-size:0.85rem;margin:0 0 1rem">Enter the dashboard password.</p>
+<input type="password" x-model="loginPass" placeholder="Password" autocomplete="current-password" @keydown.enter="$store.app.sessionLogin('admin', loginPass)" style="width:100%;padding:0.75rem;border-radius:10px;border:1px solid var(--border,#333);background:var(--bg,#151520);color:var(--text,#e0e0e0);font-size:0.95rem;box-sizing:border-box;margin-bottom:0.75rem;min-height:48px">
+        <button @click="$store.app.sessionLogin('admin', loginPass)" style="width:100%;padding:0.8rem;border-radius:10px;border:none;background:var(--accent,#146e68);color:var(--text-on-accent);font-weight:600;cursor:pointer;font-size:0.95rem;min-height:48px">Sign in</button>
+      </div>
+    </template>
+    <!-- API key mode -->
+    <template x-if="$store.app.authMode === 'apikey'">
+      <div>
+        <h3 style="margin:0 0 0.5rem;font-size:1.1rem">API Key Required</h3>
+        <p style="color:var(--text-dim,#888);font-size:0.85rem;margin:0 0 0.5rem">This instance requires an API key. Enter the key from your <code>config.toml</code>.</p>
+        <p style="color:var(--text-dim,#666);font-size:0.75rem;margin:0 0 1rem">Add <code style="color:var(--accent-light,#5cbcae);background:var(--bg,#111);padding:1px 4px;border-radius:2px">api_key = "your-key"</code> at the <strong>top</strong> of <code>~/.openfang/config.toml</code> (not under any [section]).</p>
+        <input type="password" x-model="apiKeyInput" placeholder="Enter API key..." @keydown.enter="$store.app.submitApiKey(apiKeyInput)" style="width:100%;padding:0.6rem;border-radius:6px;border:1px solid var(--border,#333);background:var(--bg,#151520);color:var(--text,#e0e0e0);font-size:0.9rem;box-sizing:border-box;margin-bottom:0.75rem">
+        <button @click="$store.app.submitApiKey(apiKeyInput)" style="width:100%;padding:0.6rem;border-radius:6px;border:none;background:var(--accent,#146e68);color:var(--text-on-accent);font-weight:600;cursor:pointer;font-size:0.9rem">Unlock Dashboard</button>
+      </div>
+    </template>
+  </div>
+</div>
+
+<div class="app-layout" :class="{ 'focus-mode': $store.app.focusMode }">
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Shell bar: the menu button. Each screen's title lives in the page's
+         own header; sub-navigation lives in a module dock or the side card. -->
+    <div class="stax-chips" x-cloak x-show="page !== 'chat'">
+      <button class="stax-menu-btn" @click="$store.app.sideOpen = !$store.app.sideOpen" :aria-expanded="$store.app.sideOpen ? 'true' : 'false'" aria-controls="stax-side" aria-label="Menu" title="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+    </div>

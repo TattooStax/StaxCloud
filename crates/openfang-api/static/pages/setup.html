@@ -1,0 +1,53 @@
+
+
+    <!-- Page: Set up (R10 first-run conversation) -->
+    <template x-if="page === 'setup'">
+      <div x-data="setupPage" x-init="loadData()">
+        <div class="page-header"><h2>Set up your studio</h2><button class="btn btn-ghost" @click="$store.app.staxAgent(); goSurface('home')" aria-label="Done, back to Stax">Done</button></div>
+        <div class="page-body" style="max-width:640px">
+          <div x-show="done && profile" class="card">
+            <div style="font-weight:700;font-size:15px;margin-bottom:6px">Your crew is set</div>
+            <p class="text-sm text-dim" style="margin:0 0 6px">Business: <span x-text="profile ? bizLabel(profile.business) : ''"></span></p>
+            <p class="text-sm text-dim" style="margin:0 0 12px">The &ldquo;Your crew&rdquo; board in Boards has the full picture. Want it different? Just tell Stax — or run setup again.</p>
+            <button class="btn btn-ghost btn-sm" @click="done = false; step = 0">Run setup again</button>
+          </div>
+
+          <div x-show="!done">
+            <div class="card" style="margin-bottom:12px">
+              <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+              <p class="text-sm" style="margin:0">Hey — I'm Stax. Before anything else: what kind of business are we running?</p>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+              <template x-for="b in bizOptions" :key="b.id">
+                <button class="stax-chip" style="min-height:44px" :class="{ active: business === b.id }" @click="business = b.id; step = Math.max(step, 1)" x-text="b.label"></button>
+              </template>
+            </div>
+
+            <div x-show="step >= 1">
+              <div class="card" style="margin-bottom:12px">
+                <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+                <p class="text-sm" style="margin:0">What eats your time? Pick everything that sounds familiar — I'll only spin up help for what you pick.</p>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+                <template x-for="n in needOptions" :key="n.id">
+                  <button class="stax-chip" style="min-height:44px" :class="{ active: needs.indexOf(n.id) >= 0 }" @click="toggleNeed(n.id); step = Math.max(step, 2)" x-text="n.label"></button>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="step >= 2">
+              <div class="card" style="margin-bottom:12px">
+                <div class="text-xs text-dim" style="margin-bottom:6px">Stax</div>
+                <p class="text-sm" style="margin:0">Last one — how do you want to hear from me?</p>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'morning' }" @click="brief = 'morning'">A morning brief</button>
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'live' }" @click="brief = 'live'">As things happen</button>
+                <button class="stax-chip" style="min-height:44px" :class="{ active: brief === 'both' }" @click="brief = 'both'">Both</button>
+              </div>
+              <button class="btn btn-primary" style="min-height:48px;padding:0 22px" @click="finish()" :disabled="saving || !business">Set up my crew</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
