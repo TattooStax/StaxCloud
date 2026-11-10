@@ -176,6 +176,7 @@ impl TurnContract {
     pub fn recover_refusal(&mut self, text: &str) -> bool {
         if self.owner_asset.is_none()
             || self.blocking_error.is_some()
+            || !self.image_receipts.is_empty()
             || !bare_refusal(text)
             || self.recovered_refusal
         {
@@ -288,6 +289,23 @@ fn bare_refusal(text: &str) -> bool {
     .any(|s| lower.contains(s))
     {
         return true;
+    }
+    // Epistemic limits are not policy refusals. Keep useful audit findings
+    // and honest uncertainty rather than turning them into a source request.
+    if [
+        "can't find",
+        "cannot find",
+        "can't guarantee",
+        "cannot guarantee",
+        "can't tell",
+        "cannot tell",
+        "can't verify",
+        "cannot verify",
+    ]
+    .iter()
+    .any(|s| lower.contains(s))
+    {
+        return false;
     }
     if [
         "please attach",
@@ -445,6 +463,16 @@ mod tests {
         assert!(c
             .final_text("I can't publish your website".into())
             .contains("approval and was denied"));
+    }
+
+    #[test]
+    fn useful_owner_site_uncertainty_is_not_rewritten_as_a_refusal() {
+        let mut m = AgentManifest::default();
+        m.metadata.insert("owner_facing".into(), json!(true));
+        let mut c = TurnContract::new(&m, "Review my website", None, &[]);
+        let text = "I can't find a broken link on the pages I checked.";
+        assert!(!c.recover_refusal(text));
+        assert_eq!(c.final_text(text.into()), text);
     }
 
     #[test]
