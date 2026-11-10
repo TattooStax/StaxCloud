@@ -248,20 +248,26 @@ if "sms" in alive and not has_sweep("sms"):
 brief_ok = any(j.get("name") == "Morning Brief daily" and j.get("enabled", True) for j in jobs)
 if not brief_ok:
     missing_jobs.append("morning brief job")
-REARM = {
-    "forms": "Your standing sweep job was removed while you were down. Re-arm it now: use schedule_create to register your recurring sweep for new form submissions every 15 minutes, exactly as your playbook prescribes. Confirm the job exists afterwards.",
-    "sms": "Your standing sweep job was removed while you were down. Re-arm it now: use schedule_create to register your recurring Texts sweep every 15 minutes, exactly as your playbook prescribes (recall attention/sms and sweep). Confirm the job exists afterwards.",
+# A missing sweep is re-created directly (same cron + message the helper's
+# HAND.toml declares; the kernel also puts it back on boot/activation).
+# Helpers no longer hold schedule_create, so asking the model can't work.
+SWEEPS = {
+    "forms": ("forms sweep", "Scheduled sweep: pick up any form submissions not yet processed, per your playbook."),
+    "sms": ("texts sweep", "Scheduled sweep: recall attention/sms and draft replies for the waiting threads, per your playbook."),
 }
-for name in ("forms", "sms"):
-    label = "forms sweep" if name == "forms" else "texts sweep"
+for name, (label, message) in SWEEPS.items():
     if label in missing_jobs and name in alive:
-        r = req("POST", f"/api/agents/{alive[name]}/message", {"message": REARM[name]}, timeout=220)
-        if r and r.get("response"):
-            actions.append(f"re-armed {label} via the agent")
-            print(now(), f"crew check: re-armed {label}")
+        body = {"name": label, "agent_id": alive[name],
+                "schedule": {"kind": "cron", "expr": "*/15 * * * *"},
+                "action": {"kind": "agent_turn", "message": message, "timeout_secs": 300},
+                "enabled": True}
+        r = req("POST", "/api/cron/jobs", body)
+        if r and ("job_id" in json.dumps(r)):
+            actions.append(f"re-created the {label}")
+            print(now(), f"crew check: re-created {label}")
         else:
-            actions.append(f"re-arm of {label} got no response")
-            print(now(), f"crew check: re-arm of {label} FAILED (no response)")
+            actions.append(f"re-creating the {label} failed")
+            print(now(), f"crew check: {label} re-create FAILED:", json.dumps(r)[:160])
 if "morning brief job" in missing_jobs and "stax" in alive:
     body = {"name": "Morning Brief daily", "agent_id": alive["stax"],
             "schedule": {"kind": "cron", "expr": "0 6 * * *", "tz": "America/Chicago"},

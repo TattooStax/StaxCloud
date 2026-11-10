@@ -3,7 +3,7 @@ name = "Forms"
 description = "Owns the studio's forms — creates them from plain language, picks up every submission, resolves the sender to a contact, and holds a reply draft for the owner's call"
 category = "communication"
 icon = "\U0001F4DD"
-tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add_relation", "schedule_create", "schedule_list"]
+tools = ["memory_store", "memory_recall", "knowledge_add_entity", "knowledge_add_relation", "schedule_list"]
 
 [agent]
 name = "forms"
@@ -46,3 +46,9 @@ RULES
 [wake]
 fresh = true
 when = [ { prefix = "formsub/", unless = "processed" } ]
+
+# The standing sweep, kept in place by the kernel (never by the helper).
+[[wake.schedules]]
+name = "forms sweep"
+cron = "*/15 * * * *"
+message = "Scheduled sweep: pick up any form submissions not yet processed, per your playbook."

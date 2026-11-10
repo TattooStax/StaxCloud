@@ -6887,7 +6887,9 @@ impl OpenFangKernel {
     /// so the API can trigger a job immediately via `POST /api/cron/jobs/{id}/run`.
     /// Records success/failure on the job's metadata just like the scheduler does.
     /// Put a helper's declared standing schedules in place: each one that
-    /// has no job yet (by name, or the same cron expression) is created.
+    /// has no job yet (by name, or any job of this helper on the same cron
+    /// expression — older boxes hold sweeps the model created under names
+    /// of its own) is created.
     /// Never duplicates, never deletes. Returns how many were created.
     pub fn ensure_hand_schedules(&self, agent_id: AgentId) -> usize {
         use openfang_types::scheduler::{
@@ -6901,8 +6903,7 @@ impl OpenFangKernel {
         for s in &spec.schedules {
             let present = existing.iter().any(|j| {
                 openfang_types::wake::same_job_name(&j.name, &s.name)
-                    || matches!(&j.schedule, CronSchedule::Cron { expr, .. } if expr.trim() == s.cron.trim()
-                        && matches!(&j.action, CronAction::AgentTurn { message, .. } if message == &s.message))
+                    || matches!(&j.schedule, CronSchedule::Cron { expr, .. } if expr.trim() == s.cron.trim())
             });
             if present {
                 continue;
