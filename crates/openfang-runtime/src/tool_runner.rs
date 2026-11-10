@@ -310,8 +310,12 @@ pub async fn execute_tool(
         "customer_lookup" => require_kernel(kernel).and_then(|kh| {
             crate::stax_records::customer_lookup(kh, input["query"].as_str().unwrap_or(""))
         }),
-        "email_draft" => require_kernel(kernel).and_then(|kh| crate::stax_records::email_draft(kh, input)),
-        "form_draft" => require_kernel(kernel).and_then(|kh| crate::stax_records::form_draft(kh, input)),
+        "email_draft" => {
+            require_kernel(kernel).and_then(|kh| crate::stax_records::email_draft(kh, input))
+        }
+        "form_draft" => {
+            require_kernel(kernel).and_then(|kh| crate::stax_records::form_draft(kh, input))
+        }
 
         // Collaboration tools
         "agent_find" => tool_agent_find(input, kernel),
@@ -3935,7 +3939,10 @@ async fn tool_style_learn(
                     serde_json::Value::Object(_) => p["url"].as_str().map(|u| {
                         (
                             u.trim().to_string(),
-                            p["artist"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+                            p["artist"]
+                                .as_str()
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty()),
                         )
                     }),
                     _ => None,
@@ -3952,7 +3959,8 @@ async fn tool_style_learn(
         return Err("Pictures can't be read right now: no image service key is set.".into());
     }
     let save = |p: &crate::stax_images::Picture| {
-        openfang_types::uploads::save_new(&p.bytes).map_err(|e| format!("Could not save the picture: {e}"))
+        openfang_types::uploads::save_new(&p.bytes)
+            .map_err(|e| format!("Could not save the picture: {e}"))
     };
     crate::stax_style::learn(kh, &crate::stax_style::LiveSource, &save, &pages, max).await
 }
@@ -5919,7 +5927,10 @@ mod tests {
             b.extend_from_slice(url.as_bytes());
             crate::stax_images::Picture::from_bytes(b)
         }
-        async fn read(&self, p: &crate::stax_images::Picture) -> Result<(String, Option<f64>), String> {
+        async fn read(
+            &self,
+            p: &crate::stax_images::Picture,
+        ) -> Result<(String, Option<f64>), String> {
             *self.reads.lock().unwrap() += 1;
             let url = String::from_utf8_lossy(&p.bytes[8..]).to_string();
             let r = if url.contains("rose") {
@@ -5942,9 +5953,18 @@ mod tests {
         ]));
         let mut pages = std::collections::HashMap::new();
         pages.insert("https://shop.test/".to_string(), r#"<img src="/img/shop-front.jpg" alt="our shop"><a href="/leni-b/">Leni</a> <a href="/gallery">Gallery</a> <a href="/aftercare">Aftercare</a>"#.to_string());
-        pages.insert("https://shop.test/leni-b/".to_string(), r#"<img src="/up/rose-300x200.jpg"><img src="/up/rose.jpg?v=2">"#.to_string());
+        pages.insert(
+            "https://shop.test/leni-b/".to_string(),
+            r#"<img src="/up/rose-300x200.jpg"><img src="/up/rose.jpg?v=2">"#.to_string(),
+        );
         pages.insert("https://shop.test/gallery".to_string(), r#"<img src="/up/lion.jpg" alt="Lion portrait by Shawn"><img src="/up/flyer.jpg" alt="flash day flyer">"#.to_string());
-        (k, FakeWeb { pages, reads: std::sync::Mutex::new(0) })
+        (
+            k,
+            FakeWeb {
+                pages,
+                reads: std::sync::Mutex::new(0),
+            },
+        )
     }
 
     #[tokio::test]
@@ -5956,22 +5976,41 @@ mod tests {
             *n += 1;
             Ok(format!("00000000-0000-4000-8000-00000000000{n}"))
         };
-        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
-        assert!(out.contains("Learned 2 tattoo picture(s) (Leni B.: 1, Shawn Lowe: 1)"), "{out}");
-        assert!(out.contains("Not tattoos: 2") && out.contains("Unassigned: 0") && out.contains("Still to read: 0"), "{out}");
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12)
+            .await
+            .unwrap();
+        assert!(
+            out.contains("Learned 2 tattoo picture(s) (Leni B.: 1, Shawn Lowe: 1)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("Not tattoos: 2")
+                && out.contains("Unassigned: 0")
+                && out.contains("Still to read: 0"),
+            "{out}"
+        );
         // The two sizes of the rose were one picture: read once, stored once.
         assert_eq!(*web.reads.lock().unwrap(), 4);
         assert_eq!(k.memory_list("portfolio/leni-b/").unwrap().len(), 1);
         let leni = k.memory_recall("style/leni-b").unwrap().unwrap();
         assert_eq!(leni["photo_count"], 1);
         assert_eq!(leni["categories"]["fine line"], 1);
-        assert!(leni["updated"].as_str().unwrap().starts_with(&chrono::Local::now().format("%Y-%m-%d").to_string()));
+        assert!(leni["updated"]
+            .as_str()
+            .unwrap()
+            .starts_with(&chrono::Local::now().format("%Y-%m-%d").to_string()));
         let shawn = k.memory_recall("style/shawn-lowe").unwrap().unwrap();
         assert_eq!(shawn["specialties"][0], "black and grey realism");
-        assert_eq!(k.memory_list("portfolioskip/").unwrap().len(), 2, "logo and flyer remembered as not tattoos");
+        assert_eq!(
+            k.memory_list("portfolioskip/").unwrap().len(),
+            2,
+            "logo and flyer remembered as not tattoos"
+        );
 
         // A second sweep reads nothing again.
-        let again = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        let again = crate::stax_style::learn(&k, &web, &save, &[], 12)
+            .await
+            .unwrap();
         assert!(again.contains("found 0 new picture(s)"), "{again}");
         assert_eq!(*web.reads.lock().unwrap(), 4);
     }
@@ -5979,11 +6018,23 @@ mod tests {
     #[tokio::test]
     async fn style_learn_leaves_the_rest_queued_and_corrections_rebuild() {
         let (k, web) = shop();
-        let save = |_: &crate::stax_images::Picture| Ok("00000000-0000-4000-8000-0000000000aa".to_string());
-        let out = crate::stax_style::learn(&k, &web, &save, &[], 1).await.unwrap();
+        let save = |_: &crate::stax_images::Picture| {
+            Ok("00000000-0000-4000-8000-0000000000aa".to_string())
+        };
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 1)
+            .await
+            .unwrap();
         assert!(out.contains("Still to read: 3"), "{out}");
-        assert_eq!(k.memory_recall("stylequeue").unwrap().unwrap()["pending"].as_array().unwrap().len(), 3);
-        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        assert_eq!(
+            k.memory_recall("stylequeue").unwrap().unwrap()["pending"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12)
+            .await
+            .unwrap();
         assert!(out.contains("Still to read: 0"), "{out}");
 
         // Owner: "the lion is Leni's".
@@ -5991,7 +6042,10 @@ mod tests {
         assert!(fixed.contains("Leni B.'s"), "{fixed}");
         assert_eq!(k.memory_list("portfolio/shawn-lowe/").unwrap().len(), 0);
         assert_eq!(k.memory_list("portfolio/leni-b/").unwrap().len(), 2);
-        assert_eq!(k.memory_recall("style/leni-b").unwrap().unwrap()["photo_count"], 2);
+        assert_eq!(
+            k.memory_recall("style/leni-b").unwrap().unwrap()["photo_count"],
+            2
+        );
         assert!(crate::stax_style::correct(&k, "dragon", Some("Leni"), None).is_err());
     }
 
@@ -6000,15 +6054,36 @@ mod tests {
         let (k, web) = shop();
         // As the model left them: Shawn's lion stored twice (two categories),
         // keyed by upload id, with an invented date.
-        for (fid, cat) in [("00000000-0000-4000-8000-000000000001", "portrait"), ("00000000-0000-4000-8000-000000000002", "black and grey realism")] {
+        for (fid, cat) in [
+            ("00000000-0000-4000-8000-000000000001", "portrait"),
+            (
+                "00000000-0000-4000-8000-000000000002",
+                "black and grey realism",
+            ),
+        ] {
             k.memory_store(&format!("portfolio/shawn-lowe/{fid}"), serde_json::json!({"artist": "Shawn Lowe", "file_id": fid, "source_url": "https://shop.test/up/lion.jpg", "page": "https://shop.test/gallery", "style": cat, "subject": "lion"})).unwrap();
         }
-        k.memory_store("style/shawn-lowe", serde_json::json!({"artist": "Shawn Lowe", "photo_count": 2, "updated": "2024-04-15"})).unwrap();
-        let save = |_: &crate::stax_images::Picture| Ok("00000000-0000-4000-8000-0000000000bb".to_string());
-        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        k.memory_store(
+            "style/shawn-lowe",
+            serde_json::json!({"artist": "Shawn Lowe", "photo_count": 2, "updated": "2024-04-15"}),
+        )
+        .unwrap();
+        let save = |_: &crate::stax_images::Picture| {
+            Ok("00000000-0000-4000-8000-0000000000bb".to_string())
+        };
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12)
+            .await
+            .unwrap();
         assert!(out.contains("tidied"), "{out}");
-        assert!(out.contains("Shawn Lowe: 1 pieces") || !out.contains("Shawn Lowe: 2"), "{out}");
-        assert_eq!(k.memory_list("portfolio/shawn-lowe/").unwrap().len(), 1, "the lion once");
+        assert!(
+            out.contains("Shawn Lowe: 1 pieces") || !out.contains("Shawn Lowe: 2"),
+            "{out}"
+        );
+        assert_eq!(
+            k.memory_list("portfolio/shawn-lowe/").unwrap().len(),
+            1,
+            "the lion once"
+        );
         let p = k.memory_recall("style/shawn-lowe").unwrap().unwrap();
         assert_eq!(p["photo_count"], 1);
         assert_ne!(p["updated"], "2024-04-15");
@@ -6036,7 +6111,15 @@ mod tests {
         for q in ["Jane", "jane@ink.test", "701-555-0101"] {
             let out = crate::stax_records::customer_lookup(&k, q).unwrap();
             assert!(out.starts_with("Jane Ink"), "{q}: {out}");
-            for want in ["Do you do cover-ups?", "studio: We do!", "formsub/booking/u1", "Deposit question", "draft/d1", "horseshoe pair", "placement: left forearm"] {
+            for want in [
+                "Do you do cover-ups?",
+                "studio: We do!",
+                "formsub/booking/u1",
+                "Deposit question",
+                "draft/d1",
+                "horseshoe pair",
+                "placement: left forearm",
+            ] {
                 assert!(out.contains(want), "{q} missing {want}: {out}");
             }
             assert!(!out.contains("formsub/booking/u2"), "{out}");
@@ -6044,15 +6127,26 @@ mod tests {
         let none = crate::stax_records::customer_lookup(&k, "Zed Nobody").unwrap();
         assert!(none.starts_with("No contact matches"), "{none}");
         let stranger = crate::stax_records::customer_lookup(&k, "someone@else.test").unwrap();
-        assert!(stranger.contains("formsub/booking/u2"), "a form with no contact yet: {stranger}");
+        assert!(
+            stranger.contains("formsub/booking/u2"),
+            "a form with no contact yet: {stranger}"
+        );
     }
 
     #[test]
     fn email_draft_threads_a_reply_and_refuses_blanks() {
         let k = studio_kernel();
         let out = crate::stax_records::email_draft(&k, &serde_json::json!({"reply_to": "mail/abc", "body": "Hi Jane, Friday is fine. — Fargo Tattoo"})).unwrap();
-        assert!(out.contains("jane@ink.test") && out.contains("Re: Deposit question"), "{out}");
-        let (key, d) = k.memory_list("draft/").unwrap().into_iter().find(|(k, _)| k != "draft/d1").unwrap();
+        assert!(
+            out.contains("jane@ink.test") && out.contains("Re: Deposit question"),
+            "{out}"
+        );
+        let (key, d) = k
+            .memory_list("draft/")
+            .unwrap()
+            .into_iter()
+            .find(|(k, _)| k != "draft/d1")
+            .unwrap();
         assert!(key.starts_with("draft/"));
         assert_eq!(d["kind"], "email_send");
         assert_eq!(d["in_reply_to"], "xyz@mail.test");
@@ -6060,19 +6154,30 @@ mod tests {
         assert_eq!(d["status"], "held");
         let blank = crate::stax_records::email_draft(&k, &serde_json::json!({"to": "a@b.test", "subject": "Hi", "body": "Hi [Client Name], see you"})).unwrap_err();
         assert!(blank.contains("[Client Name]"), "{blank}");
-        assert!(crate::stax_records::email_draft(&k, &serde_json::json!({"to": "nope", "subject": "x", "body": "y"})).is_err());
+        assert!(crate::stax_records::email_draft(
+            &k,
+            &serde_json::json!({"to": "nope", "subject": "x", "body": "y"})
+        )
+        .is_err());
     }
 
     #[test]
     fn form_draft_uses_the_builder_blocks() {
         let k = studio_kernel();
-        let out = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "Booking", "blocks": [
-            {"block": "Name"}, {"block": "Email"}, {"block": "Phone"},
-            {"block": "Dropdown", "label": "Which day?", "options": ["Friday", "Saturday"]},
-            {"block": "Medical disclosure"}, {"block": "Signature"}
-        ]})).unwrap();
+        let out = crate::stax_records::form_draft(
+            &k,
+            &serde_json::json!({"title": "Booking", "blocks": [
+                {"block": "Name"}, {"block": "Email"}, {"block": "Phone"},
+                {"block": "Dropdown", "label": "Which day?", "options": ["Friday", "Saturday"]},
+                {"block": "Medical disclosure"}, {"block": "Signature"}
+            ]}),
+        )
+        .unwrap();
         assert!(out.contains("not published"), "{out}");
-        let f = k.memory_recall("form/booking-2").unwrap().expect("booking was taken, so booking-2");
+        let f = k
+            .memory_recall("form/booking-2")
+            .unwrap()
+            .expect("booking was taken, so booking-2");
         assert_eq!(f["published"], false);
         assert_eq!(f["drafted_by"], "stax");
         let fields = f["fields"].as_array().unwrap();
@@ -6080,19 +6185,46 @@ mod tests {
         assert_eq!(fields[0]["key"], "your_name");
         assert_eq!(fields[0]["stype"], "field-name");
         assert_eq!(fields[3]["config"]["options"][1], "Saturday");
-        assert!(fields[4]["config"]["sec1_conditions"].as_array().unwrap().len() > 3, "medical defaults like the builder");
-        let bad = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "X", "blocks": [{"block": "Hologram"}]})).unwrap_err();
+        assert!(
+            fields[4]["config"]["sec1_conditions"]
+                .as_array()
+                .unwrap()
+                .len()
+                > 3,
+            "medical defaults like the builder"
+        );
+        let bad = crate::stax_records::form_draft(
+            &k,
+            &serde_json::json!({"title": "X", "blocks": [{"block": "Hologram"}]}),
+        )
+        .unwrap_err();
         assert!(bad.contains("not one the builder has"), "{bad}");
-        let opts = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "X", "blocks": [{"block": "Dropdown"}]})).unwrap_err();
+        let opts = crate::stax_records::form_draft(
+            &k,
+            &serde_json::json!({"title": "X", "blocks": [{"block": "Dropdown"}]}),
+        )
+        .unwrap_err();
         assert!(opts.contains("real choices"), "{opts}");
     }
 
     #[test]
     fn style_tools_are_registered() {
-        let names: Vec<String> = builtin_tool_definitions().into_iter().map(|t| t.name).collect();
-        for t in ["style_learn", "style_correct", "customer_lookup", "email_draft", "form_draft"] {
+        let names: Vec<String> = builtin_tool_definitions()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        for t in [
+            "style_learn",
+            "style_correct",
+            "customer_lookup",
+            "email_draft",
+            "form_draft",
+        ] {
             assert!(names.iter().any(|n| n == t), "{t}");
-            assert!(openfang_types::tool_compat::is_known_openfang_tool(t), "{t}");
+            assert!(
+                openfang_types::tool_compat::is_known_openfang_tool(t),
+                "{t}"
+            );
         }
     }
 

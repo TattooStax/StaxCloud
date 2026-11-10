@@ -126,7 +126,11 @@ pub fn matching<'a>(all: &'a [Person], query: &str) -> Vec<&'a Person> {
     if digits.len() >= 7 && digits.len() * 2 >= q.chars().filter(|c| !c.is_whitespace()).count() {
         return all
             .iter()
-            .filter(|p| p.phones.iter().any(|ph| ph.ends_with(&digits) || digits.ends_with(ph.as_str())))
+            .filter(|p| {
+                p.phones
+                    .iter()
+                    .any(|ph| ph.ends_with(&digits) || digits.ends_with(ph.as_str()))
+            })
             .collect();
     }
     let words: Vec<&str> = q.split_whitespace().collect();
@@ -136,7 +140,9 @@ pub fn matching<'a>(all: &'a [Person], query: &str) -> Vec<&'a Person> {
     all.iter()
         .filter(|p| {
             let n = p.name.to_lowercase();
-            words.iter().all(|w| n.split_whitespace().any(|part| part.starts_with(w)))
+            words
+                .iter()
+                .all(|w| n.split_whitespace().any(|part| part.starts_with(w)))
         })
         .collect()
 }
@@ -177,7 +183,15 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
             .map(|p| {
                 let mut id: Vec<String> = p.emails.iter().cloned().collect();
                 id.extend(p.phones.iter().cloned());
-                format!("{} ({})", if p.name.is_empty() { "no name" } else { &p.name }, id.join(", "))
+                format!(
+                    "{} ({})",
+                    if p.name.is_empty() {
+                        "no name"
+                    } else {
+                        &p.name
+                    },
+                    id.join(", ")
+                )
             })
             .collect();
         return Ok(format!(
@@ -192,7 +206,11 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
     let ids: Vec<String> = p.emails.iter().chain(p.phones.iter()).cloned().collect();
     out.push_str(&format!(
         "{} — {}\n",
-        if p.name.is_empty() { "(no name on record)" } else { &p.name },
+        if p.name.is_empty() {
+            "(no name on record)"
+        } else {
+            &p.name
+        },
         ids.join(", ")
     ));
 
@@ -201,15 +219,38 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
         if let Some((_, v)) = records.iter().find(|(rk, _)| rk == k) {
             let r = as_record(v);
             let mut facts = Vec::new();
-            for f in ["kind", "stage", "artist", "temperature", "visits", "last_seen"] {
+            for f in [
+                "kind",
+                "stage",
+                "artist",
+                "temperature",
+                "visits",
+                "last_seen",
+            ] {
                 if let Some(x) = r.get(f).filter(|x| !x.is_null() && x.as_str() != Some("")) {
-                    facts.push(format!("{f}: {}", x.as_str().map(String::from).unwrap_or_else(|| x.to_string())));
+                    facts.push(format!(
+                        "{f}: {}",
+                        x.as_str()
+                            .map(String::from)
+                            .unwrap_or_else(|| x.to_string())
+                    ));
                 }
             }
-            out.push_str(&format!("Contact {k}: {}\n", if facts.is_empty() { "no details".into() } else { facts.join(", ") }));
+            out.push_str(&format!(
+                "Contact {k}: {}\n",
+                if facts.is_empty() {
+                    "no details".into()
+                } else {
+                    facts.join(", ")
+                }
+            ));
             if let Some(notes) = r["notes"].as_array() {
                 for n in notes.iter().rev().take(5) {
-                    out.push_str(&format!("  note {}: {}\n", n["ts"].as_str().unwrap_or(""), cut(n["text"].as_str().unwrap_or(""), 140)));
+                    out.push_str(&format!(
+                        "  note {}: {}\n",
+                        n["ts"].as_str().unwrap_or(""),
+                        cut(n["text"].as_str().unwrap_or(""), 140)
+                    ));
                 }
             }
         }
@@ -219,11 +260,26 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
     for d in &p.phones {
         for key in [format!("sms/{d}"), format!("sms/1{d}")] {
             if let Some((_, v)) = records.iter().find(|(k, _)| *k == key) {
-                let msgs = as_record(v)["messages"].as_array().cloned().unwrap_or_default();
-                out.push_str(&format!("Texts {key} ({} messages, latest last):\n", msgs.len()));
+                let msgs = as_record(v)["messages"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "Texts {key} ({} messages, latest last):\n",
+                    msgs.len()
+                ));
                 for m in msgs.iter().rev().take(6).rev() {
-                    let who = if m["dir"].as_str() == Some("out") { "studio" } else { "them" };
-                    out.push_str(&format!("  {} {}: {}\n", m["ts"].as_str().unwrap_or(""), who, cut(m["body"].as_str().unwrap_or(""), 160)));
+                    let who = if m["dir"].as_str() == Some("out") {
+                        "studio"
+                    } else {
+                        "them"
+                    };
+                    out.push_str(&format!(
+                        "  {} {}: {}\n",
+                        m["ts"].as_str().unwrap_or(""),
+                        who,
+                        cut(m["body"].as_str().unwrap_or(""), 160)
+                    ));
                 }
             }
         }
@@ -244,31 +300,61 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
                     .as_object()
                     .map(|o| {
                         o.iter()
-                            .filter_map(|(ak, av)| av.as_str().filter(|x| !x.trim().is_empty()).map(|x| format!("{ak}: {}", cut(x, 80))))
+                            .filter_map(|(ak, av)| {
+                                av.as_str()
+                                    .filter(|x| !x.trim().is_empty())
+                                    .map(|x| format!("{ak}: {}", cut(x, 80)))
+                            })
                             .take(6)
                             .collect()
                     })
                     .unwrap_or_default();
-                forms.push((r["ts"].as_str().unwrap_or("").to_string(), k.clone(), answers.join("; ")));
+                forms.push((
+                    r["ts"].as_str().unwrap_or("").to_string(),
+                    k.clone(),
+                    answers.join("; "),
+                ));
             }
         } else if k.starts_with("mail/") {
             let from = r["from"].as_str().unwrap_or("").to_lowercase();
             if p.emails.contains(&from) {
                 mails.push((
                     r["ts"].as_str().unwrap_or("").to_string(),
-                    format!("  {} {k} from them: \"{}\" — {}", r["ts"].as_str().unwrap_or(""), cut(r["subject"].as_str().unwrap_or(""), 80), cut(r["snippet"].as_str().or(r["text"].as_str()).unwrap_or(""), 140)),
+                    format!(
+                        "  {} {k} from them: \"{}\" — {}",
+                        r["ts"].as_str().unwrap_or(""),
+                        cut(r["subject"].as_str().unwrap_or(""), 80),
+                        cut(
+                            r["snippet"].as_str().or(r["text"].as_str()).unwrap_or(""),
+                            140
+                        )
+                    ),
                 ));
             }
         } else if k.starts_with("emailout/") {
-            if p.emails.contains(&r["to"].as_str().unwrap_or("").to_lowercase()) {
+            if p.emails
+                .contains(&r["to"].as_str().unwrap_or("").to_lowercase())
+            {
                 mails.push((
                     r["ts"].as_str().unwrap_or("").to_string(),
-                    format!("  {} {k} to them: \"{}\" ({})", r["ts"].as_str().unwrap_or(""), cut(r["subject"].as_str().unwrap_or(""), 80), r["status"].as_str().unwrap_or("")),
+                    format!(
+                        "  {} {k} to them: \"{}\" ({})",
+                        r["ts"].as_str().unwrap_or(""),
+                        cut(r["subject"].as_str().unwrap_or(""), 80),
+                        r["status"].as_str().unwrap_or("")
+                    ),
                 ));
             }
         } else if k.starts_with("draft/") {
             let mut s = Vec::new();
-            for f in ["to", "to_name", "thread", "sub", "source_key", "contact_key"] {
+            for f in [
+                "to",
+                "to_name",
+                "thread",
+                "sub",
+                "source_key",
+                "contact_key",
+            ] {
                 strings_in(&r[f], &mut s);
             }
             if s.iter().any(|x| p.mentions(x)) || p.contact_keys.iter().any(|ck| s.contains(ck)) {
@@ -282,7 +368,11 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
         } else if k.starts_with("memcand/") {
             let ck = r["contact_key"].as_str().unwrap_or("");
             if p.contact_keys.iter().any(|x| x == ck) && r["status"].as_str() != Some("promoted") {
-                facts.push(format!("  {}: {} (waiting for approval)", r["field"].as_str().unwrap_or("fact"), cut(r["value"].as_str().unwrap_or(""), 100)));
+                facts.push(format!(
+                    "  {}: {} (waiting for approval)",
+                    r["field"].as_str().unwrap_or("fact"),
+                    cut(r["value"].as_str().unwrap_or(""), 100)
+                ));
             }
         }
     }
@@ -315,7 +405,8 @@ pub fn customer_lookup(kh: &Arc<dyn KernelHandle>, query: &str) -> Result<String
             out.push('\n');
         }
     }
-    if p.contact_keys.is_empty() && forms.is_empty() && mails.is_empty() && !out.contains("Texts ") {
+    if p.contact_keys.is_empty() && forms.is_empty() && mails.is_empty() && !out.contains("Texts ")
+    {
         return Ok(format!("Nothing on record for \"{}\".", query.trim()));
     }
     out.push_str("memory_recall any key above for the full record.");
@@ -339,11 +430,22 @@ pub fn email_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, 
     }
     let mut to = input["to"].as_str().unwrap_or("").trim().to_lowercase();
     let mut subject = input["subject"].as_str().unwrap_or("").trim().to_string();
-    let (mut in_reply_to, mut references, mut to_name, mut source) = (String::new(), String::new(), String::new(), String::new());
-    if let Some(k) = input["reply_to"].as_str().map(str::trim).filter(|k| !k.is_empty()) {
-        let key = if k.starts_with("mail/") { k.to_string() } else { format!("mail/{k}") };
+    let (mut in_reply_to, mut references, mut to_name, mut source) =
+        (String::new(), String::new(), String::new(), String::new());
+    if let Some(k) = input["reply_to"]
+        .as_str()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+    {
+        let key = if k.starts_with("mail/") {
+            k.to_string()
+        } else {
+            format!("mail/{k}")
+        };
         let Some(m) = kh.memory_recall(&key)? else {
-            return Err(format!("No email at {key}. Use customer_lookup or memory_list prefix 'mail/' to find it."));
+            return Err(format!(
+                "No email at {key}. Use customer_lookup or memory_list prefix 'mail/' to find it."
+            ));
         };
         let m = as_record(&m);
         if to.is_empty() {
@@ -352,19 +454,31 @@ pub fn email_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, 
         to_name = m["from_name"].as_str().unwrap_or("").to_string();
         if subject.is_empty() {
             let s = m["subject"].as_str().unwrap_or("");
-            subject = if s.to_lowercase().starts_with("re:") { s.to_string() } else { format!("Re: {s}") };
+            subject = if s.to_lowercase().starts_with("re:") {
+                s.to_string()
+            } else {
+                format!("Re: {s}")
+            };
         }
         let mid = m["message_id"].as_str().unwrap_or("");
         if !mid.is_empty() {
             in_reply_to = mid.to_string();
             let refs = m["references"].as_str().unwrap_or("").trim();
-            references = if refs.is_empty() { format!("<{mid}>") } else { format!("{refs} <{mid}>") };
+            references = if refs.is_empty() {
+                format!("<{mid}>")
+            } else {
+                format!("{refs} <{mid}>")
+            };
         }
         source = key;
     }
-    let ok_addr = to.split_once('@').is_some_and(|(a, d)| !a.is_empty() && d.contains('.') && !to.contains(char::is_whitespace));
+    let ok_addr = to.split_once('@').is_some_and(|(a, d)| {
+        !a.is_empty() && d.contains('.') && !to.contains(char::is_whitespace)
+    });
     if !ok_addr {
-        return Err("Say who it goes to: reply_to an email on record, or a valid to address.".into());
+        return Err(
+            "Say who it goes to: reply_to an email on record, or a valid to address.".into(),
+        );
     }
     if subject.is_empty() {
         return Err("Give the email a subject.".into());
@@ -396,7 +510,12 @@ fn palette() -> Vec<(String, Value)> {
         .as_array()
         .map(|a| {
             a.iter()
-                .map(|b| (b["name"].as_str().unwrap_or("").to_string(), b["block"].clone()))
+                .map(|b| {
+                    (
+                        b["name"].as_str().unwrap_or("").to_string(),
+                        b["block"].clone(),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -414,7 +533,11 @@ pub fn block_names() -> String {
             None => groups.push((g, vec![n])),
         }
     }
-    groups.iter().map(|(g, l)| format!("{g}: {}", l.join(", "))).collect::<Vec<_>>().join(". ")
+    groups
+        .iter()
+        .map(|(g, l)| format!("{g}: {}", l.join(", ")))
+        .collect::<Vec<_>>()
+        .join(". ")
 }
 
 /// fbSlug: lowercase, runs of other characters become "-", 48 at most.
@@ -427,22 +550,36 @@ pub fn fb_slug(text: &str) -> String {
             out.push('-');
         }
     }
-    out.trim_matches('-').chars().take(48).collect::<String>().trim_end_matches('-').to_string()
+    out.trim_matches('-')
+        .chars()
+        .take(48)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
 }
 
 /// fbUniqueKey: a key no other field uses, nor is a "<key>_" prefix of one.
 pub fn fb_unique_key(base: &str, taken: &[String]) -> String {
     let stem = {
         let s = fb_slug(base).replace('-', "_");
-        if s.is_empty() { "field".to_string() } else { s }
+        if s.is_empty() {
+            "field".to_string()
+        } else {
+            s
+        }
     };
     let clash = |k: &str| {
-        taken.iter().any(|t| t == k || t.starts_with(&format!("{k}_")) || k.starts_with(&format!("{t}_")))
+        taken
+            .iter()
+            .any(|t| t == k || t.starts_with(&format!("{k}_")) || k.starts_with(&format!("{t}_")))
     };
     if !clash(&stem) {
         return stem;
     }
-    (2..500).map(|n| format!("{stem}{n}")).find(|k| !clash(k)).unwrap_or_else(|| format!("{stem}{}", chrono::Utc::now().timestamp()))
+    (2..500)
+        .map(|n| format!("{stem}{n}"))
+        .find(|k| !clash(k))
+        .unwrap_or_else(|| format!("{stem}{}", chrono::Utc::now().timestamp()))
 }
 
 fn find_block(want: &str) -> Option<Value> {
@@ -450,7 +587,10 @@ fn find_block(want: &str) -> Option<Value> {
     let pal = palette();
     pal.iter()
         .find(|(n, b)| n.to_lowercase() == w || b["stype"].as_str() == Some(w.as_str()))
-        .or_else(|| pal.iter().find(|(_, b)| b["label"].as_str().is_some_and(|l| l.to_lowercase() == w)))
+        .or_else(|| {
+            pal.iter()
+                .find(|(_, b)| b["label"].as_str().is_some_and(|l| l.to_lowercase() == w))
+        })
         .map(|(_, b)| b.clone())
 }
 
@@ -463,14 +603,21 @@ pub fn form_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, S
     }
     let wanted = input["blocks"].as_array().cloned().unwrap_or_default();
     if wanted.is_empty() {
-        return Err(format!("Add at least one block. Blocks: {}.", block_names()));
+        return Err(format!(
+            "Add at least one block. Blocks: {}.",
+            block_names()
+        ));
     }
     let mut fields: Vec<Value> = Vec::new();
     let mut keys: Vec<String> = Vec::new();
     for (i, w) in wanted.iter().enumerate() {
         let name = w["block"].as_str().or(w.as_str()).unwrap_or("");
         let Some(mut f) = find_block(name) else {
-            return Err(format!("Block {} (\"{name}\") is not one the builder has. Use one of: {}.", i + 1, block_names()));
+            return Err(format!(
+                "Block {} (\"{name}\") is not one the builder has. Use one of: {}.",
+                i + 1,
+                block_names()
+            ));
         };
         if let Some(l) = w["label"].as_str().map(str::trim).filter(|l| !l.is_empty()) {
             f["label"] = json!(l);
@@ -480,7 +627,12 @@ pub fn form_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, S
         }
         let stype = f["stype"].as_str().unwrap_or("").to_string();
         if let Some(opts) = w["options"].as_array() {
-            let opts: Vec<String> = opts.iter().filter_map(|o| o.as_str()).map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+            let opts: Vec<String> = opts
+                .iter()
+                .filter_map(|o| o.as_str())
+                .map(|o| o.trim().to_string())
+                .filter(|o| !o.is_empty())
+                .collect();
             if !opts.is_empty() {
                 f["config"]["options"] = json!(opts);
             }
@@ -489,14 +641,26 @@ pub fn form_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, S
             f["config"]["text"] = json!(t);
         }
         if matches!(stype.as_str(), "field-dropdown" | "field-choice") {
-            let n = f["config"]["options"].as_array().map(|a| a.len()).unwrap_or(0);
-            let placeholder = f["config"]["options"].as_array().is_some_and(|a| a.iter().any(|o| o.as_str().is_some_and(|s| s.starts_with("Option "))));
+            let n = f["config"]["options"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let placeholder = f["config"]["options"].as_array().is_some_and(|a| {
+                a.iter()
+                    .any(|o| o.as_str().is_some_and(|s| s.starts_with("Option ")))
+            });
             if n == 0 || placeholder {
-                return Err(format!("\"{}\" needs its real choices in options.", f["label"].as_str().unwrap_or(name)));
+                return Err(format!(
+                    "\"{}\" needs its real choices in options.",
+                    f["label"].as_str().unwrap_or(name)
+                ));
             }
         }
         if stype != "field-paragraph" && f["label"].as_str().unwrap_or("").trim().is_empty() {
-            return Err(format!("Block {} needs a question or heading (label).", i + 1));
+            return Err(format!(
+                "Block {} needs a question or heading (label).",
+                i + 1
+            ));
         }
         let key = fb_unique_key(f["label"].as_str().unwrap_or(name), &keys);
         keys.push(key.clone());
@@ -517,23 +681,36 @@ pub fn form_draft(kh: &Arc<dyn KernelHandle>, input: &Value) -> Result<String, S
         .collect();
     let stem = {
         let s = fb_slug(input["slug"].as_str().unwrap_or(&title));
-        if s.is_empty() { "form".to_string() } else { s }
+        if s.is_empty() {
+            "form".to_string()
+        } else {
+            s
+        }
     };
     let slug = if !taken.contains(&stem) {
         stem.clone()
     } else {
-        (2..500).map(|n| format!("{stem}-{n}")).find(|s| !taken.contains(s)).unwrap_or_else(|| format!("{stem}-{}", chrono::Utc::now().timestamp()))
+        (2..500)
+            .map(|n| format!("{stem}-{n}"))
+            .find(|s| !taken.contains(s))
+            .unwrap_or_else(|| format!("{stem}-{}", chrono::Utc::now().timestamp()))
     };
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let rec = json!({"title": title, "fields": fields, "published": false, "drafted_by": "stax", "created": now, "updated": now});
     let key = format!("form/{slug}");
     kh.memory_store(&key, rec)?;
     let back = kh.memory_recall(&key)?.map(|v| as_record(&v));
-    let ok = back.is_some_and(|b| b["title"].as_str() == Some(title.as_str()) && b["fields"].as_array().map(|a| a.len()) == Some(fields.len()));
+    let ok = back.is_some_and(|b| {
+        b["title"].as_str() == Some(title.as_str())
+            && b["fields"].as_array().map(|a| a.len()) == Some(fields.len())
+    });
     if !ok {
         return Err("The form did not save. Nothing was changed — try again.".into());
     }
-    let list: Vec<String> = fields.iter().map(|f| f["label"].as_str().unwrap_or("").to_string()).collect();
+    let list: Vec<String> = fields
+        .iter()
+        .map(|f| f["label"].as_str().unwrap_or("").to_string())
+        .collect();
     Ok(format!(
         "Drafted \"{title}\" with {} blocks: {}. It is saved in Forms as a draft, not published — the owner opens it there to review, change and publish it.",
         fields.len(),
@@ -559,7 +736,14 @@ mod tests {
     #[test]
     fn palette_has_the_builder_blocks() {
         let names = block_names();
-        for n in ["Heading", "Email", "Medical disclosure", "Signature", "Artist", "Reference photos"] {
+        for n in [
+            "Heading",
+            "Email",
+            "Medical disclosure",
+            "Signature",
+            "Artist",
+            "Reference photos",
+        ] {
             assert!(names.contains(n), "{n} missing: {names}");
         }
         assert!(find_block("consent-signature").is_some());
@@ -571,10 +755,22 @@ mod tests {
     #[test]
     fn people_merge_and_match() {
         let recs = vec![
-            ("contact/7015550101".to_string(), json!({"name": "Jane Ink", "phone": "+1 (701) 555-0101", "email": "jane@ink.test"})),
-            ("contact/jane@ink.test".to_string(), json!({"name": "Jane Ink"})),
-            ("contact/sam@example.com".to_string(), json!({"name": "Sam Rivera"})),
-            ("contact/7015550199".to_string(), json!({"name": "Janet Moss"})),
+            (
+                "contact/7015550101".to_string(),
+                json!({"name": "Jane Ink", "phone": "+1 (701) 555-0101", "email": "jane@ink.test"}),
+            ),
+            (
+                "contact/jane@ink.test".to_string(),
+                json!({"name": "Jane Ink"}),
+            ),
+            (
+                "contact/sam@example.com".to_string(),
+                json!({"name": "Sam Rivera"}),
+            ),
+            (
+                "contact/7015550199".to_string(),
+                json!({"name": "Janet Moss"}),
+            ),
         ];
         let all = people(&recs);
         assert_eq!(all.len(), 3, "Jane's two records are one person");

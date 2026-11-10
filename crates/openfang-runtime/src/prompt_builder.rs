@@ -562,9 +562,7 @@ pub fn tool_category(name: &str) -> &'static str {
         "shell_exec" | "shell_background" => "Shell",
 
         "memory_store" | "memory_recall" | "memory_delete" | "memory_list" | "memory_propose"
-        | "customer_lookup" | "email_draft" | "form_draft" => {
-            "Memory"
-        }
+        | "customer_lookup" | "email_draft" | "form_draft" => "Memory",
 
         "agent_send" | "agent_spawn" | "agent_list" | "agent_kill" | "agent_activate" => "Agents",
 
@@ -743,7 +741,14 @@ mod lean_tests {
         make_lean(&mut ctx, false);
         let lean = build_system_prompt(&ctx);
         assert!(lean.contains("You are the Texts agent."));
-        for gone in ["Available Skills", "ci-cd", "Soul", "First-Run", "Heartbeat Checklist", "Workspace: /x"] {
+        for gone in [
+            "Available Skills",
+            "ci-cd",
+            "Soul",
+            "First-Run",
+            "Heartbeat Checklist",
+            "Workspace: /x",
+        ] {
             assert!(fat.contains(gone), "fixture should include {gone}");
             assert!(!lean.contains(gone), "lean prompt still has {gone}");
         }

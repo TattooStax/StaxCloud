@@ -72,7 +72,9 @@ pub fn picture_id(url: &str) -> String {
         Some(dot) if dot > u.rfind('/').unwrap_or(0) => (u[..dot].to_string(), &u[dot..]),
         _ => (u.clone(), ""),
     };
-    let re = regex_lite::Regex::new(r"[-_@](\d{2,5}x\d{2,5}|\d{1,2}x|scaled|thumb|small|medium|large)$").expect("valid regex");
+    let re =
+        regex_lite::Regex::new(r"[-_@](\d{2,5}x\d{2,5}|\d{1,2}x|scaled|thumb|small|medium|large)$")
+            .expect("valid regex");
     let stem = re.replace(&stem, "").to_string();
     let d = Sha256::digest(stem.as_bytes());
     hex::encode(&d[..8])
@@ -112,7 +114,12 @@ pub fn normalize_style(s: &str) -> String {
             return cat.to_string();
         }
     }
-    for (needle, cat) in [("traditional", "traditional"), ("blackwork", "blackwork"), ("illustr", "illustrative"), ("realism", "black and grey realism")] {
+    for (needle, cat) in [
+        ("traditional", "traditional"),
+        ("blackwork", "blackwork"),
+        ("illustr", "illustrative"),
+        ("realism", "black and grey realism"),
+    ] {
         if t.contains(needle) {
             return cat.to_string();
         }
@@ -149,7 +156,12 @@ pub fn parse_reading(text: &str) -> Option<Reading> {
     let style = normalize_style(&s("style"));
     let mut also: Vec<String> = v["also"]
         .as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str()).map(normalize_style).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .map(normalize_style)
+                .collect()
+        })
         .unwrap_or_default();
     also.retain(|c| c != &style && c != "other");
     also.dedup();
@@ -158,7 +170,11 @@ pub fn parse_reading(text: &str) -> Option<Reading> {
         style,
         also,
         subject: s("subject"),
-        placement: if s("placement").is_empty() { "unknown".into() } else { s("placement") },
+        placement: if s("placement").is_empty() {
+            "unknown".into()
+        } else {
+            s("placement")
+        },
         linework: s("linework"),
         shading: s("shading"),
     })
@@ -202,13 +218,20 @@ pub fn artists_from(records: &[(String, Value)]) -> Vec<Artist> {
         let name = name.trim();
         let s = slug(name);
         if !s.is_empty() && s != "unassigned" && !out.iter().any(|a| a.slug == s) {
-            out.push(Artist { slug: s, name: name.to_string() });
+            out.push(Artist {
+                slug: s,
+                name: name.to_string(),
+            });
         }
     };
     for (k, v) in records {
         let r = as_record(v);
         if k.starts_with("artist/") && k != "artist/index" {
-            let name = r["display_name"].as_str().or(r["name"].as_str()).unwrap_or(&k[7..]).to_string();
+            let name = r["display_name"]
+                .as_str()
+                .or(r["name"].as_str())
+                .unwrap_or(&k[7..])
+                .to_string();
             push(&name);
         } else if k.starts_with("style/") && k.matches('/').count() == 1 {
             if let Some(n) = r["artist"].as_str() {
@@ -229,9 +252,15 @@ pub fn artist_for(page_url: &str, alt: &str, artists: &[Artist]) -> Option<Artis
         .and_then(|r| r.split_once('/').map(|(_, p)| p))
         .unwrap_or("")
         .to_lowercase();
-    let path_words: Vec<&str> = path.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let path_words: Vec<&str> = path
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
     let alt_l = alt.to_lowercase();
-    let alt_words: Vec<&str> = alt_l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let alt_words: Vec<&str> = alt_l
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
     let mut hits: Vec<&Artist> = Vec::new();
     for a in artists {
         let words: Vec<String> = a.slug.split('-').map(String::from).collect();
@@ -256,14 +285,29 @@ pub fn artist_for(page_url: &str, alt: &str, artists: &[Artist]) -> Option<Artis
 /// Same-site links on a page that may hold portfolio pictures: gallery,
 /// portfolio, work or artist pages, or a page named after an artist.
 pub fn portfolio_links(html: &str, base: &reqwest::Url, artists: &[Artist]) -> Vec<String> {
-    let re = regex_lite::Regex::new(r#"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>(.*?)</a>"#).expect("valid regex");
+    let re =
+        regex_lite::Regex::new(r#"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>(.*?)</a>"#)
+            .expect("valid regex");
     let tag = regex_lite::Regex::new(r"(?s)<[^>]+>").expect("valid regex");
-    let words = ["portfolio", "gallery", "work", "artist", "tattoos", "flash", "our-team", "team"];
+    let words = [
+        "portfolio",
+        "gallery",
+        "work",
+        "artist",
+        "tattoos",
+        "flash",
+        "our-team",
+        "team",
+    ];
     let mut out: Vec<String> = Vec::new();
     for c in re.captures_iter(html) {
         let href = c.get(1).map(|m| m.as_str()).unwrap_or("");
-        let text = tag.replace_all(c.get(2).map(|m| m.as_str()).unwrap_or(""), " ").to_lowercase();
-        let Ok(url) = base.join(href.trim()) else { continue };
+        let text = tag
+            .replace_all(c.get(2).map(|m| m.as_str()).unwrap_or(""), " ")
+            .to_lowercase();
+        let Ok(url) = base.join(href.trim()) else {
+            continue;
+        };
         if url.host_str() != base.host_str() || !matches!(url.scheme(), "http" | "https") {
             continue;
         }
@@ -274,7 +318,11 @@ pub fn portfolio_links(html: &str, base: &reqwest::Url, artists: &[Artist]) -> V
         let hit = words.iter().any(|w| path.contains(w) || text.contains(w))
             || artists.iter().any(|a| {
                 let first = a.slug.split('-').next().unwrap_or("");
-                first.len() >= 2 && (path.contains(first) || text.split_whitespace().any(|t| t.trim_matches(|c: char| !c.is_alphanumeric()) == first))
+                first.len() >= 2
+                    && (path.contains(first)
+                        || text
+                            .split_whitespace()
+                            .any(|t| t.trim_matches(|c: char| !c.is_alphanumeric()) == first))
             });
         let mut u = url.clone();
         u.set_fragment(None);
@@ -328,7 +376,12 @@ fn top_words(texts: &[&str], n: usize) -> Vec<String> {
 /// the note is assembled from what the pictures' readings actually said.
 /// Fields the owner set by hand (named in the old profile's "owner_set")
 /// are kept as they were.
-pub fn rebuild_profile(artist: &Artist, records: &[Value], old: Option<&Value>, now: &str) -> Value {
+pub fn rebuild_profile(
+    artist: &Artist,
+    records: &[Value],
+    old: Option<&Value>,
+    now: &str,
+) -> Value {
     let mut cats: BTreeMap<String, u64> = BTreeMap::new();
     for r in records {
         if let Some(s) = r["style"].as_str() {
@@ -337,12 +390,20 @@ pub fn rebuild_profile(artist: &Artist, records: &[Value], old: Option<&Value>, 
     }
     let mut ranked: Vec<(String, u64)> = cats.iter().map(|(k, v)| (k.clone(), *v)).collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let specialties: Vec<String> = ranked.iter().filter(|(c, _)| c != "other").take(4).map(|(c, _)| c.clone()).collect();
+    let specialties: Vec<String> = ranked
+        .iter()
+        .filter(|(c, _)| c != "other")
+        .take(4)
+        .map(|(c, _)| c.clone())
+        .collect();
 
     let mut exemplars = Vec::new();
     for (cat, _) in ranked.iter().take(3) {
         let mut picked = 0;
-        for r in records.iter().filter(|r| r["style"].as_str() == Some(cat.as_str())) {
+        for r in records
+            .iter()
+            .filter(|r| r["style"].as_str() == Some(cat.as_str()))
+        {
             if picked == 3 {
                 break;
             }
@@ -353,9 +414,18 @@ pub fn rebuild_profile(artist: &Artist, records: &[Value], old: Option<&Value>, 
         }
     }
 
-    let lw: Vec<&str> = records.iter().filter_map(|r| r["linework"].as_str()).collect();
-    let sh: Vec<&str> = records.iter().filter_map(|r| r["shading"].as_str()).collect();
-    let subj: Vec<&str> = records.iter().filter_map(|r| r["subject"].as_str()).collect();
+    let lw: Vec<&str> = records
+        .iter()
+        .filter_map(|r| r["linework"].as_str())
+        .collect();
+    let sh: Vec<&str> = records
+        .iter()
+        .filter_map(|r| r["shading"].as_str())
+        .collect();
+    let subj: Vec<&str> = records
+        .iter()
+        .filter_map(|r| r["subject"].as_str())
+        .collect();
     let n = records.len();
     let mut note = String::new();
     if let Some((top, c)) = ranked.first() {
@@ -448,7 +518,11 @@ pub async fn learn(
     let tidied = tidy_old_records(kh)?;
     let records = kh.memory_list("")?;
     let artists = artists_from(&records);
-    let profile = records.iter().find(|(k, _)| k == "setup/profile").map(|(_, v)| v.clone()).unwrap_or(Value::Null);
+    let profile = records
+        .iter()
+        .find(|(k, _)| k == "setup/profile")
+        .map(|(_, v)| v.clone())
+        .unwrap_or(Value::Null);
 
     // Pages to look at: those given, then known portfolio pages, then the
     // studio's and artists' own addresses and their portfolio links.
@@ -459,7 +533,16 @@ pub async fn learn(
         }
     };
     for (u, a) in pages {
-        let who = a.as_deref().map(|n| artists.iter().find(|x| x.slug == slug(n)).cloned().unwrap_or(Artist { slug: slug(n), name: n.to_string() }));
+        let who = a.as_deref().map(|n| {
+            artists
+                .iter()
+                .find(|x| x.slug == slug(n))
+                .cloned()
+                .unwrap_or(Artist {
+                    slug: slug(n),
+                    name: n.to_string(),
+                })
+        });
         add(u.clone(), who, &mut to_visit);
     }
     for (k, v) in &records {
@@ -469,11 +552,15 @@ pub async fn learn(
             }
         }
     }
-    let mut homes: Vec<(String, Option<Artist>)> = urls_in(&profile).into_iter().map(|u| (u, None)).collect();
+    let mut homes: Vec<(String, Option<Artist>)> =
+        urls_in(&profile).into_iter().map(|u| (u, None)).collect();
     for (k, v) in &records {
         if k.starts_with("artist/") && k != "artist/index" {
             let r = as_record(v);
-            let name = r["display_name"].as_str().or(r["name"].as_str()).unwrap_or("");
+            let name = r["display_name"]
+                .as_str()
+                .or(r["name"].as_str())
+                .unwrap_or("");
             let who = artists.iter().find(|a| a.slug == slug(name)).cloned();
             for u in urls_in(&r) {
                 homes.push((u, who.clone()));
@@ -580,7 +667,11 @@ pub async fn learn(
     for s in &touched {
         rebuild(kh, s, &now)?;
     }
-    let pending: Vec<String> = found.iter().skip(max).map(|(_, u, _, _)| u.clone()).collect();
+    let pending: Vec<String> = found
+        .iter()
+        .skip(max)
+        .map(|(_, u, _, _)| u.clone())
+        .collect();
     kh.memory_store("stylequeue", json!({"pending": pending, "checked_at": now}))?;
 
     let mut out = format!(
@@ -600,7 +691,11 @@ pub async fn learn(
                 " {}: {} pieces, mostly {}.",
                 p["artist"].as_str().unwrap_or(s),
                 p["photo_count"],
-                p["specialties"].as_array().and_then(|a| a.first()).and_then(|x| x.as_str()).unwrap_or("not sure yet")
+                p["specialties"]
+                    .as_array()
+                    .and_then(|a| a.first())
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("not sure yet")
             ));
         }
     }
@@ -661,23 +756,41 @@ pub fn rebuild(kh: &Arc<dyn KernelHandle>, artist_slug: &str, now: &str) -> Resu
     let name = recs
         .iter()
         .find_map(|r| r["artist"].as_str().map(String::from))
-        .or_else(|| old.as_ref().and_then(|o| as_record(o)["artist"].as_str().map(String::from)))
+        .or_else(|| {
+            old.as_ref()
+                .and_then(|o| as_record(o)["artist"].as_str().map(String::from))
+        })
         .unwrap_or_else(|| artist_slug.to_string());
-    let artist = Artist { slug: artist_slug.to_string(), name };
+    let artist = Artist {
+        slug: artist_slug.to_string(),
+        name,
+    };
     if recs.is_empty() {
         return Ok(());
     }
-    kh.memory_store(&format!("style/{artist_slug}"), rebuild_profile(&artist, &recs, old.as_ref(), now))
+    kh.memory_store(
+        &format!("style/{artist_slug}"),
+        rebuild_profile(&artist, &recs, old.as_ref(), now),
+    )
 }
 
 /// The owner's correction: a picture is another artist's, or another
 /// style. Moves or edits the record and rebuilds every profile touched.
-pub fn correct(kh: &Arc<dyn KernelHandle>, picture: &str, artist: Option<&str>, style: Option<&str>) -> Result<String, String> {
+pub fn correct(
+    kh: &Arc<dyn KernelHandle>,
+    picture: &str,
+    artist: Option<&str>,
+    style: Option<&str>,
+) -> Result<String, String> {
     let needle = picture.trim().to_lowercase();
     if needle.is_empty() {
         return Err("Say which picture: its address, its subject words, or its id.".into());
     }
-    let id_guess = if needle.starts_with("http") { picture_id(&needle) } else { String::new() };
+    let id_guess = if needle.starts_with("http") {
+        picture_id(&needle)
+    } else {
+        String::new()
+    };
     let all = kh.memory_list("portfolio/")?;
     let hits: Vec<&(String, Value)> = all
         .iter()
@@ -686,7 +799,9 @@ pub fn correct(kh: &Arc<dyn KernelHandle>, picture: &str, artist: Option<&str>, 
             k.ends_with(&format!("/{needle}"))
                 || (!id_guess.is_empty() && k.ends_with(&format!("/{id_guess}")))
                 || r["file_id"].as_str() == Some(picture.trim())
-                || r["subject"].as_str().is_some_and(|s| s.to_lowercase().contains(&needle))
+                || r["subject"]
+                    .as_str()
+                    .is_some_and(|s| s.to_lowercase().contains(&needle))
         })
         .collect();
     match hits.len() {
@@ -708,8 +823,16 @@ pub fn correct(kh: &Arc<dyn KernelHandle>, picture: &str, artist: Option<&str>, 
     let mut new_slug = old_slug.clone();
     if let Some(a) = artist {
         let name = a.trim();
-        new_slug = if name.eq_ignore_ascii_case("unassigned") { "unassigned".into() } else { slug(name) };
-        rec["artist"] = json!(if new_slug == "unassigned" { "unassigned" } else { name });
+        new_slug = if name.eq_ignore_ascii_case("unassigned") {
+            "unassigned".into()
+        } else {
+            slug(name)
+        };
+        rec["artist"] = json!(if new_slug == "unassigned" {
+            "unassigned"
+        } else {
+            name
+        });
     }
     rec["corrected_at"] = json!(now);
     kh.memory_store(&format!("portfolio/{new_slug}/{id}"), rec.clone())?;
@@ -740,13 +863,19 @@ mod tests {
         let c = picture_id("https://fargotattoo.com/wp-content/uploads/rose-1024x683.jpg");
         assert_eq!(a, b);
         assert_eq!(a, c);
-        assert_ne!(a, picture_id("https://fargotattoo.com/wp-content/uploads/lily.jpg"));
+        assert_ne!(
+            a,
+            picture_id("https://fargotattoo.com/wp-content/uploads/lily.jpg")
+        );
         assert_eq!(a.len(), 16);
     }
 
     #[test]
     fn styles_normalize_to_the_categories() {
-        assert_eq!(normalize_style("Black & Grey Realism"), "black and grey realism");
+        assert_eq!(
+            normalize_style("Black & Grey Realism"),
+            "black and grey realism"
+        );
         assert_eq!(normalize_style("neo traditional"), "neo-traditional");
         assert_eq!(normalize_style("Traditional"), "traditional");
         assert_eq!(normalize_style("fineline"), "fine line");
@@ -763,25 +892,64 @@ mod tests {
         assert_eq!(r.also, vec!["portrait"]);
         assert_eq!(r.placement, "unknown");
         assert!(parse_reading("no json here").is_none());
-        assert!(!parse_reading("{\"finished_tattoo\": \"false\"}").unwrap().finished_tattoo);
+        assert!(
+            !parse_reading("{\"finished_tattoo\": \"false\"}")
+                .unwrap()
+                .finished_tattoo
+        );
     }
 
     fn crew() -> Vec<Artist> {
         vec![
-            Artist { slug: "shawn-lowe".into(), name: "Shawn Lowe".into() },
-            Artist { slug: "leni-b".into(), name: "Leni B.".into() },
+            Artist {
+                slug: "shawn-lowe".into(),
+                name: "Shawn Lowe".into(),
+            },
+            Artist {
+                slug: "leni-b".into(),
+                name: "Leni B.".into(),
+            },
         ]
     }
 
     #[test]
     fn artist_from_page_or_alt_never_a_guess() {
         let a = crew();
-        assert_eq!(artist_for("https://fargotattoo.com/leni-b/", "", &a).unwrap().slug, "leni-b");
-        assert_eq!(artist_for("https://fargotattoo.com/artists/shawn", "", &a).unwrap().slug, "shawn-lowe");
-        assert_eq!(artist_for("https://fargotattoo.com/gallery", "Rose by Leni", &a).unwrap().slug, "leni-b");
-        assert!(artist_for("https://fargotattoo.com/gallery", "a rose", &a).is_none(), "shared gallery stays unassigned");
-        assert!(artist_for("https://fargotattoo.com/gallery", "Shawn and Leni collab", &a).is_none(), "two names = not sure");
-        assert!(artist_for("https://fargotattoo.com/shawnee-county", "", &a).is_none(), "whole words only");
+        assert_eq!(
+            artist_for("https://fargotattoo.com/leni-b/", "", &a)
+                .unwrap()
+                .slug,
+            "leni-b"
+        );
+        assert_eq!(
+            artist_for("https://fargotattoo.com/artists/shawn", "", &a)
+                .unwrap()
+                .slug,
+            "shawn-lowe"
+        );
+        assert_eq!(
+            artist_for("https://fargotattoo.com/gallery", "Rose by Leni", &a)
+                .unwrap()
+                .slug,
+            "leni-b"
+        );
+        assert!(
+            artist_for("https://fargotattoo.com/gallery", "a rose", &a).is_none(),
+            "shared gallery stays unassigned"
+        );
+        assert!(
+            artist_for(
+                "https://fargotattoo.com/gallery",
+                "Shawn and Leni collab",
+                &a
+            )
+            .is_none(),
+            "two names = not sure"
+        );
+        assert!(
+            artist_for("https://fargotattoo.com/shawnee-county", "", &a).is_none(),
+            "whole words only"
+        );
     }
 
     #[test]
@@ -790,18 +958,34 @@ mod tests {
         let html = r#"<a href="/gallery/">Gallery</a> <a href="/leni-b">Leni</a> <a href="https://instagram.com/x">IG</a>
             <a href="/aftercare">Aftercare</a> <a href="/">Home</a> <a href="/meet"><span>Shawn</span></a>"#;
         let links = portfolio_links(html, &base, &crew());
-        assert_eq!(links, vec!["https://fargotattoo.com/gallery/", "https://fargotattoo.com/leni-b", "https://fargotattoo.com/meet"]);
+        assert_eq!(
+            links,
+            vec![
+                "https://fargotattoo.com/gallery/",
+                "https://fargotattoo.com/leni-b",
+                "https://fargotattoo.com/meet"
+            ]
+        );
     }
 
     #[test]
     fn urls_are_found_in_any_record() {
         let v = json!({"business": "Fargo Tattoo — site https://fargotattoo.com, IG https://instagram.com/fargotattoo.", "brief": ["see https://fargotattoo.com"]});
-        assert_eq!(urls_in(&v), vec!["https://fargotattoo.com", "https://instagram.com/fargotattoo"]);
+        assert_eq!(
+            urls_in(&v),
+            vec![
+                "https://fargotattoo.com",
+                "https://instagram.com/fargotattoo"
+            ]
+        );
     }
 
     #[test]
     fn profile_counts_dates_and_keeps_owner_fields() {
-        let a = Artist { slug: "leni-b".into(), name: "Leni B.".into() };
+        let a = Artist {
+            slug: "leni-b".into(),
+            name: "Leni B.".into(),
+        };
         let recs = vec![
             json!({"style": "fine line", "subject": "rose", "file_id": "f1", "linework": "fine, delicate", "shading": "light stipple"}),
             json!({"style": "fine line", "subject": "moth", "file_id": "f2", "linework": "fine, delicate", "shading": "minimal"}),
@@ -812,12 +996,21 @@ mod tests {
         assert_eq!(p["photo_count"], 3);
         assert_eq!(p["categories"]["fine line"], 2);
         assert_eq!(p["specialties"][0], "fine line");
-        assert_eq!(p["updated"], "2026-11-10T09:00:00-06:00", "the date is the clock's, never invented");
+        assert_eq!(
+            p["updated"], "2026-11-10T09:00:00-06:00",
+            "the date is the clock's, never invented"
+        );
         assert_eq!(p["style_note"], "Owner wrote this.", "owner's note kept");
         assert_eq!(p["exemplars"].as_array().unwrap().len(), 3);
         let fresh = rebuild_profile(&a, &recs, None, "now");
         let note = fresh["style_note"].as_str().unwrap();
-        assert!(note.starts_with("Mostly fine line (2 of 3 pieces read), also illustrative."), "{note}");
-        assert!(note.contains("Linework: fine, delicate") && note.contains("Subjects include rose"), "{note}");
+        assert!(
+            note.starts_with("Mostly fine line (2 of 3 pieces read), also illustrative."),
+            "{note}"
+        );
+        assert!(
+            note.contains("Linework: fine, delicate") && note.contains("Subjects include rose"),
+            "{note}"
+        );
     }
 }

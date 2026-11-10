@@ -121,7 +121,10 @@ fn digest(v: &serde_json::Value) -> String {
 
 /// The work the watched records hold right now, as (place, content digest)
 /// pairs, sorted. Empty = nothing to do. `records` is every shared record.
-pub fn work_items(spec: &WakeSpec, records: &[(String, serde_json::Value)]) -> Vec<(String, String)> {
+pub fn work_items(
+    spec: &WakeSpec,
+    records: &[(String, serde_json::Value)],
+) -> Vec<(String, String)> {
     let find = |k: &str| records.iter().find(|(rk, _)| rk == k).map(|(_, v)| v);
     let mut out = Vec::new();
     for w in &spec.when {
@@ -130,9 +133,16 @@ pub fn work_items(spec: &WakeSpec, records: &[(String, serde_json::Value)]) -> V
             let rec = as_json(raw);
             match &w.list {
                 Some(field) => {
-                    let items = rec.get(field).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                    let items = rec
+                        .get(field)
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                     for item in items {
-                        let name = item.as_str().map(str::to_string).unwrap_or_else(|| item.to_string());
+                        let name = item
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| item.to_string());
                         // An entry naming a record changes when that record does
                         // (a new message in a thread already on the list).
                         let d = find(&name).map(digest).unwrap_or_else(|| digest(&item));
@@ -151,7 +161,10 @@ pub fn work_items(spec: &WakeSpec, records: &[(String, serde_json::Value)]) -> V
             }
         }
         if let Some(prefix) = &w.prefix {
-            for (k, raw) in records.iter().filter(|(k, _)| k.starts_with(prefix.as_str())) {
+            for (k, raw) in records
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix.as_str()))
+            {
                 let rec = as_json(raw);
                 if let Some(field) = &w.unless {
                     if rec.get(field).and_then(|x| x.as_bool()).unwrap_or(false) {
@@ -190,7 +203,11 @@ pub enum WakeDecision {
     Unchanged,
 }
 
-pub fn decide(spec: &WakeSpec, records: &[(String, serde_json::Value)], last_fingerprint: Option<&str>) -> (WakeDecision, String) {
+pub fn decide(
+    spec: &WakeSpec,
+    records: &[(String, serde_json::Value)],
+    last_fingerprint: Option<&str>,
+) -> (WakeDecision, String) {
     if !spec.is_gated() {
         return (WakeDecision::Run, String::new());
     }
@@ -240,18 +257,29 @@ when = [ { key = "attention/sms", list = "threads" } ]"#,
         let spec = sms_spec();
         let empty = vec![("attention/sms".to_string(), json!({"threads": []}))];
         assert_eq!(decide(&spec, &empty, None).0, WakeDecision::NoWork);
-        assert_eq!(decide(&spec, &[], None).0, WakeDecision::NoWork, "missing record = no work");
+        assert_eq!(
+            decide(&spec, &[], None).0,
+            WakeDecision::NoWork,
+            "missing record = no work"
+        );
 
         let mut recs = vec![
-            ("attention/sms".to_string(), json!({"threads": ["sms/7015550101"]})),
-            ("sms/7015550101".to_string(), json!({"messages": [{"id": "m1", "body": "hi"}]})),
+            (
+                "attention/sms".to_string(),
+                json!({"threads": ["sms/7015550101"]}),
+            ),
+            (
+                "sms/7015550101".to_string(),
+                json!({"messages": [{"id": "m1", "body": "hi"}]}),
+            ),
         ];
         let (d, fp) = decide(&spec, &recs, None);
         assert_eq!(d, WakeDecision::Run);
         // Same waiting thread, nothing new: no second wake.
         assert_eq!(decide(&spec, &recs, Some(&fp)).0, WakeDecision::Unchanged);
         // A new message in that same thread: wake again.
-        recs[1].1 = json!({"messages": [{"id": "m1", "body": "hi"}, {"id": "m2", "body": "still there?"}]});
+        recs[1].1 =
+            json!({"messages": [{"id": "m1", "body": "hi"}, {"id": "m2", "body": "still there?"}]});
         assert_eq!(decide(&spec, &recs, Some(&fp)).0, WakeDecision::Run);
     }
 
@@ -262,7 +290,10 @@ when = [ { key = "attention/sms", list = "threads" } ]"#,
         assert_eq!(decide(&spec, &done, None).0, WakeDecision::NoWork);
         let fresh = vec![
             ("formsub/booking/a".to_string(), json!({"processed": true})),
-            ("formsub/booking/b".to_string(), serde_json::Value::String(json!({"data": {}}).to_string())),
+            (
+                "formsub/booking/b".to_string(),
+                serde_json::Value::String(json!({"data": {}}).to_string()),
+            ),
             ("contact/x".to_string(), json!({})),
         ];
         let items = work_items(&spec, &fresh);
@@ -295,6 +326,9 @@ gated = false"#,
 
     #[test]
     fn ungated_always_runs() {
-        assert_eq!(decide(&WakeSpec::default(), &[], Some("x")).0, WakeDecision::Run);
+        assert_eq!(
+            decide(&WakeSpec::default(), &[], Some("x")).0,
+            WakeDecision::Run
+        );
     }
 }

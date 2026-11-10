@@ -3111,7 +3111,7 @@ impl OpenFangKernel {
 
         // Write JSONL session mirror and daily memory log to the agent's
         // private state directory, not the user-facing workspace. See #1097.
-        if let Some(ref state_dir) = manifest.state_dir.as_ref().filter(|_| !fresh) {
+        if let Some(state_dir) = manifest.state_dir.as_ref().filter(|_| !fresh) {
             if let Err(e) = self
                 .memory
                 .write_jsonl_mirror(&session, &state_dir.join("sessions"))
@@ -6933,7 +6933,9 @@ impl OpenFangKernel {
                     made += 1;
                     info!(helper = %name, schedule = %s.name, "Standing schedule put in place");
                 }
-                Err(e) => warn!(helper = %name, schedule = %s.name, "Could not add standing schedule: {e}"),
+                Err(e) => {
+                    warn!(helper = %name, schedule = %s.name, "Could not add standing schedule: {e}")
+                }
             }
         }
         if made > 0 {
@@ -7021,9 +7023,9 @@ impl OpenFangKernel {
             if let Some((spec, _)) = self.wake_spec_of(agent_id) {
                 if spec.is_gated() {
                     let records = self.shared_records();
-                    let fp = openfang_types::wake::fingerprint(
-                        &openfang_types::wake::work_items(&spec, &records),
-                    );
+                    let fp = openfang_types::wake::fingerprint(&openfang_types::wake::work_items(
+                        &spec, &records,
+                    ));
                     rec.insert("fingerprint".into(), json!(fp));
                 }
             }
@@ -7108,12 +7110,20 @@ impl OpenFangKernel {
                 if let Some((_, name)) = wake.as_ref() {
                     let receipt = self.wake_receipt(name);
                     match &run {
-                        Ok(Ok(r)) => {
-                            self.write_wake_receipt(name, receipt, true, "woke", Some((agent_id, r)))
-                        }
-                        Ok(Err(e)) => {
-                            self.write_wake_receipt(name, receipt, true, &format!("failed: {e}"), None)
-                        }
+                        Ok(Ok(r)) => self.write_wake_receipt(
+                            name,
+                            receipt,
+                            true,
+                            "woke",
+                            Some((agent_id, r)),
+                        ),
+                        Ok(Err(e)) => self.write_wake_receipt(
+                            name,
+                            receipt,
+                            true,
+                            &format!("failed: {e}"),
+                            None,
+                        ),
                         Err(_) => self.write_wake_receipt(name, receipt, true, "timed out", None),
                     }
                 }
@@ -7468,7 +7478,6 @@ tokio::task_local! {
     /// sent with `"fresh": true`).
     pub static FRESH_TURN: bool;
 }
-
 
 /// A well-known agent ID used for shared memory operations across agents.
 /// This is a fixed UUID so all agents read/write to the same namespace.
@@ -9033,6 +9042,81 @@ mod tests {
             .expect("hand must be re-activatable after stop");
         assert_ne!(second.instance_id, first_instance_id);
 
+        kernel.shutdown();
+    }
+
+    // Standing sweeps are kept by the kernel: put in place once on
+    // activation, and an older sweep the model made under a name of its own
+    // (same timing, different words) is never doubled.
+    #[test]
+    fn test_hand_sweep_kept_once_and_old_model_sweeps_respected() {
+        use openfang_types::scheduler::{
+            CronAction, CronDelivery, CronJob, CronJobId, CronSchedule,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let home_dir = tmp.path().join("openfang-kernel-sweep-test");
+        let dir = home_dir.join("hands").join("sms");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("HAND.toml"),
+            include_str!("../../../stax/hands/sms/HAND.toml"),
+        )
+        .unwrap();
+        let config = KernelConfig {
+            home_dir: home_dir.clone(),
+            data_dir: home_dir.join("data"),
+            ..KernelConfig::default()
+        };
+        let kernel = OpenFangKernel::boot_with_config(config).expect("kernel boots");
+        let id = kernel
+            .activate_hand("sms", HashMap::new(), None)
+            .unwrap()
+            .agent_id
+            .unwrap();
+        let sweeps = |k: &OpenFangKernel| {
+            k.cron_scheduler
+                .list_jobs(id)
+                .into_iter()
+                .filter(|j| matches!(&j.schedule, CronSchedule::Cron { expr, .. } if expr == "*/15 * * * *"))
+                .collect::<Vec<_>>()
+        };
+        // As the activate route does right after activation.
+        assert_eq!(kernel.ensure_hand_schedules(id), 1);
+        let made = sweeps(&kernel);
+        assert_eq!(made.len(), 1, "one sweep after activation");
+        assert_eq!(made[0].name, "texts sweep");
+        assert_eq!(kernel.ensure_hand_schedules(id), 0, "never twice");
+
+        // An older box: the sweep was made by the model, named its own way.
+        kernel.cron_scheduler.remove_job(made[0].id).unwrap();
+        kernel
+            .cron_scheduler
+            .add_job(
+                CronJob {
+                    id: CronJobId::new(),
+                    agent_id: id,
+                    name: "sms-backstop-sweep".into(),
+                    enabled: true,
+                    schedule: CronSchedule::Cron {
+                        expr: "*/15 * * * *".into(),
+                        tz: None,
+                    },
+                    action: CronAction::AgentTurn {
+                        message: "Run your Texts sweep now.".into(),
+                        model_override: None,
+                        timeout_secs: None,
+                    },
+                    delivery: CronDelivery::None,
+                    delivery_targets: Vec::new(),
+                    created_at: chrono::Utc::now(),
+                    last_run: None,
+                    next_run: None,
+                },
+                false,
+            )
+            .unwrap();
+        assert_eq!(kernel.ensure_hand_schedules(id), 0, "old sweep counts");
+        assert_eq!(sweeps(&kernel).len(), 1);
         kernel.shutdown();
     }
 
