@@ -4850,6 +4850,9 @@ pub async fn activate_hand(
 
     match state.kernel.activate_hand(&hand_id, config, instance_name) {
         Ok(instance) => {
+            if let Some(agent_id) = instance.agent_id {
+                state.kernel.ensure_hand_schedules(agent_id);
+            }
             // If the hand agent has a non-reactive schedule (autonomous hands),
             // start its background loop so it begins running immediately.
             if let Some(agent_id) = instance.agent_id {

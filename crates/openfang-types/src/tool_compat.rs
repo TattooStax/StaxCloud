@@ -67,6 +67,8 @@ pub fn is_known_openfang_tool(name: &str) -> bool {
             | "memory_recall"
             | "memory_list"
             | "memory_propose"
+            | "style_learn"
+            | "style_correct"
             | "image_describe"
             | "image_fetch"
             | "page_images"

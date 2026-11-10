@@ -567,7 +567,8 @@ pub fn tool_category(name: &str) -> &'static str {
 
         "agent_send" | "agent_spawn" | "agent_list" | "agent_kill" | "agent_activate" => "Agents",
 
-        "image_describe" | "image_generate" | "audio_transcribe" | "tts_speak" => "Media",
+        "image_describe" | "image_generate" | "audio_transcribe" | "tts_speak" | "style_learn"
+        | "style_correct" => "Media",
 
         "docker_exec" | "docker_build" | "docker_run" => "Docker",
 
@@ -622,6 +623,8 @@ pub fn tool_hint(name: &str) -> &'static str {
         "memory_delete" => "delete a memory entry",
         "memory_list" => "list stored memory keys",
         "memory_propose" => "propose a customer fact for approval",
+        "style_learn" => "learn artists' styles from the portfolio",
+        "style_correct" => "fix whose a portfolio picture is",
 
         // Agents
         "agent_send" => "send a message to another agent",

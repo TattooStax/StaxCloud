@@ -7,10 +7,10 @@ runtime: prompt_only
 
 # Style Skill
 
-The Style helper starts from `setup/profile` (website, artists, portfolio links), lists the pictures on the portfolio pages with `page_images`, saves each new one with `image_fetch`, and classifies it with `image_describe` into one of thirteen fixed categories. Each picture becomes a `portfolio/<artist-slug>/<file_id>` record. Pictures on an artist's own page are that artist's; pictures in a shared gallery are "unassigned" unless the alt text names the artist.
+The bookkeeping is code, not the model. `style_learn` reads `setup/profile` and `artist/*` for the website and portfolio links, follows the site's portfolio, gallery and artist pages, and lists their pictures. A picture's identity ignores size and cache suffixes, so the same photo at two sizes is one picture. Pictures already learned (`portfolio/<artist-slug>/<picture-id>`) or already found not to be tattoos (`portfolioskip/<picture-id>`) are never read again. Each new picture is read by the vision model with one fixed question and stored under its artist: the artist whose page it was on, or the one its alt text names; otherwise "unassigned". Up to twelve per call; the rest wait in `stylequeue`.
 
-From an artist's portfolio records it rebuilds `style/<artist-slug>`: category counts, top specialties, a short style note written from the descriptions, and up to three exemplar pictures per top category. Fields the owner sets by hand (listed in `owner_set`) are never overwritten.
+From an artist's records the code rebuilds `style/<artist-slug>`: category counts, top specialties, a note assembled from what the readings said, up to three example pictures per top category, and the clock's date. Fields the owner sets by hand (listed in `owner_set`) are kept. Records written by the older model-run helper are re-keyed by picture identity on the next sweep, merging duplicates.
 
-`image_generate` with `artist` reads that profile: the style note and top categories go into the prompt, and the best matching exemplars ride along as reference pictures, so a design comes back in that artist's linework and shading rather than a generic look.
+`style_correct` moves or re-labels one picture and rebuilds both profiles. `image_generate` with `artist` reads the profile: the note and top categories go into the prompt and the best matching examples ride along as references.
 
-It works in batches of twelve pictures per wake, keeps a "style catch-up" schedule while pictures remain, and a "style weekly" schedule to pick up new portfolio work.
+Schedules are declared in HAND.toml and kept by the kernel: a catch-up every 15 minutes that only reaches the model while `stylequeue` holds pictures, and a weekly re-check of the website.

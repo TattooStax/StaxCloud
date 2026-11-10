@@ -29,6 +29,29 @@ pub struct WakeSpec {
     /// What counts as work. Empty = no gate: every scheduled wake runs.
     #[serde(default)]
     pub when: Vec<WakeWatch>,
+    /// The helper's standing schedules. The kernel keeps each one in place
+    /// (creates it when missing, never twice); the helper itself never
+    /// creates or deletes schedules.
+    #[serde(default)]
+    pub schedules: Vec<WakeSchedule>,
+}
+
+/// One standing schedule a helper runs on.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WakeSchedule {
+    pub name: String,
+    /// 5-field cron expression, e.g. "*/15 * * * *".
+    pub cron: String,
+    /// What the helper is told when it fires.
+    pub message: String,
+    /// false = this schedule always reaches the model (e.g. a weekly
+    /// re-check that has to look outside the records to find work).
+    #[serde(default = "yes")]
+    pub gated: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// One watched place in the shared records.
@@ -53,6 +76,30 @@ impl WakeSpec {
     pub fn is_gated(&self) -> bool {
         !self.when.is_empty()
     }
+
+    /// Whether the work check applies to the scheduled job with this name.
+    pub fn gates_job(&self, job_name: &str) -> bool {
+        self.is_gated()
+            && !self
+                .schedules
+                .iter()
+                .any(|s| !s.gated && same_job_name(&s.name, job_name))
+    }
+}
+
+/// Job names compare loosely: the scheduler swaps punctuation for dashes.
+pub fn same_job_name(a: &str, b: &str) -> bool {
+    let norm = |s: &str| {
+        s.trim()
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    norm(a) == norm(b)
 }
 
 /// A stored record as JSON, whether stored as an object or a JSON string.
@@ -221,6 +268,29 @@ when = [ { key = "attention/sms", list = "threads" } ]"#,
         let items = work_items(&spec, &fresh);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].0, "formsub/booking/b");
+    }
+
+    #[test]
+    fn schedules_parse_and_an_ungated_one_skips_the_check() {
+        let spec: WakeSpec = toml::from_str(
+            r#"fresh = true
+when = [ { key = "stylequeue", list = "pending" } ]
+[[schedules]]
+name = "style catch-up"
+cron = "*/15 * * * *"
+message = "Learn the next portfolio pictures."
+[[schedules]]
+name = "style weekly"
+cron = "0 3 * * 0"
+message = "Check the website for new portfolio pictures."
+gated = false"#,
+        )
+        .unwrap();
+        assert_eq!(spec.schedules.len(), 2);
+        assert!(spec.schedules[0].gated);
+        assert!(spec.gates_job("style catch-up"));
+        assert!(!spec.gates_job("Style-Weekly"), "names compare loosely");
+        assert!(spec.gates_job("anything else"));
     }
 
     #[test]

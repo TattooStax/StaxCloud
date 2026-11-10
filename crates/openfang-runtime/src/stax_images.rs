@@ -618,9 +618,14 @@ pub fn images_in_html(html: &str, base: &reqwest::Url) -> Vec<PageImage> {
 
 /// List the pictures on a public web page.
 pub async fn page_images(url: &str) -> Result<Vec<PageImage>, String> {
-    let (bytes, final_url) = fetch_public(url, MAX_PAGE_BYTES).await?;
-    let html = String::from_utf8_lossy(&bytes);
+    let (html, final_url) = page_html(url).await?;
     Ok(images_in_html(&html, &final_url))
+}
+
+/// A public web page's HTML and the address it ended up at.
+pub async fn page_html(url: &str) -> Result<(String, reqwest::Url), String> {
+    let (bytes, final_url) = fetch_public(url, MAX_PAGE_BYTES).await?;
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), final_url))
 }
 
 #[cfg(test)]

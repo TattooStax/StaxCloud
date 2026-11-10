@@ -65,6 +65,14 @@ pub trait KernelHandle: Send + Sync {
         Err("Memory listing not available".to_string())
     }
 
+    /// Remove one shared-memory record. Used by code-owned bookkeeping (a
+    /// corrected portfolio picture moving to another artist), never handed
+    /// to a model as a tool.
+    fn memory_delete(&self, key: &str) -> Result<(), String> {
+        let _ = key;
+        Err("Memory delete not available".to_string())
+    }
+
     /// Find agents by query (matches on name substring, tag, or tool name; case-insensitive).
     fn find_agents(&self, query: &str) -> Vec<AgentInfo>;
 

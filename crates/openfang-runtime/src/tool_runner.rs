@@ -338,6 +338,8 @@ pub async fn execute_tool(
         "image_describe" => tool_image_describe(input).await,
         "image_fetch" => tool_image_fetch(input).await,
         "page_images" => tool_page_images(input).await,
+        "style_learn" => tool_style_learn(input, kernel).await,
+        "style_correct" => tool_style_correct(input, kernel),
 
         // TTS/STT tools
         "text_to_speech" => tool_text_to_speech(input, tts_engine, workspace_root).await,
@@ -1104,6 +1106,34 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "prompt": { "type": "string", "description": "What to find out about the picture; ask for JSON when you need fields" }
                 },
                 "required": ["file_id"]
+            }),
+        },
+        ToolDefinition {
+            name: "style_learn".to_string(),
+            description: "Learn the artists' styles from the studio's portfolio in one step: finds the portfolio pictures on the website (and any pages you give), skips pictures already learned, reads each new one, stores it under its artist, and rebuilds each artist's style profile. Returns what it learned and how many pictures are still waiting. Call it again later to continue.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pages": {
+                        "type": "array",
+                        "description": "Extra pages to look at, e.g. an artist's portfolio page the owner named. Each is {\"url\": ..., \"artist\": \"<name, optional>\"} or just the address.",
+                        "items": {}
+                    },
+                    "max": { "type": "integer", "description": "Most new pictures to read now (default 12, max 30)" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "style_correct".to_string(),
+            description: "Apply the owner's correction to one portfolio picture — whose work it is and/or its style — and rebuild the profiles it touches. Name the picture by its address, its id, or words from its subject.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "picture": { "type": "string", "description": "The picture: its address, id, or subject words (e.g. 'lion portrait')" },
+                    "artist": { "type": "string", "description": "Whose work it really is (a name, or 'unassigned')" },
+                    "style": { "type": "string", "description": "Its real style category" }
+                },
+                "required": ["picture"]
             }),
         },
         ToolDefinition {
@@ -3847,6 +3877,56 @@ async fn tool_image_describe(input: &serde_json::Value) -> Result<String, String
     .map_err(|e| format!("Serialize error: {e}"))
 }
 
+async fn tool_style_learn(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+    let pages: Vec<(String, Option<String>)> = input["pages"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| match p {
+                    serde_json::Value::String(u) => Some((u.trim().to_string(), None)),
+                    serde_json::Value::Object(_) => p["url"].as_str().map(|u| {
+                        (
+                            u.trim().to_string(),
+                            p["artist"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+                        )
+                    }),
+                    _ => None,
+                })
+                .filter(|(u, _)| u.starts_with("http"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let max = input["max"]
+        .as_u64()
+        .map(|n| n.clamp(1, 30) as usize)
+        .unwrap_or(crate::stax_style::DEFAULT_BATCH);
+    if !crate::stax_images::available() {
+        return Err("Pictures can't be read right now: no image service key is set.".into());
+    }
+    let save = |p: &crate::stax_images::Picture| {
+        openfang_types::uploads::save_new(&p.bytes).map_err(|e| format!("Could not save the picture: {e}"))
+    };
+    crate::stax_style::learn(kh, &crate::stax_style::LiveSource, &save, &pages, max).await
+}
+
+fn tool_style_correct(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+    let picture = input["picture"].as_str().unwrap_or("");
+    let artist = input["artist"].as_str().filter(|s| !s.trim().is_empty());
+    let style = input["style"].as_str().filter(|s| !s.trim().is_empty());
+    if artist.is_none() && style.is_none() {
+        return Err("Say what to change: the artist, the style, or both.".into());
+    }
+    crate::stax_style::correct(kh, picture, artist, style)
+}
+
 async fn tool_page_images(input: &serde_json::Value) -> Result<String, String> {
     let url = input["url"].as_str().ok_or("Missing 'url' parameter")?;
     let found = crate::stax_images::page_images(url).await?;
@@ -5779,6 +5859,128 @@ mod tests {
         );
     }
 
+    struct FakeWeb {
+        pages: std::collections::HashMap<String, String>,
+        reads: std::sync::Mutex<u32>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::stax_style::PictureSource for FakeWeb {
+        async fn html(&self, url: &str) -> Result<(String, reqwest::Url), String> {
+            let html = self.pages.get(url).cloned().ok_or(format!("404 {url}"))?;
+            Ok((html, reqwest::Url::parse(url).unwrap()))
+        }
+        async fn picture(&self, url: &str) -> Result<crate::stax_images::Picture, String> {
+            let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+            b.extend_from_slice(url.as_bytes());
+            crate::stax_images::Picture::from_bytes(b)
+        }
+        async fn read(&self, p: &crate::stax_images::Picture) -> Result<(String, Option<f64>), String> {
+            *self.reads.lock().unwrap() += 1;
+            let url = String::from_utf8_lossy(&p.bytes[8..]).to_string();
+            let r = if url.contains("rose") {
+                r#"{"finished_tattoo": true, "style": "fine line", "subject": "rose", "placement": "wrist", "linework": "fine", "shading": "light"}"#
+            } else if url.contains("lion") {
+                r#"Here you go: {"finished_tattoo": true, "style": "Black & grey realism", "also": ["portrait"], "subject": "lion", "linework": "soft", "shading": "smooth gradients"}"#
+            } else {
+                r#"{"finished_tattoo": false}"#
+            };
+            Ok((r.to_string(), Some(0.0005)))
+        }
+    }
+
+    fn shop() -> (Arc<dyn KernelHandle>, FakeWeb) {
+        let k: Arc<dyn KernelHandle> = Arc::new(FakeKernelHandle::new().with_records(vec![
+            ("setup/profile", serde_json::json!({"business": "Fargo Tattoo", "brief": "Our site is https://shop.test/"})),
+            ("artist/a1", serde_json::json!({"name": "Leni B."})),
+            ("artist/a2", serde_json::json!({"display_name": "Shawn Lowe"})),
+            ("artist/index", serde_json::json!({"artists": ["a1", "a2"]})),
+        ]));
+        let mut pages = std::collections::HashMap::new();
+        pages.insert("https://shop.test/".to_string(), r#"<img src="/img/shop-front.jpg" alt="our shop"><a href="/leni-b/">Leni</a> <a href="/gallery">Gallery</a> <a href="/aftercare">Aftercare</a>"#.to_string());
+        pages.insert("https://shop.test/leni-b/".to_string(), r#"<img src="/up/rose-300x200.jpg"><img src="/up/rose.jpg?v=2">"#.to_string());
+        pages.insert("https://shop.test/gallery".to_string(), r#"<img src="/up/lion.jpg" alt="Lion portrait by Shawn"><img src="/up/flyer.jpg" alt="flash day flyer">"#.to_string());
+        (k, FakeWeb { pages, reads: std::sync::Mutex::new(0) })
+    }
+
+    #[tokio::test]
+    async fn style_learn_does_the_bookkeeping_in_code() {
+        let (k, web) = shop();
+        let saved = std::sync::Mutex::new(0u32);
+        let save = |_: &crate::stax_images::Picture| {
+            let mut n = saved.lock().unwrap();
+            *n += 1;
+            Ok(format!("00000000-0000-4000-8000-00000000000{n}"))
+        };
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        assert!(out.contains("Learned 2 tattoo picture(s) (Leni B.: 1, Shawn Lowe: 1)"), "{out}");
+        assert!(out.contains("Not tattoos: 2") && out.contains("Unassigned: 0") && out.contains("Still to read: 0"), "{out}");
+        // The two sizes of the rose were one picture: read once, stored once.
+        assert_eq!(*web.reads.lock().unwrap(), 4);
+        assert_eq!(k.memory_list("portfolio/leni-b/").unwrap().len(), 1);
+        let leni = k.memory_recall("style/leni-b").unwrap().unwrap();
+        assert_eq!(leni["photo_count"], 1);
+        assert_eq!(leni["categories"]["fine line"], 1);
+        assert!(leni["updated"].as_str().unwrap().starts_with(&chrono::Local::now().format("%Y-%m-%d").to_string()));
+        let shawn = k.memory_recall("style/shawn-lowe").unwrap().unwrap();
+        assert_eq!(shawn["specialties"][0], "black and grey realism");
+        assert_eq!(k.memory_list("portfolioskip/").unwrap().len(), 2, "logo and flyer remembered as not tattoos");
+
+        // A second sweep reads nothing again.
+        let again = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        assert!(again.contains("found 0 new picture(s)"), "{again}");
+        assert_eq!(*web.reads.lock().unwrap(), 4);
+    }
+
+    #[tokio::test]
+    async fn style_learn_leaves_the_rest_queued_and_corrections_rebuild() {
+        let (k, web) = shop();
+        let save = |_: &crate::stax_images::Picture| Ok("00000000-0000-4000-8000-0000000000aa".to_string());
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 1).await.unwrap();
+        assert!(out.contains("Still to read: 3"), "{out}");
+        assert_eq!(k.memory_recall("stylequeue").unwrap().unwrap()["pending"].as_array().unwrap().len(), 3);
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        assert!(out.contains("Still to read: 0"), "{out}");
+
+        // Owner: "the lion is Leni's".
+        let fixed = crate::stax_style::correct(&k, "lion", Some("Leni B."), None).unwrap();
+        assert!(fixed.contains("Leni B.'s"), "{fixed}");
+        assert_eq!(k.memory_list("portfolio/shawn-lowe/").unwrap().len(), 0);
+        assert_eq!(k.memory_list("portfolio/leni-b/").unwrap().len(), 2);
+        assert_eq!(k.memory_recall("style/leni-b").unwrap().unwrap()["photo_count"], 2);
+        assert!(crate::stax_style::correct(&k, "dragon", Some("Leni"), None).is_err());
+    }
+
+    #[tokio::test]
+    async fn style_learn_tidies_records_from_before() {
+        let (k, web) = shop();
+        // As the model left them: Shawn's lion stored twice (two categories),
+        // keyed by upload id, with an invented date.
+        for (fid, cat) in [("00000000-0000-4000-8000-000000000001", "portrait"), ("00000000-0000-4000-8000-000000000002", "black and grey realism")] {
+            k.memory_store(&format!("portfolio/shawn-lowe/{fid}"), serde_json::json!({"artist": "Shawn Lowe", "file_id": fid, "source_url": "https://shop.test/up/lion.jpg", "page": "https://shop.test/gallery", "style": cat, "subject": "lion"})).unwrap();
+        }
+        k.memory_store("style/shawn-lowe", serde_json::json!({"artist": "Shawn Lowe", "photo_count": 2, "updated": "2024-04-15"})).unwrap();
+        let save = |_: &crate::stax_images::Picture| Ok("00000000-0000-4000-8000-0000000000bb".to_string());
+        let out = crate::stax_style::learn(&k, &web, &save, &[], 12).await.unwrap();
+        assert!(out.contains("tidied"), "{out}");
+        assert!(out.contains("Shawn Lowe: 1 pieces") || !out.contains("Shawn Lowe: 2"), "{out}");
+        assert_eq!(k.memory_list("portfolio/shawn-lowe/").unwrap().len(), 1, "the lion once");
+        let p = k.memory_recall("style/shawn-lowe").unwrap().unwrap();
+        assert_eq!(p["photo_count"], 1);
+        assert_ne!(p["updated"], "2024-04-15");
+        // The lion was not read again.
+        assert_eq!(*web.reads.lock().unwrap(), 3);
+    }
+
+    #[test]
+    fn style_tools_are_registered() {
+        let names: Vec<String> = builtin_tool_definitions().into_iter().map(|t| t.name).collect();
+        for t in ["style_learn", "style_correct"] {
+            assert!(names.iter().any(|n| n == t), "{t}");
+            assert!(openfang_types::tool_compat::is_known_openfang_tool(t), "{t}");
+        }
+    }
+
     #[test]
     fn memory_propose_is_a_registered_tool() {
         assert!(builtin_tool_definitions()
@@ -5867,6 +6069,10 @@ mod tests {
                 .iter()
                 .find(|(k, _)| k == key)
                 .map(|(_, v)| v.clone()))
+        }
+        fn memory_delete(&self, key: &str) -> Result<(), String> {
+            self.records.lock().unwrap().retain(|(k, _)| k != key);
+            Ok(())
         }
         fn memory_list(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
             let mut out: Vec<_> = self

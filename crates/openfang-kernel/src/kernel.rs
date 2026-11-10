@@ -4678,6 +4678,12 @@ impl OpenFangKernel {
             }
         }
 
+        // Standing schedules declared by the helpers: put any missing one in
+        // place now that every restored job has been moved to its helper.
+        for entry in self.registry.list() {
+            self.ensure_hand_schedules(entry.id);
+        }
+
         let agents = self.registry.list();
         let mut bg_agents: Vec<(openfang_types::agent::AgentId, String, ScheduleMode)> = Vec::new();
 
@@ -6880,6 +6886,63 @@ impl OpenFangKernel {
     /// This is the same logic used by the background cron tick loop, extracted
     /// so the API can trigger a job immediately via `POST /api/cron/jobs/{id}/run`.
     /// Records success/failure on the job's metadata just like the scheduler does.
+    /// Put a helper's declared standing schedules in place: each one that
+    /// has no job yet (by name, or the same cron expression) is created.
+    /// Never duplicates, never deletes. Returns how many were created.
+    pub fn ensure_hand_schedules(&self, agent_id: AgentId) -> usize {
+        use openfang_types::scheduler::{
+            CronAction, CronDelivery, CronJob, CronJobId, CronSchedule,
+        };
+        let Some((spec, name)) = self.wake_spec_of(agent_id) else {
+            return 0;
+        };
+        let existing = self.cron_scheduler.list_jobs(agent_id);
+        let mut made = 0;
+        for s in &spec.schedules {
+            let present = existing.iter().any(|j| {
+                openfang_types::wake::same_job_name(&j.name, &s.name)
+                    || matches!(&j.schedule, CronSchedule::Cron { expr, .. } if expr.trim() == s.cron.trim()
+                        && matches!(&j.action, CronAction::AgentTurn { message, .. } if message == &s.message))
+            });
+            if present {
+                continue;
+            }
+            let job = CronJob {
+                id: CronJobId::new(),
+                agent_id,
+                name: sanitize_cron_job_name(&s.name),
+                enabled: true,
+                schedule: CronSchedule::Cron {
+                    expr: s.cron.clone(),
+                    tz: None,
+                },
+                action: CronAction::AgentTurn {
+                    message: s.message.clone(),
+                    model_override: None,
+                    timeout_secs: Some(300),
+                },
+                delivery: CronDelivery::None,
+                delivery_targets: Vec::new(),
+                created_at: chrono::Utc::now(),
+                last_run: None,
+                next_run: None,
+            };
+            match self.cron_scheduler.add_job(job, false) {
+                Ok(_) => {
+                    made += 1;
+                    info!(helper = %name, schedule = %s.name, "Standing schedule put in place");
+                }
+                Err(e) => warn!(helper = %name, schedule = %s.name, "Could not add standing schedule: {e}"),
+            }
+        }
+        if made > 0 {
+            if let Err(e) = self.cron_scheduler.persist() {
+                warn!("Failed to persist cron jobs: {e}");
+            }
+        }
+        made
+    }
+
     /// A helper's wake rules and name, when its HAND.toml has a `[wake]`.
     fn wake_spec_of(&self, agent_id: AgentId) -> Option<(openfang_types::wake::WakeSpec, String)> {
         let entry = self.registry.get(agent_id)?;
@@ -7011,7 +7074,7 @@ impl OpenFangKernel {
                 // its model when the watched records hold work it has not
                 // seen. A skipped wake costs nothing and leaves a receipt.
                 let wake = self.wake_spec_of(agent_id);
-                if let Some((spec, name)) = wake.as_ref().filter(|(s, _)| s.is_gated()) {
+                if let Some((spec, name)) = wake.as_ref().filter(|(s, _)| s.gates_job(job_name)) {
                     let records = self.shared_records();
                     let receipt = self.wake_receipt(name);
                     let last = receipt
@@ -7720,6 +7783,12 @@ impl KernelHandle for OpenFangKernel {
         Ok(pairs)
     }
 
+    fn memory_delete(&self, key: &str) -> Result<(), String> {
+        self.memory
+            .structured_delete(shared_memory_agent_id(), key)
+            .map_err(|e| format!("Memory delete failed: {e}"))
+    }
+
     fn find_agents(&self, query: &str) -> Vec<kernel_handle::AgentInfo> {
         let q = query.to_lowercase();
         self.registry
@@ -7992,6 +8061,9 @@ impl KernelHandle for OpenFangKernel {
         let instance = self
             .activate_hand(hand_id, config, None)
             .map_err(|e| format!("{e}"))?;
+        if let Some(agent_id) = instance.agent_id {
+            self.ensure_hand_schedules(agent_id);
+        }
 
         Ok(serde_json::json!({
             "instance_id": instance.instance_id.to_string(),
