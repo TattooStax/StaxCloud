@@ -646,7 +646,7 @@ mod tests {
         let reference = Picture::from_bytes(PNG.to_vec()).unwrap();
         let out = generate_with_service(
             "redo in black and grey",
-            &[reference.clone()],
+            std::slice::from_ref(&reference),
             "test/image",
             &service,
         )
@@ -672,9 +672,14 @@ mod tests {
                 serde_json::json!({"choices":[{"message":{"images":[{"image_url":{"url":reference.data_url()}}]}}]}),
             ),
         ]);
-        generate_with_service("redo", &[reference.clone()], "test/image", &service)
-            .await
-            .unwrap();
+        generate_with_service(
+            "redo",
+            std::slice::from_ref(&reference),
+            "test/image",
+            &service,
+        )
+        .await
+        .unwrap();
         let reqs = server.join().unwrap();
         assert_eq!(reqs.len(), 2);
         assert!(reqs[1].0.starts_with("POST /chat/completions "));
