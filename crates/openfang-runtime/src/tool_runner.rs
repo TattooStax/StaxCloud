@@ -3243,6 +3243,9 @@ async fn tool_image_generate(
         return stax_image_generate(input, prompt, kernel).await;
     }
 
+    if !image_reference_ids(input)?.is_empty() {
+        return Err("This OpenAI generation route cannot use references. Use the studio's reference-capable image model; no image was generated.".into());
+    }
     let model_str = input["model"].as_str().unwrap_or("dall-e-3");
     let model = match model_str {
         "dall-e-3" | "dalle3" | "dalle-3" => openfang_types::media::ImageGenModel::DallE3,
@@ -3422,6 +3425,33 @@ fn find_style_record(kh: &Arc<dyn KernelHandle>, artist: &str) -> Option<serde_j
         })
 }
 
+/// Validate all requested references, never filter malformed entries away.
+fn image_reference_ids(input: &serde_json::Value) -> Result<Vec<String>, String> {
+    let Some(value) = input.get("references") else {
+        return Ok(Vec::new());
+    };
+    let values = value
+        .as_array()
+        .ok_or("'references' must be an array of upload file_ids")?;
+    if values.len() > crate::stax_images::MAX_REFERENCES {
+        return Err(format!(
+            "'references' exceeds the limit of {}; none were dropped or generated",
+            crate::stax_images::MAX_REFERENCES
+        ));
+    }
+    let mut ids = Vec::new();
+    for value in values {
+        let id = value
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or("Every entry in 'references' must be a nonempty upload file_id")?;
+        if !ids.iter().any(|existing| existing == id) {
+            ids.push(id.to_string());
+        }
+    }
+    Ok(ids)
+}
+
 async fn stax_image_generate(
     input: &serde_json::Value,
     prompt: &str,
@@ -3438,11 +3468,9 @@ async fn stax_image_generate(
 
     let mut refs: Vec<Picture> = Vec::new();
     let mut ref_ids: Vec<String> = Vec::new();
-    if let Some(ids) = input["references"].as_array() {
-        for id in ids.iter().filter_map(|v| v.as_str()) {
-            refs.push(Picture::from_upload(id)?);
-            ref_ids.push(id.to_string());
-        }
+    for id in image_reference_ids(input)? {
+        refs.push(Picture::from_upload(&id)?);
+        ref_ids.push(id);
     }
 
     let mut full_prompt = prompt.trim().to_string();
@@ -3464,10 +3492,19 @@ async fn stax_image_generate(
                         ex_used.push(id.clone());
                     }
                 }
-                full_prompt = format!("{full_prompt}\n\n{}", used.anchor);
+                let anchor = if ex_used.is_empty() {
+                    used.anchor
+                        .split(" The last reference pictures")
+                        .next()
+                        .unwrap_or(&used.anchor)
+                        .to_string()
+                } else {
+                    used.anchor
+                };
+                full_prompt = format!("{full_prompt}\n\n{anchor}");
                 style_json = serde_json::json!({
                     "artist": used.artist,
-                    "style_anchor": used.anchor,
+                    "style_anchor": anchor,
                     "portfolio_examples_used": ex_used,
                 });
             }
@@ -3485,12 +3522,27 @@ async fn stax_image_generate(
         );
     }
 
+    use sha2::Digest;
+    let reference_inputs: Vec<serde_json::Value> = ref_ids
+        .iter()
+        .zip(refs.iter())
+        .map(|(id, pic)| {
+            serde_json::json!({"file_id": id, "bytes": pic.bytes.len(), "media_type": pic.mime,
+            "sha256": format!("{:x}", sha2::Sha256::digest(&pic.bytes))})
+        })
+        .collect();
+    let mut deliveries = Vec::new();
     let mut images = Vec::new();
     let mut total_cost = 0.0;
     let mut metered = true;
     let mut notes = Vec::new();
     for _ in 0..count {
         let out = stax_images::generate(&full_prompt, &refs, &model).await?;
+        if out.references_submitted != refs.len() {
+            return Err("Image service receipt did not confirm all references; no successful edit can be reported.".into());
+        }
+        deliveries.push(serde_json::json!({"route": out.route, "model": out.model,
+            "references_submitted": out.references_submitted}));
         match out.cost_usd {
             Some(c) => total_cost += c,
             None => metered = false,
@@ -3511,10 +3563,15 @@ async fn stax_image_generate(
         "images": images,
         "image_urls": image_urls,
         "references_used": ref_ids,
+        "reference_status": "submitted_to_provider",
+        "reference_inputs": reference_inputs,
+        "provider_deliveries": deliveries,
+        "visual_match_verified": false,
+        "narration": "Only report the submitted references and returned pictures. Do not claim likeness, style fidelity or a successful redo without visual verification.",
         "style": style_json,
         "cost_usd": if metered { serde_json::json!(total_cost) } else { serde_json::Value::Null },
         "model_note": notes.join(" "),
-        "show_the_owner": "Show these pictures as they are. Nothing is sent to a customer without the owner's OK.",
+        "show_the_owner": "Show these pictures for review; no likeness or style verification has been performed. Nothing is sent to a customer without the owner's OK.",
     }))
     .map_err(|e| format!("Serialize error: {e}"))
 }
@@ -4153,6 +4210,43 @@ async fn tool_skill_execute(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn reference_contract_malformed_is_an_error_before_provider_call() {
+        for references in [
+            serde_json::json!("photo"),
+            serde_json::json!([{}]),
+            serde_json::json!([null]),
+        ] {
+            let err = super::stax_image_generate(
+                &serde_json::json!({"references": references}),
+                "redo",
+                None,
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                err.contains("references"),
+                "must reject malformed references, got: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reference_contract_openai_must_not_discard_references() {
+        let err = super::tool_image_generate(
+            &serde_json::json!({"prompt":"redo", "model":"dall-e-3", "references":["one"]}),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("reference"),
+            "must reject unsupported editing before generation, got: {err}"
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -71,6 +71,7 @@ fn tool_timeout_for(tool_name: &str) -> Option<Duration> {
         "agent_send" | "agent_spawn" => {
             env_timeout_secs("OPENFANG_AGENT_TOOL_TIMEOUT_SECS").unwrap_or(AGENT_TOOL_TIMEOUT_SECS)
         }
+        "image_generate" => env_timeout_secs("OPENFANG_IMAGE_TOOL_TIMEOUT_SECS").unwrap_or(660),
         _ => env_timeout_secs("OPENFANG_TOOL_TIMEOUT_SECS").unwrap_or(TOOL_TIMEOUT_SECS),
     };
     if secs == 0 {
@@ -315,6 +316,12 @@ pub async fn run_agent_loop(
 ) -> OpenFangResult<AgentLoopResult> {
     info!(agent = %manifest.name, "Starting agent loop");
 
+    let mut turn_contract = crate::turn_contract::TurnContract::new(
+        manifest,
+        user_message,
+        user_content_blocks.as_deref(),
+        &session.messages,
+    );
     // Extract hand-allowed env vars from manifest metadata (set by kernel for hand settings)
     let hand_allowed_env: Vec<String> = manifest
         .metadata
@@ -591,6 +598,17 @@ pub async fn run_agent_loop(
             }
         }
 
+        turn_contract.bind_references(&mut response);
+        if matches!(
+            response.stop_reason,
+            StopReason::EndTurn | StopReason::StopSequence
+        ) && response.tool_calls.is_empty()
+            && turn_contract.recover_refusal(&response.text())
+        {
+            system_prompt.push_str(crate::turn_contract::OWNER_REPLAN);
+            continue;
+        }
+
         match response.stop_reason {
             StopReason::EndTurn | StopReason::StopSequence => {
                 // LLM is done — extract text and save
@@ -603,7 +621,9 @@ pub async fn run_agent_loop(
 
                 // NO_REPLY / [SILENT]: agent intentionally chose not to reply.
                 // [SILENT] must not be stored literally — it reinforces silence in future turns.
-                if is_silent_token(&text) || parsed_directives.silent {
+                if !turn_contract.has_image_receipts()
+                    && (is_silent_token(&text) || parsed_directives.silent)
+                {
                     debug!(agent = %manifest.name, "Agent chose NO_REPLY/silent — silent completion");
                     session
                         .messages
@@ -703,6 +723,7 @@ pub async fn run_agent_loop(
                     text
                 };
 
+                let text = turn_contract.final_text(text);
                 final_response = text.clone();
                 // Issue #1098: persist Thinking blocks alongside the text so
                 // reasoning models retain state across turns.  When the
@@ -970,6 +991,9 @@ pub async fn run_agent_loop(
                         None => exec_fut.await,
                     };
 
+                    // Keep the untruncated receipt for deterministic delivery.
+                    turn_contract.record_image_result(&tool_call.name, &result);
+
                     // Fire AfterToolCall hook
                     if let Some(hook_reg) = hooks {
                         let ctx = crate::hooks::HookContext {
@@ -1003,6 +1027,24 @@ pub async fn run_agent_loop(
                     });
                 }
 
+                for block in &tool_result_blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_use_id,
+                        tool_name,
+                        content,
+                        is_error,
+                    } = block
+                    {
+                        turn_contract.record_image_result(
+                            tool_name,
+                            &openfang_types::tool::ToolResult {
+                                tool_use_id: tool_use_id.clone(),
+                                content: content.clone(),
+                                is_error: *is_error,
+                            },
+                        );
+                    }
+                }
                 append_tool_error_guidance(&mut tool_result_blocks);
 
                 // Detect approval denials and inject guidance to prevent infinite retry loops
@@ -1074,6 +1116,7 @@ pub async fn run_agent_loop(
                     // Issue #1148: preserve Thinking / RedactedThinking blocks
                     // present in the response so reasoning state survives
                     // MaxTokens truncation — same as the EndTurn branch.
+                    let text = turn_contract.final_text(text);
                     let assistant_msg =
                         build_assistant_message_preserving_thinking(&response.content, &text);
                     session.messages.push(assistant_msg);
@@ -1543,6 +1586,12 @@ pub async fn run_agent_loop_streaming(
 ) -> OpenFangResult<AgentLoopResult> {
     info!(agent = %manifest.name, "Starting streaming agent loop");
 
+    let mut turn_contract = crate::turn_contract::TurnContract::new(
+        manifest,
+        user_message,
+        user_content_blocks.as_deref(),
+        &session.messages,
+    );
     // Extract hand-allowed env vars from manifest metadata (set by kernel for hand settings)
     let hand_allowed_env: Vec<String> = manifest
         .metadata
@@ -1672,6 +1721,7 @@ pub async fn run_agent_loop_streaming(
         }
     }
 
+    let protect_text = turn_contract.protect_text(available_tools);
     let mut total_usage = TokenUsage::default();
     let final_response;
     let mut accumulated_text = String::new();
@@ -1793,15 +1843,41 @@ pub async fn run_agent_loop_streaming(
 
         // Stream LLM call with retry, error classification, and circuit breaker
         let provider_name = manifest.model.provider.as_str();
-        let mut response = stream_with_retry(
-            &*driver,
-            request,
-            stream_tx.clone(),
-            Some(provider_name),
-            None,
-            &manifest.fallback_models,
-        )
-        .await?;
+        let mut response = if protect_text {
+            let (held_tx, mut held_rx) = mpsc::channel(64);
+            let live_tx = stream_tx.clone();
+            let relay = tokio::spawn(async move {
+                while let Some(event) = held_rx.recv().await {
+                    if !matches!(
+                        event,
+                        StreamEvent::TextDelta { .. } | StreamEvent::ThinkingDelta { .. }
+                    ) {
+                        let _ = live_tx.send(event).await;
+                    }
+                }
+            });
+            let result = stream_with_retry(
+                &*driver,
+                request,
+                held_tx,
+                Some(provider_name),
+                None,
+                &manifest.fallback_models,
+            )
+            .await;
+            let _ = relay.await;
+            result?
+        } else {
+            stream_with_retry(
+                &*driver,
+                request,
+                stream_tx.clone(),
+                Some(provider_name),
+                None,
+                &manifest.fallback_models,
+            )
+            .await?
+        };
 
         total_usage.input_tokens += response.usage.input_tokens;
         total_usage.output_tokens += response.usage.output_tokens;
@@ -1833,6 +1909,17 @@ pub async fn run_agent_loop_streaming(
             }
         }
 
+        turn_contract.bind_references(&mut response);
+        if matches!(
+            response.stop_reason,
+            StopReason::EndTurn | StopReason::StopSequence
+        ) && response.tool_calls.is_empty()
+            && turn_contract.recover_refusal(&response.text())
+        {
+            system_prompt.push_str(crate::turn_contract::OWNER_REPLAN);
+            continue;
+        }
+
         match response.stop_reason {
             StopReason::EndTurn | StopReason::StopSequence => {
                 let text = response.text();
@@ -1844,7 +1931,9 @@ pub async fn run_agent_loop_streaming(
 
                 // NO_REPLY / [SILENT]: agent intentionally chose not to reply.
                 // [SILENT] must not be stored literally — it reinforces silence in future turns.
-                if is_silent_token(&text) || parsed_directives_s.silent {
+                if !turn_contract.has_image_receipts()
+                    && (is_silent_token(&text) || parsed_directives_s.silent)
+                {
                     debug!(agent = %manifest.name, "Agent chose NO_REPLY/silent (streaming) — silent completion");
                     session
                         .messages
@@ -1923,6 +2012,12 @@ pub async fn run_agent_loop_streaming(
                 } else {
                     text
                 };
+                let text = turn_contract.final_text(text);
+                if protect_text {
+                    let _ = stream_tx
+                        .send(StreamEvent::TextDelta { text: text.clone() })
+                        .await;
+                }
                 final_response = text.clone();
                 // Issue #1098: preserve Thinking blocks (with Anthropic
                 // signatures / Gemini thought signatures / inline-think /
@@ -2179,6 +2274,9 @@ pub async fn run_agent_loop_streaming(
                         None => exec_fut.await,
                     };
 
+                    // Keep the untruncated receipt for deterministic delivery.
+                    turn_contract.record_image_result(&tool_call.name, &result);
+
                     // Fire AfterToolCall hook
                     if let Some(hook_reg) = hooks {
                         let ctx = crate::hooks::HookContext {
@@ -2227,6 +2325,24 @@ pub async fn run_agent_loop_streaming(
                     });
                 }
 
+                for block in &tool_result_blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_use_id,
+                        tool_name,
+                        content,
+                        is_error,
+                    } = block
+                    {
+                        turn_contract.record_image_result(
+                            tool_name,
+                            &openfang_types::tool::ToolResult {
+                                tool_use_id: tool_use_id.clone(),
+                                content: content.clone(),
+                                is_error: *is_error,
+                            },
+                        );
+                    }
+                }
                 append_tool_error_guidance(&mut tool_result_blocks);
 
                 // Detect approval denials and inject guidance to prevent infinite retry loops
@@ -2295,6 +2411,12 @@ pub async fn run_agent_loop_streaming(
                     // Issue #1148: preserve Thinking / RedactedThinking blocks
                     // present in the response so reasoning state survives
                     // MaxTokens truncation — same as the EndTurn branch.
+                    let text = turn_contract.final_text(text);
+                    if protect_text {
+                        let _ = stream_tx
+                            .send(StreamEvent::TextDelta { text: text.clone() })
+                            .await;
+                    }
                     let assistant_msg =
                         build_assistant_message_preserving_thinking(&response.content, &text);
                     session.messages.push(assistant_msg);
@@ -3228,6 +3350,270 @@ pub fn deduplicate_tool_calls(response: &crate::llm_driver::CompletionResponse) 
 
 #[cfg(test)]
 mod tests {
+
+    struct ImageNarrationDriver(std::sync::atomic::AtomicU32);
+    #[async_trait::async_trait]
+    impl crate::llm_driver::LlmDriver for ImageNarrationDriver {
+        async fn complete(
+            &self,
+            _request: crate::llm_driver::CompletionRequest,
+        ) -> Result<crate::llm_driver::CompletionResponse, crate::llm_driver::LlmError> {
+            let call = self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let input = serde_json::json!({"prompt":"redo the tiger"});
+            let mut content = vec![openfang_types::message::ContentBlock::Text {
+                text: if call == 0 {
+                    "Already redone!"
+                } else {
+                    "Perfect successful black and grey redo!"
+                }
+                .into(),
+                provider_metadata: None,
+            }];
+            let calls = if call == 0 {
+                content.push(openfang_types::message::ContentBlock::ToolUse {
+                    id: "image_attempt".into(),
+                    name: "image_generate".into(),
+                    input: input.clone(),
+                    provider_metadata: None,
+                });
+                vec![openfang_types::tool::ToolCall {
+                    id: "image_attempt".into(),
+                    name: "image_generate".into(),
+                    input,
+                }]
+            } else {
+                vec![]
+            };
+            Ok(crate::llm_driver::CompletionResponse {
+                content,
+                tool_calls: calls,
+                stop_reason: if call == 0 {
+                    openfang_types::message::StopReason::ToolUse
+                } else {
+                    openfang_types::message::StopReason::EndTurn
+                },
+                usage: Default::default(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn reference_contract_attachment_is_bound_and_false_success_is_withheld_in_both_loops() {
+        for streaming in [false, true] {
+            let memory = openfang_memory::MemorySubstrate::open_in_memory(0.01).unwrap();
+            let mut session = openfang_memory::session::Session {
+                id: openfang_types::agent::SessionId::new(),
+                agent_id: openfang_types::agent::AgentId::new(),
+                messages: vec![],
+                context_window_tokens: 0,
+                label: None,
+            };
+            let manifest = test_manifest();
+            let id = uuid::Uuid::new_v4().to_string(); // A missing photo must fail, never generate without it.
+            let blocks = Some(vec![ContentBlock::Text {
+                text: format!("[Attached image: file_id {id}]"),
+                provider_metadata: None,
+            }]);
+            let tools = vec![ToolDefinition {
+                name: "image_generate".into(),
+                description: "draw".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+            }];
+            let driver =
+                std::sync::Arc::new(ImageNarrationDriver(std::sync::atomic::AtomicU32::new(0)));
+            let (tx, mut rx) = tokio::sync::mpsc::channel(128);
+            let result = if streaming {
+                run_agent_loop_streaming(
+                    &manifest,
+                    "redo this tiger",
+                    &mut session,
+                    &memory,
+                    driver,
+                    &tools,
+                    None,
+                    tx,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    blocks,
+                )
+                .await
+                .unwrap()
+            } else {
+                run_agent_loop(
+                    &manifest,
+                    "redo this tiger",
+                    &mut session,
+                    &memory,
+                    driver,
+                    &tools,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    blocks,
+                )
+                .await
+                .unwrap()
+            };
+            assert!(
+                result.response.contains("image tool failed"),
+                "{}",
+                result.response
+            );
+            assert!(!result.response.contains("Perfect"));
+            assert!(session.messages.iter().any(|m| matches!(&m.content,MessageContent::Blocks(bs) if bs.iter().any(|b| matches!(b,ContentBlock::ToolUse {input,..} if input["references"]==serde_json::json!([id]))))));
+            while let Ok(event) = rx.try_recv() {
+                if let crate::llm_driver::StreamEvent::TextDelta { text } = event {
+                    assert!(
+                        !text.contains("Already") && !text.contains("Perfect"),
+                        "false prose leaked: {text}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reference_contract_streamed_owner_refusal_is_not_shown() {
+        let memory = openfang_memory::MemorySubstrate::open_in_memory(0.01).unwrap();
+        let mut session = openfang_memory::session::Session {
+            id: openfang_types::agent::SessionId::new(),
+            agent_id: openfang_types::agent::AgentId::new(),
+            messages: vec![],
+            context_window_tokens: 0,
+            label: None,
+        };
+        let mut manifest = test_manifest();
+        manifest
+            .metadata
+            .insert("owner_facing".into(), serde_json::json!(true));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(128);
+        let result = run_agent_loop_streaming(
+            &manifest,
+            "Clone my Fargo Tattoo website from Netlify to Cloudflare",
+            &mut session,
+            &memory,
+            std::sync::Arc::new(OwnerRefusalDriver),
+            &[],
+            None,
+            tx,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.response.contains("export"));
+        while let Ok(event) = rx.try_recv() {
+            if let crate::llm_driver::StreamEvent::TextDelta { text } = event {
+                assert!(!text.contains("can't create a clone"));
+            }
+        }
+    }
+
+    struct OwnerRefusalDriver;
+    #[async_trait::async_trait]
+    impl crate::llm_driver::LlmDriver for OwnerRefusalDriver {
+        async fn complete(
+            &self,
+            _request: crate::llm_driver::CompletionRequest,
+        ) -> Result<crate::llm_driver::CompletionResponse, crate::llm_driver::LlmError> {
+            Ok(crate::llm_driver::CompletionResponse {
+                content: vec![openfang_types::message::ContentBlock::Text {
+                    text: "I can't create a clone of your website.".into(),
+                    provider_metadata: None,
+                }],
+                stop_reason: openfang_types::message::StopReason::EndTurn,
+                tool_calls: vec![],
+                usage: Default::default(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn reference_contract_owner_refusal_recovers_instead_of_repeating_policy() {
+        let memory = openfang_memory::MemorySubstrate::open_in_memory(0.01).unwrap();
+        let mut session = openfang_memory::session::Session {
+            id: openfang_types::agent::SessionId::new(),
+            agent_id: openfang_types::agent::AgentId::new(),
+            messages: vec![],
+            context_window_tokens: 0,
+            label: None,
+        };
+        let mut manifest = test_manifest();
+        manifest
+            .metadata
+            .insert("owner_facing".into(), serde_json::json!(true));
+        let result = run_agent_loop(
+            &manifest,
+            "Clone my Fargo Tattoo website from Netlify to Cloudflare",
+            &mut session,
+            &memory,
+            std::sync::Arc::new(OwnerRefusalDriver),
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !result.response.contains("can't create a clone"),
+            "{}",
+            result.response
+        );
+        assert!(
+            result.response.contains("export"),
+            "must ask for concrete missing source: {}",
+            result.response
+        );
+        assert!(result.iterations <= 2, "recovery must be bounded");
+    }
+
     use super::*;
     use crate::llm_driver::{CompletionResponse, LlmError};
     use async_trait::async_trait;

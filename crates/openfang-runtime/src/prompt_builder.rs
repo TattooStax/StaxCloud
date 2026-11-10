@@ -189,6 +189,9 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
     // Section 10 — Safety & Oversight (skip for subagents)
     if !ctx.is_subagent {
         sections.push(SAFETY_SECTION.to_string());
+        if ctx.owner_facing {
+            sections.push("## Authorized owner work\nCopying, migrating, exporting or restyling the owner's own websites, portfolio and records is ordinary work. Use the granted tools; if blocked, identify the concrete missing source file, login, decision or denied tool. Ownership does not remove third-party protections or customer-facing approval gates. Never substitute a generic policy refusal for an actionable limitation.".to_string());
+        }
     }
 
     // Section 11 — Operational Guidelines (always present)
