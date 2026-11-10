@@ -561,7 +561,8 @@ pub fn tool_category(name: &str) -> &'static str {
 
         "shell_exec" | "shell_background" => "Shell",
 
-        "memory_store" | "memory_recall" | "memory_delete" | "memory_list" | "memory_propose" => {
+        "memory_store" | "memory_recall" | "memory_delete" | "memory_list" | "memory_propose"
+        | "customer_lookup" | "email_draft" | "form_draft" => {
             "Memory"
         }
 
@@ -624,6 +625,9 @@ pub fn tool_hint(name: &str) -> &'static str {
         "memory_list" => "list stored memory keys",
         "memory_propose" => "propose a customer fact for approval",
         "style_learn" => "learn artists' styles from the portfolio",
+        "customer_lookup" => "everything on record about one customer",
+        "email_draft" => "draft an email for the owner's OK",
+        "form_draft" => "draft a form from the builder's blocks",
         "style_correct" => "fix whose a portfolio picture is",
 
         // Agents

@@ -49,6 +49,7 @@
                   <div style="display:flex;align-items:baseline;gap:8px">
                     <div class="card-header" style="margin:0;font-size:15px;font-weight:600;flex:1;min-width:0" x-text="d.title"></div>
                     <span class="badge" :class="d.published ? 'badge-success' : 'badge-dim'" style="font-size:10px" x-text="d.published ? 'Published' : 'Draft'"></span>
+                    <span class="badge badge-dim" style="font-size:10px" x-show="d.by_stax">Drafted by Stax — review</span>
                   </div>
                   <div class="text-sm text-dim" style="margin-top:4px" x-text="d.fields.length + (d.fields.length === 1 ? ' block · ' : ' blocks · ') + subsOf(d.slug).length + (subsOf(d.slug).length === 1 ? ' submission' : ' submissions')"></div>
                   <div x-show="d.published" class="fb-link">

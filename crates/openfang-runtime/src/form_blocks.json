@@ -1,0 +1,361 @@
+{
+  "generated_from": "crates/openfang-api/static/js/pages/forms.js FB_PALETTE + fbNewBlock",
+  "blocks": [
+    {
+      "group": "Basics",
+      "name": "Heading",
+      "block": {
+        "label": "Section heading",
+        "type": "text",
+        "required": false,
+        "stype": "field-heading"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Text",
+      "block": {
+        "label": "Text",
+        "type": "text",
+        "required": false,
+        "stype": "field-paragraph",
+        "config": {
+          "text": "Write something for the client to read."
+        }
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Name",
+      "block": {
+        "label": "Your name",
+        "type": "text",
+        "required": true,
+        "stype": "field-name"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Email",
+      "block": {
+        "label": "Email",
+        "type": "email",
+        "required": true,
+        "stype": "field-email"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Phone",
+      "block": {
+        "label": "Phone",
+        "type": "phone",
+        "required": false,
+        "stype": "field-phone"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Short answer",
+      "block": {
+        "label": "Short answer",
+        "type": "text",
+        "required": false,
+        "stype": "field-short-text"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Long answer",
+      "block": {
+        "label": "Tell us more",
+        "type": "textarea",
+        "required": false,
+        "stype": "field-long-text"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Date",
+      "block": {
+        "label": "Date",
+        "type": "date",
+        "required": false
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Number",
+      "block": {
+        "label": "Number",
+        "type": "number",
+        "required": false,
+        "stype": "field-number"
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Dropdown",
+      "block": {
+        "label": "Choose one",
+        "type": "select",
+        "required": false,
+        "stype": "field-dropdown",
+        "config": {
+          "options": [
+            "Option 1",
+            "Option 2"
+          ]
+        }
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Choices",
+      "block": {
+        "label": "Pick what applies",
+        "type": "select",
+        "required": false,
+        "stype": "field-choice",
+        "config": {
+          "options": [
+            "Option 1",
+            "Option 2"
+          ],
+          "allow_multiple": true
+        }
+      }
+    },
+    {
+      "group": "Basics",
+      "name": "Agree box",
+      "block": {
+        "label": "Agreement",
+        "type": "text",
+        "required": true,
+        "stype": "field-consent",
+        "config": {
+          "text": "I agree to the terms and conditions"
+        }
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Client details",
+      "block": {
+        "label": "Your details",
+        "type": "text",
+        "required": true,
+        "stype": "consent-client-info"
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Tattoo details",
+      "block": {
+        "label": "About the tattoo",
+        "type": "text",
+        "required": false,
+        "stype": "consent-tattoo-details"
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Artist",
+      "block": {
+        "label": "Which artist?",
+        "type": "select",
+        "required": false,
+        "stype": "artist-select"
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Reference photos",
+      "block": {
+        "label": "Reference photos",
+        "type": "text",
+        "required": false,
+        "stype": "studio-ref-images"
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Age check",
+      "block": {
+        "label": "Age verification",
+        "type": "text",
+        "required": true,
+        "stype": "studio-age-verify"
+      }
+    },
+    {
+      "group": "Tattoo",
+      "name": "Previous tattoos",
+      "block": {
+        "label": "Previous tattoos",
+        "type": "text",
+        "required": false,
+        "stype": "studio-prev-tattoo"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Terms",
+      "block": {
+        "label": "Consent and release",
+        "type": "text",
+        "required": true,
+        "stype": "consent-legal"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Medical disclosure",
+      "block": {
+        "label": "Medical disclosure",
+        "type": "text",
+        "required": true,
+        "stype": "consent-medical-disclosure",
+        "config": {
+          "sec1_conditions": [
+            "Diabetes",
+            "History of hemophilia or bleeding disorders",
+            "History of skin diseases, skin lesions, or severe skin sensitivities (including sensitivity to soap, disinfectants, etc.)",
+            "History of allergies or adverse reactions to pigments, dyes, or topical products",
+            "History of epilepsy, seizures, fainting, or narcolepsy",
+            "Hepatitis",
+            "HIV Positive",
+            "High blood pressure or heart disease",
+            "Immune system disorder",
+            "Contagious or infectious diseases",
+            "Current pregnancy or nursing",
+            "Any other serious physical or mental health conditions",
+            "None of the above"
+          ]
+        }
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Medical checklist",
+      "block": {
+        "label": "Medical conditions",
+        "type": "text",
+        "required": false,
+        "stype": "consent-medical",
+        "config": {
+          "conditions": [
+            "Diabetes",
+            "Hemophilia or bleeding disorder",
+            "Skin disease or sensitivity",
+            "Pigment or dye reactions",
+            "Epilepsy, seizures, fainting, or narcolepsy",
+            "Anticoagulants or blood thinners",
+            "Other nonroutine medications",
+            "Hepatitis",
+            "HIV",
+            "High blood pressure or heart disease",
+            "Pregnancy",
+            "Contagious disease",
+            "Immune disorder",
+            "Other serious physical or mental health condition",
+            "None apply",
+            "None of the above"
+          ]
+        }
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Allergies",
+      "block": {
+        "label": "Allergies and skin",
+        "type": "text",
+        "required": false,
+        "stype": "studio-allergy",
+        "config": {
+          "conditions": [
+            "Latex allergy",
+            "Metal allergy",
+            "Eczema / Psoriasis",
+            "Sensitive skin",
+            "Keloid scarring",
+            "None of the above",
+            "None of the above"
+          ]
+        }
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Aftercare",
+      "block": {
+        "label": "Aftercare",
+        "type": "text",
+        "required": true,
+        "stype": "consent-aftercare"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Photo release",
+      "block": {
+        "label": "Photo release",
+        "type": "text",
+        "required": false,
+        "stype": "consent-photo-release"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Deposit terms",
+      "block": {
+        "label": "Deposit",
+        "type": "text",
+        "required": true,
+        "stype": "studio-deposit"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Touch-up policy",
+      "block": {
+        "label": "Touch-ups",
+        "type": "text",
+        "required": false,
+        "stype": "consent-touchup"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Parent consent",
+      "block": {
+        "label": "Parent or guardian consent",
+        "type": "text",
+        "required": true,
+        "stype": "consent-minor-parent"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Initials",
+      "block": {
+        "label": "Initials",
+        "type": "text",
+        "required": true,
+        "stype": "consent-initials"
+      }
+    },
+    {
+      "group": "Consent",
+      "name": "Signature",
+      "block": {
+        "label": "Signature",
+        "type": "text",
+        "required": true,
+        "stype": "consent-signature"
+      }
+    }
+  ]
+}

@@ -307,6 +307,11 @@ pub async fn execute_tool(
         "memory_recall" => tool_memory_recall(input, kernel),
         "memory_list" => tool_memory_list(input, kernel),
         "memory_propose" => tool_memory_propose(input, kernel),
+        "customer_lookup" => require_kernel(kernel).and_then(|kh| {
+            crate::stax_records::customer_lookup(kh, input["query"].as_str().unwrap_or(""))
+        }),
+        "email_draft" => require_kernel(kernel).and_then(|kh| crate::stax_records::email_draft(kh, input)),
+        "form_draft" => require_kernel(kernel).and_then(|kh| crate::stax_records::form_draft(kh, input)),
 
         // Collaboration tools
         "agent_find" => tool_agent_find(input, kernel),
@@ -771,6 +776,45 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "contains": { "type": "string", "description": "Only records whose key or content contains this text (case-insensitive), e.g. a name or phone number" },
                     "limit": { "type": "integer", "description": "Most records to show (default 30, max 200)" }
                 }
+            }),
+        },
+        ToolDefinition {
+            name: "customer_lookup".to_string(),
+            description: "Everything the studio's records hold about one customer, in one call: their contact details and notes, text thread, form submissions, emails both ways, reply drafts waiting, and remembered facts waiting for approval. Give a name, an email address, or a phone number. If several people match it lists them so you can pick.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "query": { "type": "string", "description": "A name, email address, or phone number" } },
+                "required": ["query"]
+            }),
+        },
+        ToolDefinition {
+            name: "email_draft".to_string(),
+            description: "Write an email for the owner to approve. It waits in Needs you and is sent only after their OK. To answer an email on record, give reply_to (its mail/<id> key): the address, subject and threading come from it. Otherwise give to and subject.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "reply_to": { "type": "string", "description": "The email being answered: its mail/<id> key" },
+                    "to": { "type": "string", "description": "Address, when not replying" },
+                    "subject": { "type": "string", "description": "Subject, when not replying (a reply keeps Re: <theirs>)" },
+                    "body": { "type": "string", "description": "The email's text, signed as the studio" }
+                },
+                "required": ["body"]
+            }),
+        },
+        ToolDefinition {
+            name: "form_draft".to_string(),
+            description: "Draft a new form for the studio from the Forms builder's own blocks. It is saved in Forms as an unpublished draft for the owner to review and publish. Blocks: Basics (Heading, Text, Name, Email, Phone, Short answer, Long answer, Date, Number, Dropdown, Choices, Agree box); Tattoo (Client details, Tattoo details, Artist, Reference photos, Age check, Previous tattoos); Consent (Terms, Medical disclosure, Medical checklist, Allergies, Aftercare, Photo release, Deposit terms, Touch-up policy, Parent consent, Initials, Signature).".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "The form's name" },
+                    "blocks": {
+                        "type": "array",
+                        "description": "In order. Each: {\"block\": \"<block name>\", \"label\": optional question, \"required\": optional, \"options\": [choices, for Dropdown/Choices], \"text\": optional wording for Text or Agree box}",
+                        "items": { "type": "object" }
+                    }
+                },
+                "required": ["title", "blocks"]
             }),
         },
         ToolDefinition {
@@ -5972,10 +6016,81 @@ mod tests {
         assert_eq!(*web.reads.lock().unwrap(), 3);
     }
 
+    fn studio_kernel() -> Arc<dyn KernelHandle> {
+        Arc::new(FakeKernelHandle::new().with_records(vec![
+            ("contact/7015550101", serde_json::json!({"name": "Jane Ink", "phone": "+17015550101", "email": "jane@ink.test", "artist": "Leni", "notes": [{"ts": "2026-11-01", "text": "placement: left forearm"}]})),
+            ("contact/jane@ink.test", serde_json::json!({"name": "Jane Ink"})),
+            ("sms/7015550101", serde_json::json!({"messages": [{"id": "m1", "dir": "in", "body": "Do you do cover-ups?", "ts": "2026-11-09T10:00"}, {"id": "m2", "dir": "out", "body": "We do!", "ts": "2026-11-09T10:05"}]})),
+            ("formsub/booking/u1", serde_json::json!({"ts": "2026-11-08T12:00", "data": {"your_email": "Jane@ink.test", "idea": "horseshoe pair"}})),
+            ("formsub/booking/u2", serde_json::json!({"ts": "2026-11-08T13:00", "data": {"your_email": "someone@else.test"}})),
+            ("mail/abc", serde_json::json!({"from": "jane@ink.test", "from_name": "Jane Ink", "subject": "Deposit question", "snippet": "Can I pay the deposit Friday?", "ts": "2026-11-09T08:00", "message_id": "xyz@mail.test", "references": ""})),
+            ("draft/d1", serde_json::json!({"kind": "sms_reply", "to": "+17015550101", "text": "Yes, Friday works.", "status": "in-needs-you"})),
+            ("memcand/aa", serde_json::json!({"contact_key": "contact/7015550101", "field": "piece", "value": "horseshoe pair", "status": "in-needs-you"})),
+            ("form/booking", serde_json::json!({"title": "Booking", "fields": [], "published": true})),
+        ]))
+    }
+
+    #[test]
+    fn customer_lookup_gathers_one_person_in_one_call() {
+        let k = studio_kernel();
+        for q in ["Jane", "jane@ink.test", "701-555-0101"] {
+            let out = crate::stax_records::customer_lookup(&k, q).unwrap();
+            assert!(out.starts_with("Jane Ink"), "{q}: {out}");
+            for want in ["Do you do cover-ups?", "studio: We do!", "formsub/booking/u1", "Deposit question", "draft/d1", "horseshoe pair", "placement: left forearm"] {
+                assert!(out.contains(want), "{q} missing {want}: {out}");
+            }
+            assert!(!out.contains("formsub/booking/u2"), "{out}");
+        }
+        let none = crate::stax_records::customer_lookup(&k, "Zed Nobody").unwrap();
+        assert!(none.starts_with("No contact matches"), "{none}");
+        let stranger = crate::stax_records::customer_lookup(&k, "someone@else.test").unwrap();
+        assert!(stranger.contains("formsub/booking/u2"), "a form with no contact yet: {stranger}");
+    }
+
+    #[test]
+    fn email_draft_threads_a_reply_and_refuses_blanks() {
+        let k = studio_kernel();
+        let out = crate::stax_records::email_draft(&k, &serde_json::json!({"reply_to": "mail/abc", "body": "Hi Jane, Friday is fine. — Fargo Tattoo"})).unwrap();
+        assert!(out.contains("jane@ink.test") && out.contains("Re: Deposit question"), "{out}");
+        let (key, d) = k.memory_list("draft/").unwrap().into_iter().find(|(k, _)| k != "draft/d1").unwrap();
+        assert!(key.starts_with("draft/"));
+        assert_eq!(d["kind"], "email_send");
+        assert_eq!(d["in_reply_to"], "xyz@mail.test");
+        assert_eq!(d["references"], "<xyz@mail.test>");
+        assert_eq!(d["status"], "held");
+        let blank = crate::stax_records::email_draft(&k, &serde_json::json!({"to": "a@b.test", "subject": "Hi", "body": "Hi [Client Name], see you"})).unwrap_err();
+        assert!(blank.contains("[Client Name]"), "{blank}");
+        assert!(crate::stax_records::email_draft(&k, &serde_json::json!({"to": "nope", "subject": "x", "body": "y"})).is_err());
+    }
+
+    #[test]
+    fn form_draft_uses_the_builder_blocks() {
+        let k = studio_kernel();
+        let out = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "Booking", "blocks": [
+            {"block": "Name"}, {"block": "Email"}, {"block": "Phone"},
+            {"block": "Dropdown", "label": "Which day?", "options": ["Friday", "Saturday"]},
+            {"block": "Medical disclosure"}, {"block": "Signature"}
+        ]})).unwrap();
+        assert!(out.contains("not published"), "{out}");
+        let f = k.memory_recall("form/booking-2").unwrap().expect("booking was taken, so booking-2");
+        assert_eq!(f["published"], false);
+        assert_eq!(f["drafted_by"], "stax");
+        let fields = f["fields"].as_array().unwrap();
+        assert_eq!(fields.len(), 6);
+        assert_eq!(fields[0]["key"], "your_name");
+        assert_eq!(fields[0]["stype"], "field-name");
+        assert_eq!(fields[3]["config"]["options"][1], "Saturday");
+        assert!(fields[4]["config"]["sec1_conditions"].as_array().unwrap().len() > 3, "medical defaults like the builder");
+        let bad = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "X", "blocks": [{"block": "Hologram"}]})).unwrap_err();
+        assert!(bad.contains("not one the builder has"), "{bad}");
+        let opts = crate::stax_records::form_draft(&k, &serde_json::json!({"title": "X", "blocks": [{"block": "Dropdown"}]})).unwrap_err();
+        assert!(opts.contains("real choices"), "{opts}");
+    }
+
     #[test]
     fn style_tools_are_registered() {
         let names: Vec<String> = builtin_tool_definitions().into_iter().map(|t| t.name).collect();
-        for t in ["style_learn", "style_correct"] {
+        for t in ["style_learn", "style_correct", "customer_lookup", "email_draft", "form_draft"] {
             assert!(names.iter().any(|n| n == t), "{t}");
             assert!(openfang_types::tool_compat::is_known_openfang_tool(t), "{t}");
         }

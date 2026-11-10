@@ -735,7 +735,7 @@ function formsPage() {
               if (f && f.key && f.label && !labelMap[f.key]) labelMap[f.key] = f.label;
             });
             raws[pr.key.slice(5)] = v;
-            if (!v.deleted) defs.push({ slug: pr.key.slice(5), title: v.title || pr.key.slice(5), fields: Array.isArray(v.fields) ? v.fields : [], public_url: v.public_url || '', published: !!v.published });
+            if (!v.deleted) defs.push({ slug: pr.key.slice(5), title: v.title || pr.key.slice(5), fields: Array.isArray(v.fields) ? v.fields : [], public_url: v.public_url || '', published: !!v.published, by_stax: v.drafted_by === 'stax' && !v.published });
           } else if (pr.key === 'artist/index') {
             if (Array.isArray(v.artists)) artistOrder = v.artists.slice();
           } else if (pr.key.indexOf('artist/') === 0) {

@@ -145,6 +145,9 @@ for pair in kv.get("kv_pairs", []):
     if v.get("kind") == "sms_reply":
         desc = f"Text reply to {v.get('to_name') or v.get('to','')} ({v.get('to','')}): {body_text}"
         tool = "sms_reply"
+    elif v.get("kind") == "email_send":
+        desc = f"Email to {v.get('to_name') or v.get('to','')} ({v.get('to','')}), \"{v.get('subject','')}\": {body_text}"
+        tool = "email_send"
     else:
         desc = f"Draft reply to {to_name} ({form}): {body_text}"
         tool = "reply_draft"
