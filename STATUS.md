@@ -14,17 +14,20 @@ the owner has used it.
 | 4 Style + designs | `strike-4-style-images` | Designs in chat, Style helper learns each artist, Canvas under Advanced | Live; designs in chat FAILED on the box (photo upload cap) — fixed in Strike 7 |
 | 5 Contacts + Forms | `strike-5-contacts-forms` | Form builder, forms hosted at `/f/<slug>`, Contacts in the Records layout | Live; builder -> publish -> phone submit -> contact -> draft verified on the box |
 | 6 Clean surfaces | `strike-6-clean-surfaces` | One file per page, consistent headers/empty/error states, surface audit | Live (9686562) |
-| 7 Ship hardening | `strike-7-ship-hardening` | Photo uploads fixed (designs in chat), no template blanks in drafts, helper jobs survive updates, daily backups, background helper health in Connections | Not yet deployed; then the 30-day shop run |
+| 7 Ship hardening | `strike-7-ship-hardening` | Photo uploads fixed (designs in chat), no template blanks in drafts, helper jobs survive updates, daily backups, background helper health in Connections | Live (e004d64); designs in chat verified on the box |
+| 8 Memory | `strike-8-memory` | Memory helper proposes facts through a checking tool (exact words, customer only, key in code); approval adds one contact note in code; uploads can be deleted | Not yet deployed; Memory sidecar phases still staged |
 
 Still open, plainly:
-- The Memory helper asks the model to compute SHA-256 keys, which models
-  cannot do; its key design needs changing before it can work.
+- Memory helper: fixed in code (Strike 8) but not live until its sidecar
+  phases (memwake, verify, memcarry) are merged into sidecar-phases.py and
+  the helper is activated.
 - Model pins for driver, vision and image wait on a benchmark rerun.
 - Contacts has no Rewards and no appointment-based Today: the fork holds no
   visit, points or appointment data (Square holds the schedule).
 - The four Python sidecars are still separate processes; they now report health to Connections, and folding them into the daemon is a post-launch job.
 
 Checks that exist: `cargo test`, `node stax/tests/forms_builder.test.js`,
+`python3 stax/tests/test_memcarry.py`,
 `python3 -m unittest stax/bench/test_bench.py`, and
 `node stax/tests/surface_audit.js <dir>` (walks every screen on iPad and
 phone against a local daemon).

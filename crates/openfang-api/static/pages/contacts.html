@@ -251,7 +251,8 @@
                     <template x-for="(n, i) in (selected ? selected.notes : [])" :key="i">
                       <div style="border-left:3px solid var(--accent);padding:2px 0 2px 10px">
                         <div class="text-sm" style="white-space:pre-wrap" x-text="n.text"></div>
-                        <div class="text-xs text-dim" x-text="fmtDate(n.ts)"></div>
+                        <div class="text-xs text-dim" style="font-style:italic" x-show="n.quote" x-text="n.quote ? '“' + n.quote + '”' : ''"></div>
+                        <div class="text-xs text-dim" x-text="fmtDate(n.ts) + (n.from ? ' · remembered from a conversation' : '')"></div>
                       </div>
                     </template>
                     <div x-show="selected && selected.notes.length === 0" class="text-sm text-dim">No notes yet.</div>

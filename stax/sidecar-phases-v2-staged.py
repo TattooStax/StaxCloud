@@ -2,10 +2,11 @@
 # sidecar-phases-v2-staged.py — STAGED, NOT LIVE. Do not place this file
 # beside pull-sync.sh and do not invoke it from cron.
 #
-# This file carries the Phase-2 / scorecard additions to sidecar-phases.py
-# (Memory Sweep brief Parts 1–3 + 7.3; Decider Shadow brief Part 6), built
+# This file carries the Decider Shadow scorecard (brief Part 6), built
 # ahead of activation so the activation window only installs and arms.
-# The LIVE sidecar-phases.py (digest phase only) is untouched by this file.
+# The Memory phases (memwake, verify, memcarry) that used to be staged here
+# moved into the live sidecar-phases.py in Strike 8 (2026-11-10); the
+# MERGE notes below still describe the scorecard's own merge.
 #
 # HOW THE MERGE WORKS (activation step, ACTIVATION-RUNBOOK.md step 2):
 #   MERGE-1  The helpers below (token / req / as_record / sha_of / kv_put /
@@ -39,9 +40,6 @@ import sys, os, json, hashlib, urllib.request, urllib.parse, urllib.error, datet
 API = "http://127.0.0.1:4200"
 SHARED = "00000000-0000-4000-8000-000000000001"
 
-# memwake rails (Memory Sweep brief Part 6): at most 10 source keys named
-# per wake; the ledger makes deferral lossless.
-WAKE_CAP = 10
 # Scorecard constants (Decider Shadow brief Parts 6–7).
 BOOKING_LINK = "https://squareup.com/appointments/book/L7VAHB1TPFGN2/start"
 SETTLE_HOURS = 24
@@ -138,258 +136,6 @@ def parse_ts(s):
     if d.tzinfo is None:
         d = d.replace(tzinfo=datetime.datetime.now().astimezone().tzinfo)
     return d
-
-
-# ── MERGE-2a: memwake — enumeration + wake (Memory Sweep Part 1) ──────────
-#
-# Ledger note (why TWO ledgers exist): memsweep/state belongs to the digest
-# — it answers "when did we first see this key" and refreshes every key's
-# sha every cycle by design. Extraction needs the opposite discipline —
-# "update the hash only for keys named in a wake" — so a changed record the
-# wake cap defers is still changed next cycle instead of being silently
-# absorbed. memwake/state is that ledger; do not unify them. There is
-# deliberately NO baseline seed here (the digest's seeding was digest-only):
-# the first live run is the brief's Part 7 gate run, which must process the
-# thread records already on the box; the 10-key cap drains any backlog over
-# the first hours and the ledger makes the drain exact.
-
-def qualifying_keys(snapshot):
-    """Conversation records the sweep may process: sms/<digits> threads and
-    formsub/<slug>/<uuid> submissions already marked processed. The shape
-    tests are what keep the family's debris keys (a bare formsub/ key,
-    formsub/status, unslugged copies) out of the work list."""
-    out = {}
-    for key, raw in snapshot.items():
-        rec = as_record(raw)
-        if rec is None:
-            continue
-        if key.startswith("sms/") and key.count("/") == 1:
-            out[key] = raw
-        elif (key.startswith("formsub/") and key.count("/") >= 2
-              and rec.get("processed") is True):
-            out[key] = raw
-    return out
-
-
-def memwake_phase(tok):
-    now = now_local()
-    stamp = now.isoformat(timespec="seconds")
-    snapshot = kv_snapshot(tok)
-    state = as_record(snapshot.get("memwake/state")) or {}
-    entries = state.get("entries") if isinstance(state.get("entries"), dict) else {}
-    work = []
-    for key, raw in qualifying_keys(snapshot).items():
-        sha = sha_of(raw)
-        prev = entries.get(key)
-        if not prev or prev.get("sha") != sha:
-            work.append((key, sha))
-    work.sort()
-    named = work[:WAKE_CAP]
-    if not named:
-        print(stamp, "memwake: no changed conversation records")
-        return
-    mem_id = agent_id(tok, "memory")
-    if not mem_id:
-        # Ledger untouched on purpose: the same diff is retried next cycle.
-        print(stamp, "memwake: memory agent not found — ledger untouched, will retry")
-        return
-    keys = ", ".join(k for k, _ in named)
-    msg = ("New or changed conversation records are waiting at these exact "
-           f"keys: {keys}. Recall each key exactly and extract per your "
-           "playbook (candidates only — quote or nothing). Keys not named "
-           "here are not yours to process.")
-    r = req(tok, "POST", f"/api/agents/{mem_id}/message",
-            {"message": msg}, timeout=220)
-    if not (isinstance(r, dict) and r.get("response")):
-        print(stamp, "memwake: wake got no response — ledger untouched, will retry")
-        return
-    for k, sha in named:
-        entries[k] = {"sha": sha, "named_ts": stamp}
-    kv_put(tok, "memwake/state",
-           {"version": 1, "updated": stamp, "entries": entries})
-    print(stamp, f"memwake: woke memory over {len(named)} key(s); "
-                 f"{len(work) - len(named)} deferred")
-
-
-# ── MERGE-2b: verify — the fabrication grep (Memory Sweep Part 7.3) ───────
-
-def string_leaves(v, out):
-    if isinstance(v, str):
-        out.append(v)
-    elif isinstance(v, dict):
-        for x in v.values():
-            string_leaves(x, out)
-    elif isinstance(v, list):
-        for x in v:
-            string_leaves(x, out)
-
-
-def verify_phase(tok):
-    """Mechanical, 100%: every memcand quote must appear verbatim in its
-    source record. The haystacks are the source's raw stored string (when
-    it is one), its canonical JSON, and every string leaf it holds — the
-    quote must match the record's actual text, not an artifact of JSON
-    escaping. One miss fails the run: the caller files a Ratchet case and
-    no candidate from the batch is carried until a re-run is clean.
-    Also reports (warning only) keys that differ from their content hash —
-    the hand derives hash16 by reasoning, so the deterministic side owns
-    checking its work."""
-    stamp = now_local().isoformat(timespec="seconds")
-    snapshot = kv_snapshot(tok)
-    fails, warns, checked = [], [], 0
-    for key in sorted(snapshot):
-        if not key.startswith("memcand/"):
-            continue
-        rec = as_record(snapshot[key])
-        if rec is None:
-            fails.append((key, "candidate is not a record"))
-            continue
-        quote, src_key = rec.get("quote"), rec.get("source_key")
-        if not quote or not src_key:
-            fails.append((key, "missing quote or source_key"))
-            continue
-        src_raw = snapshot.get(src_key)
-        if src_raw is None:
-            fails.append((key, f"source {src_key} not in store"))
-            continue
-        hay = []
-        if isinstance(src_raw, str):
-            hay.append(src_raw)
-        src = as_record(src_raw)
-        if src is not None:
-            hay.append(json.dumps(src, ensure_ascii=False))
-            string_leaves(src, hay)
-        checked += 1
-        if not any(quote in h for h in hay):
-            fails.append((key, "quote not verbatim in source"))
-        expect = hashlib.sha256((src_key + quote).encode("utf-8")).hexdigest()[:16]
-        if key != "memcand/" + expect:
-            warns.append((key, "key != content hash " + expect))
-    for k, why in fails:
-        print(stamp, "verify FAIL:", k, "—", why)
-    for k, why in warns:
-        print(stamp, "verify warn:", k, "—", why)
-    print(stamp, f"verify: {checked} candidate(s) checked, "
-                 f"{len(fails)} failed, {len(warns)} key warnings")
-    return len(fails)
-
-
-# ── MERGE-2c: memcarry — candidates to Needs you (Memory Sweep Part 3) ────
-#
-# Mirrors the drafts phase's discipline exactly: approval-id stamping,
-# decided closure in kv as the ledger of record, expired approvals
-# re-carried, decided records never re-carried. The two acts no hand can
-# perform live here: the DELETE on rejection (hands hold no delete) and
-# the promotion wake (the hand promotes; the carrier only tells it to).
-
-def source_plain(rec, snapshot):
-    sk = rec.get("source_key", "")
-    if sk.startswith("sms/"):
-        digits = sk.split("/", 1)[1]
-        thread = as_record(snapshot.get(sk)) or {}
-        contact = as_record(snapshot.get("contact/" + digits)) or {}
-        name = contact.get("name") or thread.get("name")
-        return f"a text conversation with {name}" if name else "a text conversation"
-    if sk.startswith("formsub/"):
-        parts = sk.split("/")
-        slug = parts[1] if len(parts) > 1 else "web"
-        return f"their {slug} form submission"
-    return "a conversation record"
-
-
-def contact_name_for(rec, snapshot):
-    ck = rec.get("contact_key", "")
-    contact = as_record(snapshot.get(ck)) if ck else None
-    if contact and contact.get("name"):
-        return contact["name"]
-    sk = rec.get("source_key", "")
-    if sk.startswith("sms/"):
-        thread = as_record(snapshot.get(sk)) or {}
-        if thread.get("name"):
-            return thread["name"]
-    return "this customer"
-
-
-def delete_candidate(tok, key):
-    """DELETE the candidate and read back GET: gone (404 / null value) is
-    the only success. Returns True only on a verified absence."""
-    enc = urllib.parse.quote(key, safe="")
-    path = f"/api/memory/agents/{SHARED}/kv/{enc}"
-    req(tok, "DELETE", path)
-    try:
-        after = req(tok, "GET", path)
-        return not (isinstance(after, dict) and after.get("value") is not None)
-    except urllib.error.HTTPError as e:
-        return e.code == 404
-
-
-def memcarry_phase(tok):
-    stamp = now_local().isoformat(timespec="seconds")
-    snapshot = kv_snapshot(tok)
-    ap_status, _ = approvals_map(tok)
-    mem_id = agent_id(tok, "memory")
-    if not mem_id:
-        print(stamp, "memcarry: memory agent not found — nothing carried")
-        return
-    carried = deleted = woken = 0
-    for key in sorted(snapshot):
-        if not key.startswith("memcand/"):
-            continue
-        rec = as_record(snapshot[key])
-        if rec is None:
-            continue
-        if rec.get("status") == "promoted":
-            continue  # decided closure: a promoted candidate is final
-        linked = ap_status.get(rec.get("approval_id", ""))
-        if linked == "rejected":
-            if delete_candidate(tok, key):
-                deleted += 1
-                print(stamp, "memcarry: rejected candidate deleted + verified:", key)
-            else:
-                print(stamp, "memcarry: DELETE read-back STILL PRESENT:", key)
-            continue
-        if linked == "approved":
-            if rec.get("promote_woken"):
-                continue  # woken once; the hand's promotion closes it
-            msg = ("The owner approved the memory candidate at this exact "
-                   f"key: {key}. Promote it per your playbook — recall the "
-                   "candidate, append the one notes[] entry to its contact, "
-                   "mark it promoted. No other key is yours in this wake.")
-            r = req(tok, "POST", f"/api/agents/{mem_id}/message",
-                    {"message": msg}, timeout=220)
-            if isinstance(r, dict) and r.get("response"):
-                rec["promote_woken"] = True
-                rec["promote_wake_ts"] = stamp
-                kv_put(tok, key, rec)
-                woken += 1
-                print(stamp, "memcarry: promotion wake sent for", key)
-            else:
-                print(stamp, "memcarry: promotion wake got no response:", key)
-            continue
-        if linked == "pending":
-            if rec.get("status") == "candidate":
-                rec["status"] = "in-needs-you"
-                kv_put(tok, key, rec)
-            continue
-        # No live link — a fresh candidate, or an approval that expired
-        # undecided (the 300 s TTL): (re-)carry it, like the drafts phase.
-        if rec.get("status") not in ("candidate", "in-needs-you"):
-            continue
-        desc = (f"{rec.get('field', 'fact')}: {rec.get('value', '')} — "
-                f"from {source_plain(rec, snapshot)}")
-        ap = req(tok, "POST", "/api/approvals",
-                 {"agent_id": mem_id, "tool_name": "memory_candidate",
-                  "description": desc,
-                  "action_summary": "Remember this about "
-                                    + contact_name_for(rec, snapshot)})
-        rec["status"] = "in-needs-you"
-        rec["approval_id"] = ap.get("id", "")
-        kv_put(tok, key, rec)
-        carried += 1
-        print(stamp, "memcarry: candidate carried to Needs you:", key,
-              "approval:", rec["approval_id"])
-    print(stamp, f"memcarry: {carried} carried, {woken} promotion wakes, "
-                 f"{deleted} rejected+deleted")
 
 
 # ── MERGE-2d: scorecard — the three-way grading (Decider Shadow Part 6) ───
@@ -705,13 +451,7 @@ def main():
     phase = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
         tok = token()
-        if phase == "memwake":
-            memwake_phase(tok)
-        elif phase == "verify":
-            verify_phase(tok)
-        elif phase == "memcarry":
-            memcarry_phase(tok)
-        elif phase == "scorecard":
+        if phase == "scorecard":
             scorecard_phase(tok)
         else:
             print(now_local().isoformat(timespec="seconds"),

@@ -280,6 +280,14 @@ if actions:
     print(now(), "crew check: repair recorded at crew/health —", "; ".join(actions))
 PYEOF
 
+# ── Memory helper phases (Strike 8, 2026-11-10): wake the Memory helper on
+# changed conversations, check every candidate's quote, carry candidates to
+# Needs you and apply approvals as one contact note. Each is a no-op until a
+# "memory" agent exists. Before the digest so its counts see this cycle. ──
+python3 sidecar-phases.py memwake  >> pull-sync.log 2>&1 || true
+python3 sidecar-phases.py verify   >> pull-sync.log 2>&1 || true
+python3 sidecar-phases.py memcarry >> pull-sync.log 2>&1 || true
+
 # ── Digest phase (Memory Sweep Phase 1, 2026-11-02): the deterministic
 # brief-input digest + memsweep hash ledger live in sidecar-phases.py. ──
 python3 sidecar-phases.py digest >> pull-sync.log 2>&1 || true

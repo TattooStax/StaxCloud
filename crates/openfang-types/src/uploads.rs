@@ -108,6 +108,27 @@ pub fn save_new(bytes: &[u8]) -> std::io::Result<String> {
     Ok(id)
 }
 
+/// Delete an upload by id — the stored copy and any legacy temp copy.
+/// Refuses anything that is not a UUID. Ok(true) when something was
+/// removed, Ok(false) when there was no such file.
+pub fn remove(file_id: &str) -> std::io::Result<bool> {
+    if uuid::Uuid::parse_str(file_id).is_err() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("'{file_id}' is not an upload id"),
+        ));
+    }
+    let mut removed = false;
+    for p in [dir().join(file_id), legacy_dir().join(file_id)] {
+        match std::fs::remove_file(&p) {
+            Ok(()) => removed = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(removed)
+}
+
 /// Read an upload by id. Refuses anything that is not a UUID (no paths).
 pub fn read(file_id: &str) -> std::io::Result<Vec<u8>> {
     if uuid::Uuid::parse_str(file_id).is_err() {
@@ -173,5 +194,18 @@ mod tests {
     fn default_dir_is_not_temp() {
         assert!(!default_dir().starts_with(std::env::temp_dir().join("openfang_uploads")));
         assert!(default_dir().ends_with(Path::new("data").join("uploads")));
+    }
+
+    #[test]
+    fn remove_refuses_paths_and_reports_missing() {
+        assert!(remove("../config.toml").is_err());
+        assert!(remove("a/b").is_err());
+        let id = uuid::Uuid::new_v4().to_string();
+        assert!(!remove(&id).unwrap(), "nothing there yet");
+        let id = save_new(b"test bytes").unwrap();
+        assert!(resolve(&id).exists());
+        assert!(remove(&id).unwrap());
+        assert!(!resolve(&id).exists());
+        assert!(!remove(&id).unwrap());
     }
 }

@@ -307,7 +307,7 @@ pub async fn build_router(
         // Upload serving
         .route(
             "/api/uploads/{file_id}",
-            axum::routing::get(routes::serve_upload),
+            axum::routing::get(routes::serve_upload).delete(routes::delete_upload),
         )
         // Channel endpoints
         .route("/api/channels", axum::routing::get(routes::list_channels))

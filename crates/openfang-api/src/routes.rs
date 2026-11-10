@@ -10830,6 +10830,33 @@ pub async fn upload_file(
     )
 }
 
+/// DELETE /api/uploads/{file_id} — Remove an uploaded file for good (a test
+/// photo, a signature sent by mistake). Needs the API key like every write;
+/// only reading an upload is public.
+pub async fn delete_upload(Path(file_id): Path<String>) -> impl IntoResponse {
+    match openfang_types::uploads::remove(&file_id) {
+        Ok(true) => {
+            UPLOAD_REGISTRY.remove(&file_id);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"deleted": file_id})),
+            )
+        }
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "No upload with that id"})),
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Invalid file ID"})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Could not delete: {e}")})),
+        ),
+    }
+}
+
 /// GET /api/uploads/{file_id} — Serve an uploaded file.
 pub async fn serve_upload(Path(file_id): Path<String>) -> impl IntoResponse {
     // Validate file_id is a UUID to prevent path traversal

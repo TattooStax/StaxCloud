@@ -306,6 +306,7 @@ pub async fn execute_tool(
         "memory_store" => tool_memory_store(input, kernel),
         "memory_recall" => tool_memory_recall(input, kernel),
         "memory_list" => tool_memory_list(input, kernel),
+        "memory_propose" => tool_memory_propose(input, kernel),
 
         // Collaboration tools
         "agent_find" => tool_agent_find(input, kernel),
@@ -768,6 +769,20 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "contains": { "type": "string", "description": "Only records whose key or content contains this text (case-insensitive), e.g. a name or phone number" },
                     "limit": { "type": "integer", "description": "Most records to show (default 30, max 200)" }
                 }
+            }),
+        },
+        ToolDefinition {
+            name: "memory_propose".to_string(),
+            description: "Propose one durable fact a customer stated, for the owner to approve before it joins their contact record. Give the conversation record's key, the kind of fact, the fact in the customer's terms, and the EXACT words it came from. The tool checks the words are really in something the customer said, works out whose contact it belongs to, and files it as a candidate — it refuses anything it cannot find word for word.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "source_key": { "type": "string", "description": "The conversation record the fact came from: sms/<digits> or formsub/<form>/<id>" },
+                    "field": { "type": "string", "enum": MEMORY_FIELDS, "description": "piece = what they want tattooed; placement = where on the body; preference = style, artist, scheduling or contact preference; life = something about their life relevant to the work; artist_fit = a signal about which artist fits them" },
+                    "value": { "type": "string", "description": "The fact, short, in the customer's own terms" },
+                    "quote": { "type": "string", "description": "The exact words from the record, copied character for character" }
+                },
+                "required": ["source_key", "field", "value", "quote"]
             }),
         },
         // --- Collaboration tools ---
@@ -2054,6 +2069,231 @@ fn tool_memory_list(
         out.push_str(&format!("- {k}: {}\n", memory_list_preview(v)));
     }
     Ok(out)
+}
+
+/// The kinds of customer fact the Memory helper may propose.
+const MEMORY_FIELDS: [&str; 5] = ["piece", "placement", "preference", "life", "artist_fit"];
+/// Shortest quote that can carry a fact.
+const MEMORY_QUOTE_MIN: usize = 3;
+
+/// A stored record as JSON, whether it was stored as an object or as a
+/// JSON-encoded string.
+fn stored_record(v: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::String(s) = &v {
+        if let Ok(j) = serde_json::from_str::<serde_json::Value>(s) {
+            if j.is_object() {
+                return j;
+            }
+        }
+    }
+    v
+}
+
+/// Phone digits the way contact keys use them (US leading 1 dropped).
+fn contact_phone_digits(raw: &str) -> String {
+    let mut d: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if d.len() == 11 && d.starts_with('1') {
+        d.remove(0);
+    }
+    d
+}
+
+/// Answer keys that hold someone other than the sender.
+fn other_person_answer(key: &str) -> bool {
+    let k = key.to_lowercase();
+    ["emergency", "parent", "minor", "guardian", "typed"]
+        .iter()
+        .any(|w| k.contains(w))
+}
+
+fn looks_like_email_value(s: &str) -> bool {
+    let s = s.trim();
+    match s.split_once('@') {
+        Some((local, domain)) => {
+            !local.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
+                && !s.contains(char::is_whitespace)
+        }
+        None => false,
+    }
+}
+
+/// Where in a conversation record the customer said `quote`.
+/// Ok(Some(message id)) for a thread, Ok(None) for a form answer.
+fn memory_quote_home(
+    source_key: &str,
+    rec: &serde_json::Value,
+    quote: &str,
+) -> Result<Option<String>, String> {
+    if source_key.starts_with("sms/") {
+        let msgs = rec["messages"].as_array().cloned().unwrap_or_default();
+        let mut from_studio = false;
+        for m in &msgs {
+            let body = m["body"].as_str().unwrap_or("");
+            if !body.contains(quote) {
+                continue;
+            }
+            if m["dir"].as_str() == Some("out") {
+                from_studio = true;
+                continue;
+            }
+            let id = m["id"].as_str().unwrap_or("").to_string();
+            return Ok(Some(id));
+        }
+        if from_studio {
+            return Err("Not proposed: those words are in a message the studio sent, not one the customer sent. Only what the customer said can become a fact about them.".into());
+        }
+        return Err("Not proposed: those exact words are not in any message in this thread. Copy the quote character for character from a message the customer sent — or drop the fact.".into());
+    }
+    let data = rec["data"].as_object().cloned().unwrap_or_default();
+    for (k, v) in &data {
+        if other_person_answer(k) {
+            continue;
+        }
+        if let Some(text) = v.as_str() {
+            if text.contains(quote) {
+                return Ok(None);
+            }
+        }
+    }
+    Err("Not proposed: those exact words are not in any of this submission's answers. Copy the quote character for character from an answer — or drop the fact.".into())
+}
+
+/// Contact index keys a conversation record could belong to, best first.
+fn memory_contact_keys(source_key: &str, rec: &serde_json::Value) -> Vec<String> {
+    if let Some(digits) = source_key.strip_prefix("sms/") {
+        let d = contact_phone_digits(digits);
+        return if d.is_empty() {
+            Vec::new()
+        } else {
+            vec![format!("contact/{d}")]
+        };
+    }
+    let mut email = String::new();
+    let mut phone = String::new();
+    if let Some(data) = rec["data"].as_object() {
+        let mut answers: Vec<(&String, &serde_json::Value)> = data.iter().collect();
+        answers.sort_by_key(|(k, _)| k.as_str());
+        for (k, v) in answers {
+            let Some(v) = v.as_str().map(str::trim).filter(|v| !v.is_empty()) else {
+                continue;
+            };
+            if other_person_answer(k) {
+                continue;
+            }
+            let kl = k.to_lowercase();
+            if email.is_empty() && looks_like_email_value(v) {
+                email = v.to_lowercase();
+            } else if phone.is_empty()
+                && (kl.contains("phone") || kl.contains("mobile") || kl.contains("cell"))
+                && contact_phone_digits(v).len() >= 7
+            {
+                phone = contact_phone_digits(v);
+            }
+        }
+    }
+    let mut keys = Vec::new();
+    if !email.is_empty() {
+        keys.push(format!("contact/{email}"));
+    }
+    if !phone.is_empty() {
+        keys.push(format!("contact/{phone}"));
+    }
+    keys
+}
+
+/// The candidate's key: content-addressed, so proposing the same words from
+/// the same record again lands on the same candidate instead of a copy.
+fn memory_candidate_key(source_key: &str, quote: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(format!("{source_key}{quote}").as_bytes());
+    format!("memcand/{}", &hex::encode(digest)[..16])
+}
+
+fn tool_memory_propose(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+    let text = |f: &str| input[f].as_str().unwrap_or("").to_string();
+    let source_key = text("source_key").trim().to_string();
+    let field = text("field").trim().to_lowercase();
+    let value = text("value").trim().to_string();
+    let quote = text("quote");
+    let quote = quote.trim();
+
+    let is_sms = source_key.starts_with("sms/") && source_key.matches('/').count() == 1;
+    let is_form = source_key.starts_with("formsub/") && source_key.matches('/').count() >= 2;
+    if !is_sms && !is_form {
+        return Err(format!("Not proposed: '{source_key}' is not a conversation record. Facts come only from text threads (sms/<digits>) or form submissions (formsub/<form>/<id>)."));
+    }
+    if !MEMORY_FIELDS.contains(&field.as_str()) {
+        return Err(format!(
+            "Not proposed: field must be one of {}.",
+            MEMORY_FIELDS.join(", ")
+        ));
+    }
+    if value.is_empty() {
+        return Err("Not proposed: say what the fact is in 'value'.".into());
+    }
+    if quote.chars().count() < MEMORY_QUOTE_MIN {
+        return Err("Not proposed: the quote is too short to show where the fact came from. Copy the customer's exact words.".into());
+    }
+    let Some(rec) = kh.memory_recall(&source_key)? else {
+        return Err(format!(
+            "Not proposed: there is no record at '{source_key}'. Use the exact key you were given."
+        ));
+    };
+    let rec = stored_record(rec);
+    let source_msg = memory_quote_home(&source_key, &rec, quote)?;
+
+    let keys = memory_contact_keys(&source_key, &rec);
+    let mut contact_key = keys.first().cloned().unwrap_or_default();
+    let mut contact_exists = false;
+    for k in &keys {
+        if kh.memory_recall(k)?.is_some() {
+            contact_key = k.clone();
+            contact_exists = true;
+            break;
+        }
+    }
+    if contact_key.is_empty() {
+        return Err("Not proposed: this submission has no email or phone number, so there is no contact the fact could belong to.".into());
+    }
+
+    let key = memory_candidate_key(&source_key, quote);
+    if let Some(prev) = kh.memory_recall(&key)? {
+        let prev = stored_record(prev);
+        let status = prev["status"].as_str().unwrap_or("");
+        if status != "candidate" && !status.is_empty() {
+            return Ok(format!(
+                "Already proposed ({status}) at {key} — nothing changed."
+            ));
+        }
+    }
+    let mut cand = serde_json::json!({
+        "status": "candidate",
+        "contact_key": contact_key,
+        "field": field,
+        "value": value,
+        "quote": quote,
+        "source_key": source_key,
+        "ts": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    });
+    if let Some(id) = source_msg.filter(|id| !id.is_empty()) {
+        cand["source_msg"] = serde_json::Value::String(id);
+    }
+    kh.memory_store(&key, cand)?;
+    Ok(format!(
+        "Proposed {field}: \"{value}\" for {contact_key}{} — filed at {key} for the owner to approve.",
+        if contact_exists {
+            ""
+        } else {
+            " (no contact record there yet; it will wait until one exists)"
+        }
+    ))
 }
 
 fn tool_memory_recall(
@@ -5419,6 +5659,136 @@ mod tests {
         assert_eq!(out.matches("\n- ").count(), 1, "{out}");
     }
 
+    fn memory_kernel() -> Arc<dyn KernelHandle> {
+        Arc::new(FakeKernelHandle::new().with_records(vec![
+            (
+                "sms/17015550101",
+                serde_json::json!({"number": "+17015550101", "messages": [
+                    {"id": "m1", "dir": "in", "body": "Hi! I want a fine-line horseshoe pair on my left forearm"},
+                    {"id": "m2", "dir": "out", "body": "Love it. Saturdays work for us"},
+                    {"id": "m3", "dir": "in", "body": "Great, I can only do Saturdays"}
+                ]}),
+            ),
+            ("contact/7015550101", serde_json::json!({"name": "Jane Ink", "notes": []})),
+            (
+                "formsub/consult/abc",
+                serde_json::Value::String(serde_json::json!({"form": "consult", "processed": true, "data": {
+                    "your_email": "Sam@Example.com",
+                    "emergency_contact_phone": "701-555-9999",
+                    "idea": "A memorial rose for my mom",
+                    "parent_note": "my kid wants a dragon"
+                }}).to_string()),
+            ),
+        ]))
+    }
+
+    #[test]
+    fn memory_propose_files_a_verified_candidate() {
+        let k = memory_kernel();
+        let out = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "placement",
+                "value": "left forearm", "quote": "on my left forearm"}),
+            Some(&k),
+        )
+        .unwrap();
+        let key = memory_candidate_key("sms/17015550101", "on my left forearm");
+        assert!(
+            out.contains(&key) && out.contains("contact/7015550101"),
+            "{out}"
+        );
+        assert!(!out.contains("no contact record"), "{out}");
+        let c = k.memory_recall(&key).unwrap().unwrap();
+        assert_eq!(c["status"], "candidate");
+        assert_eq!(c["contact_key"], "contact/7015550101");
+        assert_eq!(c["source_msg"], "m1");
+        assert_eq!(c["quote"], "on my left forearm");
+        // Same as the staged sidecar's check: sha256(source_key + quote)[:16].
+        assert_eq!(key.len(), "memcand/".len() + 16);
+    }
+
+    #[test]
+    fn memory_propose_refuses_what_the_customer_did_not_say() {
+        let k = memory_kernel();
+        let made_up = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "piece",
+                "value": "a skull", "quote": "I want a skull"}),
+            Some(&k),
+        )
+        .unwrap_err();
+        assert!(made_up.contains("not in any message"), "{made_up}");
+        let studio = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "preference",
+                "value": "Saturdays", "quote": "Saturdays work for us"}),
+            Some(&k),
+        )
+        .unwrap_err();
+        assert!(studio.contains("the studio sent"), "{studio}");
+        let bad_field = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "budget",
+                "value": "x", "quote": "fine-line"}),
+            Some(&k),
+        )
+        .unwrap_err();
+        assert!(bad_field.contains("field must be"), "{bad_field}");
+        let not_conv = tool_memory_propose(
+            &serde_json::json!({"source_key": "contact/7015550101", "field": "life",
+                "value": "x", "quote": "Jane"}),
+            Some(&k),
+        )
+        .unwrap_err();
+        assert!(not_conv.contains("not a conversation record"), "{not_conv}");
+        assert!(k.memory_list("memcand/").unwrap().is_empty());
+    }
+
+    #[test]
+    fn memory_propose_reads_form_answers_but_not_other_peoples() {
+        let k = memory_kernel();
+        let out = tool_memory_propose(
+            &serde_json::json!({"source_key": "formsub/consult/abc", "field": "life",
+                "value": "memorial for their mom", "quote": "memorial rose for my mom"}),
+            Some(&k),
+        )
+        .unwrap();
+        assert!(out.contains("contact/sam@example.com"), "{out}");
+        assert!(out.contains("no contact record there yet"), "{out}");
+        let other = tool_memory_propose(
+            &serde_json::json!({"source_key": "formsub/consult/abc", "field": "piece",
+                "value": "dragon", "quote": "my kid wants a dragon"}),
+            Some(&k),
+        )
+        .unwrap_err();
+        assert!(other.contains("not in any of this submission"), "{other}");
+    }
+
+    #[test]
+    fn memory_propose_does_not_reopen_a_decided_candidate() {
+        let k = memory_kernel();
+        let key = memory_candidate_key("sms/17015550101", "I can only do Saturdays");
+        k.memory_store(&key, serde_json::json!({"status": "promoted"}))
+            .unwrap();
+        let out = tool_memory_propose(
+            &serde_json::json!({"source_key": "sms/17015550101", "field": "preference",
+                "value": "Saturdays only", "quote": "I can only do Saturdays"}),
+            Some(&k),
+        )
+        .unwrap();
+        assert!(out.starts_with("Already proposed (promoted)"), "{out}");
+        assert_eq!(
+            k.memory_recall(&key).unwrap().unwrap()["status"],
+            "promoted"
+        );
+    }
+
+    #[test]
+    fn memory_propose_is_a_registered_tool() {
+        assert!(builtin_tool_definitions()
+            .iter()
+            .any(|t| t.name == "memory_propose"));
+        assert!(openfang_types::tool_compat::is_known_openfang_tool(
+            "memory_propose"
+        ));
+    }
+
     #[test]
     fn memory_list_is_a_registered_tool() {
         let names: Vec<String> = builtin_tool_definitions()
@@ -5438,7 +5808,7 @@ mod tests {
         created: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
         cancelled: std::sync::Mutex<Vec<String>>,
         jobs: std::sync::Mutex<Vec<serde_json::Value>>,
-        records: Vec<(String, serde_json::Value)>,
+        records: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
     }
 
     impl FakeKernelHandle {
@@ -5447,12 +5817,12 @@ mod tests {
                 created: std::sync::Mutex::new(Vec::new()),
                 cancelled: std::sync::Mutex::new(Vec::new()),
                 jobs: std::sync::Mutex::new(Vec::new()),
-                records: Vec::new(),
+                records: std::sync::Mutex::new(Vec::new()),
             }
         }
 
-        fn with_records(mut self, records: Vec<(&str, serde_json::Value)>) -> Self {
-            self.records = records
+        fn with_records(self, records: Vec<(&str, serde_json::Value)>) -> Self {
+            *self.records.lock().unwrap() = records
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect();
@@ -5483,15 +5853,26 @@ mod tests {
         fn kill_agent(&self, _agent_id: &str) -> Result<(), String> {
             Ok(())
         }
-        fn memory_store(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
+        fn memory_store(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
+            let mut r = self.records.lock().unwrap();
+            r.retain(|(k, _)| k != key);
+            r.push((key.to_string(), value));
             Ok(())
         }
-        fn memory_recall(&self, _key: &str) -> Result<Option<serde_json::Value>, String> {
-            Ok(None)
+        fn memory_recall(&self, key: &str) -> Result<Option<serde_json::Value>, String> {
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone()))
         }
         fn memory_list(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
             let mut out: Vec<_> = self
                 .records
+                .lock()
+                .unwrap()
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
                 .cloned()
