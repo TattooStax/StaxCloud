@@ -1951,11 +1951,59 @@ async fn tool_agent_send(
         ));
     }
 
-    AGENT_CALL_DEPTH
-        .scope(std::cell::Cell::new(current_depth + 1), async {
-            kh.send_to_agent(agent_id, message).await
-        })
-        .await
+    let (reply, log) = AGENT_CALL_DEPTH
+        .scope(
+            std::cell::Cell::new(current_depth + 1),
+            crate::agent_loop::HANDOFF_LOG.scope(std::cell::RefCell::new(Vec::new()), async {
+                let reply = kh.send_to_agent(agent_id, message).await;
+                let log = crate::agent_loop::HANDOFF_LOG
+                    .try_with(|l| l.take())
+                    .unwrap_or_default();
+                (reply, log)
+            }),
+        )
+        .await;
+    Ok(handoff_report(agent_id, &reply?, &log))
+}
+
+/// What the caller is told after a handoff: the helper's reply, then what
+/// the system saw it do (counted from its tool calls), and that it has
+/// finished: agent_send waits for the helper, so nothing is still running
+/// when this returns.
+fn handoff_report(helper: &str, reply: &str, log: &[(String, bool)]) -> String {
+    let mut counts: Vec<(String, usize, usize)> = Vec::new();
+    for (name, failed) in log {
+        match counts.iter_mut().find(|(n, _, _)| n == name) {
+            Some(c) => {
+                c.1 += 1;
+                c.2 += usize::from(*failed);
+            }
+            None => counts.push((name.clone(), 1, usize::from(*failed))),
+        }
+    }
+    let did = if counts.is_empty() {
+        format!(
+            "{helper} made no tool calls: it only replied, so nothing was stored, changed or sent."
+        )
+    } else {
+        let parts: Vec<String> = counts
+            .iter()
+            .map(|(n, total, failed)| match failed {
+                0 => format!("{n} ×{total}"),
+                f if f == total => format!("{n} ×{total} (all failed)"),
+                f => format!("{n} ×{total} ({} ok, {f} failed)", total - f),
+            })
+            .collect();
+        format!("{helper} used: {}.", parts.join("; "))
+    };
+    let stopped = if reply.starts_with(crate::agent_loop::STOPPED_EARLY) {
+        " It stopped early, before finishing."
+    } else {
+        ""
+    };
+    format!(
+        "{reply}\n\n[Checked by the system] {did}{stopped} {helper} has finished — nothing of this handoff is still running. Tell the owner only what this shows was done; never say it is still working."
+    )
 }
 
 async fn tool_agent_spawn(
@@ -6307,6 +6355,33 @@ mod tests {
         .unwrap();
         assert!(other.starts_with("Proposed"), "{other}");
         assert_eq!(k.memory_list("memcand/").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn handoff_report_says_what_the_helper_actually_did() {
+        let r = handoff_report(
+            "style",
+            "Learned 6 pictures.",
+            &[
+                ("style_learn".into(), false),
+                ("memory_recall".into(), false),
+                ("memory_recall".into(), true),
+            ],
+        );
+        assert!(r.starts_with("Learned 6 pictures."), "{r}");
+        assert!(
+            r.contains("style used: style_learn ×1; memory_recall ×2 (1 ok, 1 failed)."),
+            "{r}"
+        );
+        assert!(r.contains("has finished"), "{r}");
+        let idle = handoff_report("style", "I'll get on that and keep processing.", &[]);
+        assert!(idle.contains("made no tool calls"), "{idle}");
+        let early = handoff_report(
+            "memory",
+            "Stopped early: it reached its limit of 3 steps.",
+            &[("memory_propose".into(), false)],
+        );
+        assert!(early.contains("It stopped early"), "{early}");
     }
 
     #[test]

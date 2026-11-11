@@ -285,6 +285,13 @@ fn build_user_turn_message(user_message: &str, blocks: Option<Vec<ContentBlock>>
     }
 }
 
+tokio::task_local! {
+    /// While a helper runs on another agent's behalf (agent_send), every
+    /// tool call it makes is recorded here, so the caller is told what was
+    /// actually done instead of only the helper's own words.
+    pub static HANDOFF_LOG: std::cell::RefCell<Vec<(String, bool)>>;
+}
+
 /// First words of every early-stop report. Built by code, so callers
 /// (wake receipts, the owner's chat) can tell a partial run from a finished
 /// one without a separate flag.
@@ -1099,6 +1106,8 @@ pub async fn run_agent_loop(
                     } = b
                     {
                         tool_log.push((tool_name.clone(), *is_error));
+                        let _ = HANDOFF_LOG
+                            .try_with(|l| l.borrow_mut().push((tool_name.clone(), *is_error)));
                     }
                 }
                 append_tool_error_guidance(&mut tool_result_blocks);
@@ -2369,6 +2378,8 @@ pub async fn run_agent_loop_streaming(
                     } = b
                     {
                         tool_log.push((tool_name.clone(), *is_error));
+                        let _ = HANDOFF_LOG
+                            .try_with(|l| l.borrow_mut().push((tool_name.clone(), *is_error)));
                     }
                 }
                 append_tool_error_guidance(&mut tool_result_blocks);
