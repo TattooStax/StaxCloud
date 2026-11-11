@@ -285,6 +285,50 @@ fn build_user_turn_message(user_message: &str, blocks: Option<Vec<ContentBlock>>
     }
 }
 
+/// First words of every early-stop report. Built by code, so callers
+/// (wake receipts, the owner's chat) can tell a partial run from a finished
+/// one without a separate flag.
+pub const STOPPED_EARLY: &str = "Stopped early:";
+
+/// The truthful end of a run that hit a limit: why it stopped, what it had
+/// actually done (counted from the tool calls, not from the model's words),
+/// and any reply it had started. Replaces an error that threw the work's
+/// report away while the work itself had already landed.
+pub fn stopped_early_report(reason: &str, tool_log: &[(String, bool)], partial: &str) -> String {
+    let mut counts: Vec<(String, usize, usize)> = Vec::new();
+    for (name, failed) in tool_log {
+        match counts.iter_mut().find(|(n, _, _)| n == name) {
+            Some(c) => {
+                c.1 += 1;
+                if *failed {
+                    c.2 += 1;
+                }
+            }
+            None => counts.push((name.clone(), 1, usize::from(*failed))),
+        }
+    }
+    let done = if counts.is_empty() {
+        "Nothing was done before stopping.".to_string()
+    } else {
+        let parts: Vec<String> = counts
+            .iter()
+            .map(|(n, total, failed)| match failed {
+                0 => format!("{n} ×{total}"),
+                f if f == total => format!("{n} ×{total} (all failed)"),
+                f => format!("{n} ×{total} ({} ok, {f} failed or refused)", total - f),
+            })
+            .collect();
+        format!("Done before stopping: {}.", parts.join("; "))
+    };
+    let partial = partial.trim();
+    let mut out = format!("{STOPPED_EARLY} {reason}. Nothing after that point was done.\n{done}");
+    if !partial.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(partial);
+    }
+    out
+}
+
 /// After an embedding call fails (e.g. the local embedding server is not
 /// running), memory recall uses text search for this long before trying
 /// embeddings again, instead of waiting on a dead endpoint every turn.
@@ -479,6 +523,9 @@ pub async fn run_agent_loop(
     // alongside tool calls — this text would otherwise be lost when the final
     // EndTurn iteration has empty text).
     let mut accumulated_text = String::new();
+    // Every tool call this run made and whether it failed: the facts an
+    // early stop reports.
+    let mut tool_log: Vec<(String, bool)> = Vec::new();
 
     // Safety valve: trim excessively long message histories to prevent context overflow.
     // The full compaction system handles sophisticated summarization, but this prevents
@@ -890,7 +937,23 @@ pub async fn run_agent_loop(
                                 };
                                 let _ = hook_reg.fire(&ctx);
                             }
-                            return Err(OpenFangError::Internal(msg.clone()));
+                            let report = stopped_early_report(
+                                &format!("the limit on tool calls in one run was reached ({msg})"),
+                                &tool_log,
+                                &accumulated_text,
+                            );
+                            session.messages.push(Message::assistant(report.clone()));
+                            if let Err(e) = memory.save_session_async(session).await {
+                                warn!("Failed to save session after early stop: {e}");
+                            }
+                            return Ok(AgentLoopResult {
+                                response: report,
+                                total_usage,
+                                iterations: iteration + 1,
+                                cost_usd: None,
+                                silent: false,
+                                directives: Default::default(),
+                            });
                         }
                         LoopGuardVerdict::Block(msg) => {
                             warn!(tool = %tool_call.name, "Tool call blocked by loop guard");
@@ -1028,6 +1091,16 @@ pub async fn run_agent_loop(
                     });
                 }
 
+                for b in &tool_result_blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_name,
+                        is_error,
+                        ..
+                    } = b
+                    {
+                        tool_log.push((tool_name.clone(), *is_error));
+                    }
+                }
                 append_tool_error_guidance(&mut tool_result_blocks);
 
                 // Detect approval denials and inject guidance to prevent infinite retry loops
@@ -1167,7 +1240,23 @@ pub async fn run_agent_loop(
         let _ = hook_reg.fire(&ctx);
     }
 
-    Err(OpenFangError::MaxIterationsExceeded(max_iterations))
+    let report = stopped_early_report(
+        &format!("it reached its limit of {max_iterations} steps"),
+        &tool_log,
+        &accumulated_text,
+    );
+    session.messages.push(Message::assistant(report.clone()));
+    if let Err(e) = memory.save_session_async(session).await {
+        warn!("Failed to save session after early stop: {e}");
+    }
+    Ok(AgentLoopResult {
+        response: report,
+        total_usage,
+        iterations: max_iterations,
+        cost_usd: None,
+        silent: false,
+        directives: Default::default(),
+    })
 }
 
 /// Call an LLM driver with automatic retry on rate-limit and overload errors.
@@ -1701,6 +1790,9 @@ pub async fn run_agent_loop_streaming(
     let mut total_usage = TokenUsage::default();
     let final_response;
     let mut accumulated_text = String::new();
+    // Every tool call this run made and whether it failed: the facts an
+    // early stop reports.
+    let mut tool_log: Vec<(String, bool)> = Vec::new();
 
     // Safety valve: trim excessively long message histories to prevent context overflow.
     // Per-agent cap: manifest override -> runtime default (issue #871).
@@ -2100,7 +2192,23 @@ pub async fn run_agent_loop_streaming(
                                 };
                                 let _ = hook_reg.fire(&ctx);
                             }
-                            return Err(OpenFangError::Internal(msg.clone()));
+                            let report = stopped_early_report(
+                                &format!("the limit on tool calls in one run was reached ({msg})"),
+                                &tool_log,
+                                &accumulated_text,
+                            );
+                            session.messages.push(Message::assistant(report.clone()));
+                            if let Err(e) = memory.save_session_async(session).await {
+                                warn!("Failed to save session after early stop: {e}");
+                            }
+                            return Ok(AgentLoopResult {
+                                response: report,
+                                total_usage,
+                                iterations: iteration + 1,
+                                cost_usd: None,
+                                silent: false,
+                                directives: Default::default(),
+                            });
                         }
                         LoopGuardVerdict::Block(msg) => {
                             warn!(tool = %tool_call.name, "Tool call blocked by loop guard (streaming)");
@@ -2253,6 +2361,16 @@ pub async fn run_agent_loop_streaming(
                     });
                 }
 
+                for b in &tool_result_blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_name,
+                        is_error,
+                        ..
+                    } = b
+                    {
+                        tool_log.push((tool_name.clone(), *is_error));
+                    }
+                }
                 append_tool_error_guidance(&mut tool_result_blocks);
 
                 // Detect approval denials and inject guidance to prevent infinite retry loops
@@ -2387,7 +2505,23 @@ pub async fn run_agent_loop_streaming(
         let _ = hook_reg.fire(&ctx);
     }
 
-    Err(OpenFangError::MaxIterationsExceeded(max_iterations))
+    let report = stopped_early_report(
+        &format!("it reached its limit of {max_iterations} steps"),
+        &tool_log,
+        &accumulated_text,
+    );
+    session.messages.push(Message::assistant(report.clone()));
+    if let Err(e) = memory.save_session_async(session).await {
+        warn!("Failed to save session after early stop: {e}");
+    }
+    Ok(AgentLoopResult {
+        response: report,
+        total_usage,
+        iterations: max_iterations,
+        cost_usd: None,
+        silent: false,
+        directives: Default::default(),
+    })
 }
 
 /// Recover tool calls that LLMs output as plain text instead of the proper
@@ -3716,6 +3850,180 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn stopped_early_report_counts_what_was_done() {
+        let log = vec![
+            ("memory_recall".to_string(), false),
+            ("memory_propose".to_string(), false),
+            ("memory_propose".to_string(), true),
+            ("memory_propose".to_string(), false),
+            ("web_fetch".to_string(), true),
+        ];
+        let r = stopped_early_report(
+            "the limit on tool calls in one run was reached",
+            &log,
+            "Filed two facts so far.",
+        );
+        assert!(r.starts_with(STOPPED_EARLY), "{r}");
+        assert!(r.contains("memory_recall ×1;"), "{r}");
+        assert!(
+            r.contains("memory_propose ×3 (2 ok, 1 failed or refused)"),
+            "{r}"
+        );
+        assert!(r.contains("web_fetch ×1 (all failed)"), "{r}");
+        assert!(r.ends_with("Filed two facts so far."), "{r}");
+        let empty = stopped_early_report("it reached its limit of 3 steps", &[], "  ");
+        assert_eq!(
+            empty,
+            "Stopped early: it reached its limit of 3 steps. Nothing after that point was done.\nNothing was done before stopping."
+        );
+    }
+
+    /// Mock driver that asks for a (different) tool call on every turn and
+    /// never finishes on its own.
+    struct EndlessToolDriver {
+        call_count: AtomicU32,
+        per_turn: u32,
+    }
+
+    #[async_trait]
+    impl LlmDriver for EndlessToolDriver {
+        async fn complete(
+            &self,
+            _request: CompletionRequest,
+        ) -> Result<CompletionResponse, LlmError> {
+            let n = self.call_count.fetch_add(1, Ordering::Relaxed);
+            let calls: Vec<ToolCall> = (0..self.per_turn)
+                .map(|i| ToolCall {
+                    id: format!("tool_{n}_{i}"),
+                    name: "fake_tool".to_string(),
+                    input: serde_json::json!({"query": format!("step {n} call {i}")}),
+                })
+                .collect();
+            Ok(CompletionResponse {
+                content: calls
+                    .iter()
+                    .map(|c| ContentBlock::ToolUse {
+                        id: c.id.clone(),
+                        name: c.name.clone(),
+                        input: c.input.clone(),
+                        provider_metadata: None,
+                    })
+                    .collect(),
+                stop_reason: StopReason::ToolUse,
+                tool_calls: calls,
+                usage: TokenUsage {
+                    input_tokens: 10,
+                    output_tokens: 5,
+                },
+            })
+        }
+    }
+
+    async fn run_endless(
+        manifest: &AgentManifest,
+        per_turn: u32,
+    ) -> (AgentLoopResult, openfang_memory::session::Session) {
+        let memory = openfang_memory::MemorySubstrate::open_in_memory(0.01).unwrap();
+        let mut session = openfang_memory::session::Session {
+            id: openfang_types::agent::SessionId::new(),
+            agent_id: openfang_types::agent::AgentId::new(),
+            messages: Vec::new(),
+            context_window_tokens: 0,
+            label: None,
+        };
+        let driver: Arc<dyn LlmDriver> = Arc::new(EndlessToolDriver {
+            call_count: AtomicU32::new(0),
+            per_turn,
+        });
+        let result = run_agent_loop(
+            manifest,
+            "Keep going",
+            &mut session,
+            &memory,
+            driver,
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("a run that hits a limit ends with a report, not an error");
+        (result, session)
+    }
+
+    #[tokio::test]
+    async fn hitting_the_step_limit_ends_with_a_report() {
+        let mut manifest = test_manifest();
+        manifest.autonomous = Some(openfang_types::agent::AutonomousConfig {
+            max_iterations: 3,
+            ..Default::default()
+        });
+        let (result, session) = run_endless(&manifest, 1).await;
+        assert!(
+            result.response.starts_with(STOPPED_EARLY),
+            "{}",
+            result.response
+        );
+        assert!(
+            result.response.contains("limit of 3 steps"),
+            "{}",
+            result.response
+        );
+        assert!(
+            result.response.contains("fake_tool ×3 (all failed)"),
+            "{}",
+            result.response
+        );
+        assert_eq!(result.iterations, 3);
+        assert!(!result.silent);
+        let last = session
+            .messages
+            .last()
+            .expect("report kept in the conversation");
+        assert_eq!(last.role, Role::Assistant);
+    }
+
+    #[tokio::test]
+    async fn hitting_the_tool_call_limit_ends_with_a_report() {
+        // Like Memory on the box: many calls per step, 20 steps allowed, so
+        // the 30-call limit trips first.
+        let mut manifest = test_manifest();
+        manifest.autonomous = Some(openfang_types::agent::AutonomousConfig {
+            max_iterations: 20,
+            ..Default::default()
+        });
+        let (result, _) = run_endless(&manifest, 5).await;
+        assert!(
+            result.response.starts_with(STOPPED_EARLY),
+            "{}",
+            result.response
+        );
+        assert!(
+            result.response.contains("limit on tool calls"),
+            "{}",
+            result.response
+        );
+        assert!(
+            result.response.contains("fake_tool ×"),
+            "{}",
+            result.response
+        );
+        assert!(result.iterations < 20, "{}", result.iterations);
     }
 
     /// Mock driver that simulates: first call returns ToolUse with no text,

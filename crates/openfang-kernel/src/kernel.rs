@@ -40,6 +40,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, Weak};
 use tracing::{debug, info, warn};
 
+/// A scheduled wake whose run hit a step or tool-call limit and ended with
+/// an early-stop report (its work up to then stands).
+const WAKE_STOPPED_EARLY: &str = "stopped early";
+
 /// The main OpenFang kernel — coordinates all subsystems.
 /// Stub LLM driver used when no providers are configured.
 /// Returns a helpful error so the dashboard still boots and users can configure providers.
@@ -6992,7 +6996,14 @@ impl OpenFangKernel {
         let now = chrono::Local::now();
         let today = now.format("%Y-%m-%d").to_string();
         if rec.get("day").and_then(|v| v.as_str()) != Some(today.as_str()) {
-            for k in ["woke", "skipped", "tokens_in", "tokens_out", "cost_usd"] {
+            for k in [
+                "woke",
+                "skipped",
+                "stopped_early",
+                "tokens_in",
+                "tokens_out",
+                "cost_usd",
+            ] {
                 rec.insert(k.into(), json!(0));
             }
             rec.insert("day".into(), json!(today));
@@ -7002,6 +7013,9 @@ impl OpenFangKernel {
             rec.insert(k.into(), json!(v));
         };
         bump(&mut rec, if woke { "woke" } else { "skipped" }, 1.0);
+        if outcome == WAKE_STOPPED_EARLY {
+            bump(&mut rec, "stopped_early", 1.0);
+        }
         rec.insert("last".into(), json!(outcome));
         rec.insert("last_at".into(), json!(now.to_rfc3339()));
         if let Some((agent_id, r)) = result {
@@ -7110,13 +7124,23 @@ impl OpenFangKernel {
                 if let Some((_, name)) = wake.as_ref() {
                     let receipt = self.wake_receipt(name);
                     match &run {
-                        Ok(Ok(r)) => self.write_wake_receipt(
-                            name,
-                            receipt,
-                            true,
-                            "woke",
-                            Some((agent_id, r)),
-                        ),
+                        Ok(Ok(r)) => {
+                            let outcome = if r
+                                .response
+                                .starts_with(openfang_runtime::agent_loop::STOPPED_EARLY)
+                            {
+                                WAKE_STOPPED_EARLY
+                            } else {
+                                "woke"
+                            };
+                            self.write_wake_receipt(
+                                name,
+                                receipt,
+                                true,
+                                outcome,
+                                Some((agent_id, r)),
+                            )
+                        }
                         Ok(Err(e)) => self.write_wake_receipt(
                             name,
                             receipt,
@@ -9042,6 +9066,30 @@ mod tests {
             .expect("hand must be re-activatable after stop");
         assert_ne!(second.instance_id, first_instance_id);
 
+        kernel.shutdown();
+    }
+
+    // A wake that ended with an early-stop report is counted apart from a
+    // finished one, so Connections can point at a helper hitting its limits.
+    #[test]
+    fn test_wake_receipt_counts_early_stops() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home_dir = tmp.path().join("openfang-kernel-receipt-test");
+        std::fs::create_dir_all(&home_dir).unwrap();
+        let config = KernelConfig {
+            home_dir: home_dir.clone(),
+            data_dir: home_dir.join("data"),
+            ..KernelConfig::default()
+        };
+        let kernel = OpenFangKernel::boot_with_config(config).expect("kernel boots");
+        let r = kernel.wake_receipt("memory");
+        kernel.write_wake_receipt("memory", r, true, WAKE_STOPPED_EARLY, None);
+        let r = kernel.wake_receipt("memory");
+        kernel.write_wake_receipt("memory", r, true, "woke", None);
+        let r = kernel.wake_receipt("memory");
+        assert_eq!(r["woke"].as_f64(), Some(2.0));
+        assert_eq!(r["stopped_early"].as_f64(), Some(1.0));
+        assert_eq!(r["last"], "woke");
         kernel.shutdown();
     }
 

@@ -252,6 +252,10 @@ def memwake_phase(tok):
                 {"message": msg, "fresh": True}, timeout=220)
         ok = isinstance(r, dict) and bool(r.get("response"))
         why = "" if ok else "no response"
+        if ok and str(r.get("response", "")).startswith("Stopped early:"):
+            # The run hit a limit; what it filed stands and the records are
+            # marked done. The first line says why it stopped.
+            print(stamp, "memwake:", str(r["response"]).splitlines()[0][:200])
     except urllib.error.HTTPError as e:
         ok, why = False, f"HTTP {e.code}"
     except Exception as e:  # timeout, connection

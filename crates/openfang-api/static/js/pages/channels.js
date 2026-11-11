@@ -489,18 +489,20 @@ function staxWakeSummary(r, now) {
   if (!r || !r.ok) return null;
   var y = now.getFullYear(), m = ('0' + (now.getMonth() + 1)).slice(-2), d = ('0' + now.getDate()).slice(-2);
   var today = y + '-' + m + '-' + d;
-  var woke = 0, skipped = 0, cost = 0, parts = [];
+  var woke = 0, skipped = 0, early = 0, cost = 0, parts = [];
   (r.v || []).forEach(function(pr) {
     var v = pr.value || {};
     if (v.day !== today) return;
-    var w = Math.round(+v.woke || 0), s = Math.round(+v.skipped || 0);
-    woke += w; skipped += s; cost += +v.cost_usd || 0;
+    var w = Math.round(+v.woke || 0), s = Math.round(+v.skipped || 0), e = Math.round(+v.stopped_early || 0);
+    woke += w; skipped += s; early += e; cost += +v.cost_usd || 0;
     var name = STAX_WAKE_NAMES[pr.key.slice(5)] || pr.key.slice(5);
-    parts.push(name + ' ' + w + ' woke, ' + s + ' skipped');
+    parts.push(name + ' ' + w + ' woke, ' + s + ' skipped' + (e ? ', ' + e + ' stopped early' : ''));
   });
   if (!parts.length) return { tone: 'quiet', status: 'No wakes yet today', sub: 'Scheduled checks show here once they run' };
   var money = cost < 0.01 ? 'under a cent' : '$' + cost.toFixed(2);
-  return { tone: 'ok', status: woke + ' woke · ' + skipped + ' skipped', sub: parts.join(' · ') + ' — ' + money + ' today', woke: woke, skipped: skipped, cost: cost };
+  // A helper that keeps hitting its limits is doing less than it was woken
+  // for: worth the owner's eye.
+  return { tone: early ? 'warn' : 'ok', status: woke + ' woke · ' + skipped + ' skipped' + (early ? ' · ' + early + ' stopped early' : ''), sub: parts.join(' · ') + ' — ' + money + ' today', woke: woke, skipped: skipped, early: early, cost: cost };
 }
 
 // What the background helpers' last runs say, in one row. A helper is
